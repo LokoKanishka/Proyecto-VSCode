@@ -42,3 +42,30 @@ reproducible, usando solo este repositorio y algunos scripts.
 - Agregar más scripts para instalación automática.
 - Crear configuración detallada de Continue y Ollama.
 - Integrar otras herramientas (por ejemplo n8n) documentadas en este mismo repo.
+
+---
+
+
+## 6. Cómo clonar este entorno en otra máquina
+
+### 6.1. Clonar el repositorio
+
+En la nueva máquina:
+
+```bash
+git clone https://github.com/LokoKanishka/Proyecto-VSCode.git
+cd Proyecto-VSCode
+
+cat >> README.md << 'EOF'
+
+## 6. Cómo clonar este entorno en otra máquina
+
+### 6.1. Clonar el repositorio
+
+En la nueva máquina:
+
+```bash
+git clone https://github.com/LokoKanishka/Proyecto-VSCode.git
+cd Proyecto-VSCode
+
+
