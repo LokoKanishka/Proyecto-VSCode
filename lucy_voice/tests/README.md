@@ -26,3 +26,16 @@ Script:
 
 Esta prueba confirma que el framework de orquestación que vamos a usar
 para el pipeline de voz/agente está instalado y accesible.
+
+## Prueba de OpenWakeWord
+
+Script:
+- `test_openwakeword_basic.py`: crea un modelo por defecto de OpenWakeWord
+  y ejecuta una predicción sobre un frame de silencio (audio sintético).
+
+Salida esperada:
+- Se muestran los nombres de los modelos de wake word preinstalados
+  (por ejemplo `hey_jarvis`, `hey_mycroft`, etc.) con puntuaciones cercanas a 0.0.
+- Puede aparecer un *warning* de ONNX Runtime indicando que el proveedor CUDA
+  no está disponible; en ese caso se utiliza CPU (`CPUExecutionProvider`),
+  lo cual es aceptable para esta fase del proyecto.
