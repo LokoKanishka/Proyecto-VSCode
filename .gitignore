@@ -1,0 +1,24 @@
+# Carpetas del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de VS Code
+.vscode/
+
+# Python
+__pycache__/
+
+# Node
+node_modules/
+
+# Cachés
+*.log
+*.tmp
+
+# Modelos, pesos y archivos grandes (NO versionar nunca)
+*.bin
+*.ckpt
+*.safetensors
+
+# Ollama
+~/.ollama
