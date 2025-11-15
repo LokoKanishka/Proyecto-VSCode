@@ -39,3 +39,14 @@ Salida esperada:
 - Puede aparecer un *warning* de ONNX Runtime indicando que el proveedor CUDA
   no está disponible; en ese caso se utiliza CPU (`CPUExecutionProvider`),
   lo cual es aceptable para esta fase del proyecto.
+
+## Prueba de LucyTools (captura de pantalla)
+
+Script:
+- `test_lucy_tools_screenshot.py`: usa `lucy_tools.tomar_captura` para generar
+  una captura de pantalla completa en `lucy_voice/tests/lucy_tools_screenshot.png`.
+
+Esta prueba verifica que:
+- el paquete `lucy_voice` se importa correctamente,
+- el módulo `lucy_tools` está disponible,
+- y la función de captura de pantalla funciona generando un PNG en disco.
