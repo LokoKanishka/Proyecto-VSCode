@@ -56,16 +56,13 @@ En la nueva máquina:
 git clone https://github.com/LokoKanishka/Proyecto-VSCode.git
 cd Proyecto-VSCode
 
-cat >> README.md << 'EOF'
+## 7. Cómo volver a levantar el entorno después de reiniciar la PC
 
-## 6. Cómo clonar este entorno en otra máquina
+1. Abrir una terminal y ubicarse en el proyecto:
 
-### 6.1. Clonar el repositorio
+   ```bash
+   cd ~/Lucy_Workspace/Proyecto-VSCode
 
-En la nueva máquina:
 
-```bash
-git clone https://github.com/LokoKanishka/Proyecto-VSCode.git
-cd Proyecto-VSCode
 
 
