@@ -1,0 +1,20 @@
+# Entorno de voz de Lucy (local, 100% open source)
+
+# Orquestador de voz y agentes
+pipecat-ai
+
+# ASR optimizado (Whisper rápido)
+faster-whisper
+
+# Wake word "hola Lucy"
+openwakeword
+
+# TTS local (Mimic 3)
+mycroft-mimic3-tts
+
+# Control de escritorio (mouse/teclado)
+pyautogui
+
+# Audio y utilidades
+sounddevice
+numpy
