@@ -17,3 +17,12 @@ Script:
 En la primera prueba el modelo detectó correctamente el idioma español, aunque
 la frase reconocida no coincidió exactamente con el texto original.
 Esto se toma como prueba de funcionamiento del flujo WAV -> ASR, a refinar más adelante.
+
+## Prueba de Pipecat
+
+Script:
+- `test_pipecat_import.py`: verifica que la librería `pipecat` se importa
+  correctamente dentro del entorno virtual de Lucy-voz y muestra su versión.
+
+Esta prueba confirma que el framework de orquestación que vamos a usar
+para el pipeline de voz/agente está instalado y accesible.
