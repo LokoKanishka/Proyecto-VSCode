@@ -64,5 +64,22 @@ cd Proyecto-VSCode
    cd ~/Lucy_Workspace/Proyecto-VSCode
 
 
+## Lucy voz – chat textual local
+
+Para iniciar el chat de Lucy voz en modo texto, con el modelo local en Ollama:
+
+```bash
+cd ~/Lucy_Workspace/Proyecto-VSCode
+./scripts/lucy_voice_chat.sh
 
 
+3. Guardá el archivo.
+
+4. En la terminal, ejecutá:
+
+```bash
+cd ~/Lucy_Workspace/Proyecto-VSCode
+git status
+git add README.md
+git commit -m "Docs: agregar sección de chat textual de Lucy voz"
+git push origin main
