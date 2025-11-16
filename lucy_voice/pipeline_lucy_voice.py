@@ -38,7 +38,7 @@ class LucyPipelineConfig:
     asr_model: str = "faster-whisper-small"
     asr_model_size: str = "small"
     asr_samplerate: int = 16000
-    tts_voice: str = "es_ES/carlfm_low"  # voz castellano Mimic3 por defecto
+    tts_voice: str = "es_ES/m-ailabs_low"  # voz castellano Mimic3 por defecto (estable)
     llm_model: str = "gpt-oss:20b"       # modelo pesado por defecto en Ollama
 
 
@@ -328,7 +328,8 @@ class LucyVoicePipeline:
             return
 
         # 3) TTS: decir la respuesta en voz (si Mimic 3 está disponible)
-        self._speak_with_tts(answer)
+        visible_answer = answer.split("\n")[-1].strip()
+        self._speak_with_tts(visible_answer)
 
         # run_text_roundtrip ya imprime la respuesta, pero dejamos el resumen:
         print(f"[LucyVoicePipeline] Respuesta de Lucy (roundtrip voz→LLM): {answer!r}")
