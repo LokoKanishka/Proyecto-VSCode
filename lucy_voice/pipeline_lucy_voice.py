@@ -241,6 +241,52 @@ class LucyVoicePipeline:
                 print(f"- {text}")
 
     # -------------------------------------------------------------------------
+    def run_mic_llm_roundtrip_once(self, duration_sec: float = 5.0) -> None:
+        """Ciclo completo de prueba en el pipeline:
+
+        voz (micrófono) → texto (ASR) → LLM local → respuesta de Lucy (texto).
+        Todavía no usa TTS, solo muestra todo en consola.
+        """
+        try:
+            wav_path = self._record_mic_to_wav(duration_sec=duration_sec)
+        except RuntimeError:
+            # El error de audio ya se mostró en _record_mic_to_wav
+            return
+
+        print("\n[LucyVoicePipeline] == Roundtrip voz → texto → LLM (pipeline) ==")
+        print(f"[LucyVoicePipeline] Archivo de audio: {wav_path}")
+
+        # 1) ASR: convertir voz en texto
+        try:
+            segments, info = self._asr_transcribe_wav(wav_path)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[LucyVoicePipeline] [ERROR] Falló la transcripción: {exc}")
+            return
+
+        user_text = " ".join(
+            seg.text.strip() for seg in segments if getattr(seg, "text", "").strip()
+        )
+
+        if not user_text:
+            print("[LucyVoicePipeline] No se reconoció texto en el audio.")
+            return
+
+        print(
+            f"[LucyVoicePipeline] Idioma detectado: "
+            f"{info.language} (confianza: {info.language_probability:.2f})"
+        )
+        print(f"[LucyVoicePipeline] Texto reconocido (usuario): {user_text!r}")
+
+        # 2) LLM: pasar ese texto por el modelo local en Ollama
+        try:
+            answer = self.run_text_roundtrip(user_text)
+        except RuntimeError as e:
+            print(f"[LucyVoicePipeline] [ERROR] Falló la llamada al LLM: {e}")
+            return
+
+        # run_text_roundtrip ya imprime la respuesta, pero dejamos el resumen:
+        print(f"[LucyVoicePipeline] Respuesta de Lucy (roundtrip voz→LLM): {answer!r}")
+
     # Modo chat interactivo en consola (sólo texto)
     # -------------------------------------------------------------------------
     def interactive_loop(self) -> None:
