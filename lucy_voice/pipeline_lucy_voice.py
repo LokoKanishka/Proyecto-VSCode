@@ -1,14 +1,14 @@
 """
-Lucy voz – Fase 2: pipeline base con Pipecat, LLM local y pruebas de ASR desde micrófono.
+Lucy voz – Fase 2: pipeline base con Pipecat, LLM local y pruebas de ASR y TTS.
 
 Este módulo define:
 
-- La estructura vacía del pipeline (pensado para Pipecat más adelante).
+- Una estructura de pipeline pensada para Pipecat (a futuro).
 - Un camino de texto: recibe una frase, la pasa a un LLM local (Ollama)
   y devuelve la respuesta, sin audio.
 - Un modo chat interactivo en consola (solo texto).
-- Un camino simple de audio: micrófono → WAV → ASR (faster-whisper) → texto,
-  para probar cómo Lucy “escucha” antes de encastrar todo en Pipecat.
+- Un camino de audio: micrófono → WAV → ASR (faster-whisper) → texto.
+- Un roundtrip completo: voz → texto → LLM → texto → TTS (Mimic3).
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ import sounddevice as sd
 from faster_whisper import WhisperModel
 
 try:
-    import pipecat  # noqa: F401  # Import placeholder, confirma que la librería existe
-except ImportError:
+    import pipecat  # noqa: F401  # solo para comprobar que la librería existe
+except ImportError:  # pragma: no cover - en caso de que no esté instalado
     pipecat = None
 
 
@@ -34,38 +34,23 @@ except ImportError:
 class LucyPipelineConfig:
     """
     Configuración mínima del pipeline de Lucy voz.
-
-    Más adelante acá vamos a ir agregando:
-    - modelo ASR a usar,
-    - modelo TTS,
-    - modelo LLM en Ollama,
-    - dispositivos de entrada/salida de audio, etc.
     """
     asr_model: str = "faster-whisper-small"
     asr_model_size: str = "small"
     asr_samplerate: int = 16000
-    tts_voice: str = "mimic3-es"  # placeholder
-    llm_model: str = "gpt-oss:20b"  # modelo pesado por defecto (puede cambiarse luego)
+    tts_voice: str = "es_ES/carlfm_low"  # voz castellano Mimic3 por defecto
+    llm_model: str = "gpt-oss:20b"       # modelo pesado por defecto en Ollama
 
 
 class LucyVoicePipeline:
     """
     Orquestador de alto nivel del pipeline de Lucy.
-
-    Responsabilidades generales (a futuro):
-    - Construir el grafo de nodos (micrófono → wake word → VAD → ASR → LLM → TTS).
-    - Manejar el estado (listening / thinking / speaking).
-    - Exponer métodos start()/stop() para uso diario.
-
-    En esta etapa de Fase 2:
-    - Tenemos un camino de texto → LLM → texto (sin audio).
-    - Un modo chat en consola.
-    - Un camino de prueba de audio → ASR → texto (sin LLM ni TTS).
     """
 
     def __init__(self, config: Optional[LucyPipelineConfig] = None) -> None:
         self.config = config or LucyPipelineConfig()
-        self._graph: Any = None  # Acá va a ir el grafo de Pipecat cuando lo implementemos.
+        # Acá más adelante se va a construir el grafo de Pipecat
+        self._graph: Any = None
 
     # -------------------------------------------------------------------------
     # Bloque futuro: grafo de Pipecat
@@ -124,8 +109,9 @@ class LucyVoicePipeline:
                 "Asegurate de que Ollama está instalado y en el PATH."
             ) from None
         except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
             raise RuntimeError(
-                f"Error al ejecutar ollama con el modelo {model}: {e.stderr.strip()}"
+                f"Error al ejecutar ollama con el modelo {model}: {stderr}"
             ) from None
 
         # La CLI de ollama devuelve el texto directamente en stdout.
@@ -157,6 +143,63 @@ class LucyVoicePipeline:
         return answer
 
     # -------------------------------------------------------------------------
+    # Bloque nuevo: texto → TTS (Mimic 3) → audio
+    # -------------------------------------------------------------------------
+    def _speak_with_tts(self, text: str) -> None:
+        """
+        Convierte el texto de Lucy en audio usando Mimic 3 (si está disponible)
+        y lo reproduce por los parlantes.
+
+        Si faltan 'mimic3' o 'aplay', muestra un aviso pero no rompe el pipeline.
+        """
+        if not text:
+            return
+
+        print("[LucyVoicePipeline] TTS: generando audio con Mimic 3…")
+
+        # Voz por defecto en castellano (configurable desde LucyPipelineConfig)
+        voice = getattr(self.config, "tts_voice", "es_ES/carlfm_low")
+        cmd = ["mimic3", "--voice", voice, text]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        except FileNotFoundError:
+            print(
+                "[LucyVoicePipeline] [WARN] No se encontró el comando 'mimic3'. "
+                "Asegurate de tener instalado 'mycroft-mimic3-tts' y que esté en el PATH."
+            )
+            return
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or b"").decode(errors="ignore").strip()
+            print(f"[LucyVoicePipeline] [WARN] Error al ejecutar mimic3: {stderr}")
+            return
+
+        # Reproducir el audio WAV que Mimic 3 devuelve por stdout
+        try:
+            subprocess.run(
+                ["aplay"],
+                input=result.stdout,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+        except FileNotFoundError:
+            print(
+                "[LucyVoicePipeline] [WARN] No se encontró 'aplay'. "
+                "Instalá 'alsa-utils' o reproducí el WAV con otro reproductor."
+            )
+        except subprocess.CalledProcessError:
+            print(
+                "[LucyVoicePipeline] [WARN] No se pudo reproducir el audio con 'aplay'. "
+                "Probá reproducir el WAV usando otro programa."
+            )
+
+    # -------------------------------------------------------------------------
     # Bloque actual: audio → ASR (faster-whisper) → texto (sin LLM)
     # -------------------------------------------------------------------------
     def _record_mic_to_wav(self, duration_sec: float = 5.0) -> Path:
@@ -179,7 +222,7 @@ class LucyVoicePipeline:
                 dtype="int16",
             )
             sd.wait()
-        except sd.PortAudioError as exc:
+        except sd.PortAudioError as exc:  # noqa: BLE001
             print(f"[LucyVoicePipeline] [ERROR] No se pudo acceder al micrófono: {exc}")
             raise RuntimeError("Error de dispositivo de audio") from exc
 
@@ -211,9 +254,6 @@ class LucyVoicePipeline:
         """
         Ejecuta un ciclo simple:
             micrófono → WAV → ASR → texto por consola.
-
-        Esto es el primer paso para luego encadenar:
-            voz → texto (ASR) → LLM → texto → TTS.
         """
         try:
             wav_path = self._record_mic_to_wav(duration_sec=duration_sec)
@@ -236,16 +276,18 @@ class LucyVoicePipeline:
         )
         print("[LucyVoicePipeline] Texto reconocido:")
         for seg in segments:
-            text = seg.text.strip()
+            text = getattr(seg, "text", "").strip()
             if text:
                 print(f"- {text}")
 
     # -------------------------------------------------------------------------
+    # Bloque actual: roundtrip voz → texto → LLM → texto → TTS
+    # -------------------------------------------------------------------------
     def run_mic_llm_roundtrip_once(self, duration_sec: float = 5.0) -> None:
-        """Ciclo completo de prueba en el pipeline:
+        """
+        Ciclo completo de prueba en el pipeline:
 
-        voz (micrófono) → texto (ASR) → LLM local → respuesta de Lucy (texto).
-        Todavía no usa TTS, solo muestra todo en consola.
+            voz (micrófono) → texto (ASR) → LLM local → respuesta de Lucy (texto) → TTS.
         """
         try:
             wav_path = self._record_mic_to_wav(duration_sec=duration_sec)
@@ -264,7 +306,8 @@ class LucyVoicePipeline:
             return
 
         user_text = " ".join(
-            seg.text.strip() for seg in segments if getattr(seg, "text", "").strip()
+            getattr(seg, "text", "").strip() for seg in segments
+            if getattr(seg, "text", "").strip()
         )
 
         if not user_text:
@@ -284,9 +327,13 @@ class LucyVoicePipeline:
             print(f"[LucyVoicePipeline] [ERROR] Falló la llamada al LLM: {e}")
             return
 
+        # 3) TTS: decir la respuesta en voz (si Mimic 3 está disponible)
+        self._speak_with_tts(answer)
+
         # run_text_roundtrip ya imprime la respuesta, pero dejamos el resumen:
         print(f"[LucyVoicePipeline] Respuesta de Lucy (roundtrip voz→LLM): {answer!r}")
 
+    # -------------------------------------------------------------------------
     # Modo chat interactivo en consola (sólo texto)
     # -------------------------------------------------------------------------
     def interactive_loop(self) -> None:
@@ -320,21 +367,9 @@ class LucyVoicePipeline:
 
 def main() -> None:
     """
-    Punto de entrada para pruebas manuales.
-
-    Permite ejecutar:
+    Punto de entrada para pruebas manuales:
 
         python -m lucy_voice.pipeline_lucy_voice
-
-    para:
-    - comprobar que pipecat se importa bien, y
-    - chatear con Lucy en modo texto usando el LLM local.
-
-    El camino de micrófono → texto se puede probar desde un intérprete de Python, por ejemplo:
-
-        from lucy_voice.pipeline_lucy_voice import LucyVoicePipeline
-        p = LucyVoicePipeline()
-        p.run_mic_to_text_once()
     """
     pipeline = LucyVoicePipeline()
     pipeline.build_graph()  # deja el marcador de grafo pendiente
