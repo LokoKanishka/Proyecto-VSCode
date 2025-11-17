@@ -1,6 +1,6 @@
 """
 Lucy voz – Fase 2: pipeline base con Pipecat, LLM local y pruebas de ASR y TTS.
-
+Este módulo define:
 Este módulo define:
 
 - Una estructura de pipeline pensada para Pipecat (a futuro).
@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Optional
+from loguru import logger
+
 
 import subprocess
 import textwrap
@@ -23,6 +25,10 @@ import wave
 
 import sounddevice as sd
 from faster_whisper import WhisperModel
+from lucy_voice.pipecat_graph_stub import build_lucy_pipeline
+
+
+
 
 try:
     import pipecat  # noqa: F401  # solo para comprobar que la librería existe
@@ -57,12 +63,23 @@ class LucyVoicePipeline:
     # -------------------------------------------------------------------------
     def build_graph(self) -> None:
         """
-        Construye el grafo de Pipecat.
+        Construye el grafo de Pipecat de Lucy.
 
-        Por ahora solo deja marcados los "lugares" donde irán los nodos reales.
+        Por ahora delega en el stub `build_lucy_pipeline()`, que devuelve
+        un Pipeline vacío. En próximos pasos vamos a ir llenando ese Pipeline
+        con los procesadores reales (STT, LLM, TTS, etc.).
         """
-        self._graph = "PENDING_IMPLEMENTATION"
-        print("[LucyVoicePipeline] build_graph(): grafo aún no implementado (solo marcador).")
+        logger.info("[LucyVoicePipeline] build_graph(): usando stub build_lucy_pipeline()…")
+
+        pipeline = build_lucy_pipeline()
+
+        # Lo guardamos en la instancia para usarlo más adelante.
+        self._graph = pipeline
+
+        logger.info(
+        "[LucyVoicePipeline] build_graph(): pipeline (stub) creado correctamente: %r",
+        pipeline,
+        )
 
     def start(self) -> None:
         """
@@ -406,3 +423,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
