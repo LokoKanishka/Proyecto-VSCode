@@ -117,6 +117,32 @@ class LucyVoicePipeline:
         # La CLI de ollama devuelve el texto directamente en stdout.
         return result.stdout.strip()
 
+    def _visible_answer(self, full_text: str) -> str:
+        """
+        Recibe el texto completo devuelto por el LLM y devuelve sólo la frase
+        final que queremos que Lucy diga y que se vea en consola.
+        """
+        if not full_text:
+            return ""
+
+        text = full_text.strip()
+
+        # Partimos en líneas y nos quedamos con las que no estén vacías
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            return ""
+
+        # En la práctica casi siempre queremos la última línea
+        candidate = lines[-1]
+
+        # Si esa línea es demasiado cortita (por ejemplo "Ok.")
+        # y hay otra anterior, usamos la anterior.
+        if len(candidate) < 5 and len(lines) >= 2:
+            candidate = lines[-2]
+
+        return candidate
+
+
     def run_text_roundtrip(self, user_text: str) -> str:
         """
         Ejecuta un "roundtrip" simple: texto de usuario → LLM local → texto de respuesta.
@@ -135,12 +161,13 @@ class LucyVoicePipeline:
             Lucy:"""
         )
 
-        answer = self._query_llm_with_ollama(prompt)
+        full_answer = self._query_llm_with_ollama(prompt)
+        visible = self._visible_answer(full_answer)
 
         print("[LucyVoicePipeline] Usuario:", user_text)
-        print("[LucyVoicePipeline] Lucy:", answer)
+        print("[LucyVoicePipeline] Lucy:", visible)
 
-        return answer
+        return full_answer
 
     # -------------------------------------------------------------------------
     # Bloque nuevo: texto → TTS (Mimic 3) → audio
@@ -328,11 +355,11 @@ class LucyVoicePipeline:
             return
 
         # 3) TTS: decir la respuesta en voz (si Mimic 3 está disponible)
-        visible_answer = answer.split("\n")[-1].strip()
+        visible_answer = self._visible_answer(answer)
         self._speak_with_tts(visible_answer)
 
-        # run_text_roundtrip ya imprime la respuesta, pero dejamos el resumen:
-        print(f"[LucyVoicePipeline] Respuesta de Lucy (roundtrip voz→LLM): {answer!r}")
+        # Resumen consistente con lo que se dijo en voz
+        print(f"[LucyVoicePipeline] Respuesta de Lucy (roundtrip voz→LLM): {visible_answer!r}")
 
     # -------------------------------------------------------------------------
     # Modo chat interactivo en consola (sólo texto)
