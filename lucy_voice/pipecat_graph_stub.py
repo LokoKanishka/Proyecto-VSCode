@@ -28,3 +28,19 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+def build_lucy_pipeline() -> Pipeline:
+    """
+    Fábrica mínima del Pipeline de Lucy.
+
+    Hoy devuelve un Pipeline vacío; en los próximos pasos vamos a ir
+    agregando procesadores (STT, LLM, TTS, etc.) dentro de esta función.
+    """
+    logger.info("[LucyPipecatStub] build_lucy_pipeline(): creando pipeline vacío…")
+
+    # Por ahora usamos un pipeline vacío. Más adelante vamos a ir
+    # reemplazando esta lista por los procesadores reales.
+    pipeline = Pipeline([])
+
+    logger.info("[LucyPipecatStub] build_lucy_pipeline(): pipeline creado: %r", pipeline)
+    return pipeline
