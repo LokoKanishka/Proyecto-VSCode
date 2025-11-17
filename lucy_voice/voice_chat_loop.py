@@ -1,14 +1,16 @@
 """
 voice_chat_loop.py
 
-Modo conversación por voz con Lucy:
+Modo conversación por voz con Lucy (push-to-talk):
 
 - Inicializa LucyVoicePipeline.
 - Construye el grafo (stub actual de Pipecat).
-- Entra en un bucle donde cada iteración hace:
-    micrófono → ASR → LLM → TTS.
+- Entra en un bucle donde CADA TURNO lo disparás vos:
+    - Apretás Enter para grabar unos segundos.
+    - Lucy transcribe, piensa y responde en voz.
+    - Escribís 'salir' para terminar.
 
-Para salir, usar Ctrl+C en la terminal.
+Mientras no toques nada, NO graba.
 """
 
 from lucy_voice.pipeline_lucy_voice import LucyVoicePipeline
@@ -19,15 +21,24 @@ def main() -> None:
     pipeline.build_graph()
 
     print("Lucy voz (modo VOZ).")
-    print("Voy a escuchar, pensar y responder en voz.")
-    print("Usá Ctrl+C en la terminal para terminar.\n")
+    print("Cada turno:")
+    print("  - Apretá Enter solo para grabar")
+    print("  - Escribí 'salir' y Enter para terminar\n")
 
     try:
         while True:
-            # Una vuelta completa: mic → ASR → LLM → TTS
+            comando = input("[Enter=hablar | 'salir'=terminar]: ").strip().lower()
+
+            if comando in {"salir", "exit", "quit"}:
+                print("[LucyVoiceVoiceChat] Fin de la sesión de voz. Chau 💜")
+                break
+
+            # Si sólo apretaste Enter (comando vacío), grabamos un turno de voz
+            print()
             pipeline.run_mic_llm_roundtrip_once(duration_sec=5.0)
+            print()
     except KeyboardInterrupt:
-        print("\n[LucyVoiceVoiceChat] Fin de la sesión de voz. Chau 💜")
+        print("\n[LucyVoiceVoiceChat] Sesión interrumpida. Chau 💜")
 
 
 if __name__ == "__main__":
