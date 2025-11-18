@@ -35,8 +35,12 @@ def main() -> None:
 
             # Si sólo apretaste Enter (comando vacío), grabamos un turno de voz
             print()
-            pipeline.run_mic_llm_roundtrip_once(duration_sec=5.0)
+            should_stop = pipeline.run_mic_llm_roundtrip_once(duration_sec=5.0)
             print()
+
+            if should_stop:
+                print("[LucyVoiceVoiceChat] Desactivada por comando de voz. Chau 💜")
+                break
     except KeyboardInterrupt:
         print("\n[LucyVoiceVoiceChat] Sesión interrumpida. Chau 💜")
 

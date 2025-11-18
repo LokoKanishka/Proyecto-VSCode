@@ -327,17 +327,21 @@ class LucyVoicePipeline:
     # -------------------------------------------------------------------------
     # Bloque actual: roundtrip voz → texto → LLM → texto → TTS
     # -------------------------------------------------------------------------
-    def run_mic_llm_roundtrip_once(self, duration_sec: float = 5.0) -> None:
+    def run_mic_llm_roundtrip_once(self, duration_sec: float = 5.0) -> bool:
         """
         Ciclo completo de prueba en el pipeline:
 
             voz (micrófono) → texto (ASR) → LLM local → respuesta de Lucy (texto) → TTS.
+
+        Devuelve:
+            True  si debe detenerse el loop de voz (comando "lucy desactivate").
+            False en cualquier otro caso.
         """
         try:
             wav_path = self._record_mic_to_wav(duration_sec=duration_sec)
         except RuntimeError:
             # El error de audio ya se mostró en _record_mic_to_wav
-            return
+            return False
 
         print("\n[LucyVoicePipeline] == Roundtrip voz → texto → LLM (pipeline) ==")
         print(f"[LucyVoicePipeline] Archivo de audio: {wav_path}")
@@ -347,7 +351,7 @@ class LucyVoicePipeline:
             segments, info = self._asr_transcribe_wav(wav_path)
         except Exception as exc:  # noqa: BLE001
             print(f"[LucyVoicePipeline] [ERROR] Falló la transcripción: {exc}")
-            return
+            return False
 
         user_text = " ".join(
             getattr(seg, "text", "").strip() for seg in segments
@@ -356,7 +360,7 @@ class LucyVoicePipeline:
 
         if not user_text:
             print("[LucyVoicePipeline] No se reconoció texto en el audio.")
-            return
+            return False
 
         print(
             f"[LucyVoicePipeline] Idioma detectado: "
@@ -364,19 +368,27 @@ class LucyVoicePipeline:
         )
         print(f"[LucyVoicePipeline] Texto reconocido (usuario): {user_text!r}")
 
-        # 2) LLM: pasar ese texto por el modelo local en Ollama
-        try:
-            answer = self.run_text_roundtrip(user_text)
-        except RuntimeError as e:
-            print(f"[LucyVoicePipeline] [ERROR] Falló la llamada al LLM: {e}")
-            return
+               # 2a) Comando especial de apagado por voz
+        lowered = user_text.lower()
+        normalized = lowered.replace(" ", "")
 
-        # 3) TTS: decir la respuesta en voz (si Mimic 3 está disponible)
-        visible_answer = self._visible_answer(answer)
-        self._speak_with_tts(visible_answer)
+        if (
+            "lucy desactivate" in lowered
+            or "lucy deactivate" in lowered
+            or "lucydesactivate" in normalized
+            or "lucydesactivar" in normalized
+        ):
+            visible_answer = (
+                "Ok, me desactivo por ahora. Si querés volver a hablar conmigo, "
+                "volvé a abrir Lucy voz."
+            )
+            self._speak_with_tts(visible_answer)
+            print(
+                f"[LucyVoicePipeline] Respuesta de Lucy (apagado por voz): "
+                f"{visible_answer!r}"
+            )
+            return True
 
-        # Resumen consistente con lo que se dijo en voz
-        print(f"[LucyVoicePipeline] Respuesta de Lucy (roundtrip voz→LLM): {visible_answer!r}")
 
     # -------------------------------------------------------------------------
     # Modo chat interactivo en consola (sólo texto)
