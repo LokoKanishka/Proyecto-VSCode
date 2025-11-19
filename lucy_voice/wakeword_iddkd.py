@@ -2,8 +2,15 @@
 """
 Loop de detección de wake word para Lucy usando openWakeWord.
 
-Por ahora usamos el modelo pre-entrenado "hey jarvis" como placeholder
+Por ahora usamos el modelo pre-entrenado "hey_jarvis" como placeholder
 del futuro wake word personalizado "iddkd".
+
+Comportamiento actual:
+- Escucha el micrófono con openWakeWord.
+- Muestra continuamente el score de "hey_jarvis".
+- Cuando el score supera el UMBRAL, considera que se activó el wake word.
+- Cierra el stream de audio y dispara UNA ronda de Lucy Voz:
+  micrófono -> ASR -> LLM local -> TTS.
 """
 
 import logging
@@ -13,13 +20,13 @@ import time
 
 import numpy as np
 import sounddevice as sd
-
 from openwakeword.model import Model
+
+from lucy_voice.pipeline_lucy_voice import LucyVoicePipeline, LucyPipelineConfig
 
 SAMPLE_RATE = 16000
 BLOCKSIZE = 1280  # 80 ms a 16 kHz
-THRESHOLD = 0.05  # umbral de activación (MUCHO más sensible para debug)
-
+THRESHOLD = 0.05  # umbral de activación (sensible para debug)
 
 log = logging.getLogger("LucyWakeWord")
 
@@ -28,14 +35,13 @@ def _setup_model() -> Model:
     """
     Inicializa el modelo de openWakeWord.
 
-    Usamos la inicialización por defecto (sin argumentos), igual que en los tests
-    de Fase 1. Eso carga los modelos de wake word que ya tenga disponible la
-    instalación de openWakeWord (por ejemplo "hey_jarvis", "ok_nabu", etc.).
+    Usamos la inicialización por defecto (sin argumentos), igual que
+    en los tests de Fase 1. Eso carga los modelos de wake word que ya
+    tenga disponible la instalación de openWakeWord
+    (ej.: "alexa", "hey_jarvis", etc.).
     """
     model = Model()
     try:
-        # En algunas versiones de openwakeword existe este atributo,
-        # en otras no; por eso lo hacemos defensivo.
         available = getattr(model, "models", None)
         if available is not None:
             log.info("Wake words disponibles: %s", list(available.keys()))
@@ -45,11 +51,10 @@ def _setup_model() -> Model:
     return model
 
 
-
-def _audio_loop() -> None:
+def _audio_loop() -> bool:
     """
     Loop principal: abre el micrófono, pasa audio al modelo de wake word
-    y loguea cuando detecta activación.
+    y devuelve True si detectó activación de "hey_jarvis".
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -67,6 +72,8 @@ def _audio_loop() -> None:
             log.warning("Status de audio: %s", status)
         # Copiamos el bloque para no depender del buffer interno
         audio_queue.put(indata.copy())
+
+    detected = False
 
     with sd.InputStream(
         samplerate=SAMPLE_RATE,
@@ -98,18 +105,42 @@ def _audio_loop() -> None:
             # Mostrar siempre el score de hey_jarvis en la misma línea (debug)
             print(f"score hey_jarvis = {jarvis_score:.3f}", end="\r", flush=True)
 
-            # Si supera el umbral, avisar
+            # Si supera el umbral, avisar y salir del loop
             if jarvis_score >= THRESHOLD:
                 print(f"\n[WakeWord] Detecté 'hey_jarvis' con score={jarvis_score:.2f}")
+                detected = True
+                break
 
             # Pequeña pausa para no saturar la CPU
             time.sleep(0.01)
 
+    # Al salir del with, el stream de audio se cierra.
+    return detected
+
+
+def _run_lucy_roundtrip() -> None:
+    """
+    Dispara UNA ronda de Lucy Voz:
+    micrófono -> ASR -> LLM local -> TTS.
+    """
+    log.info("Disparando una ronda de Lucy Voz (mic → LLM → TTS)…")
+
+    cfg = LucyPipelineConfig()
+    pipeline = LucyVoicePipeline(cfg)
+
+    # Construimos el grafo (hoy es un stub de Pipecat, pero deja listo el campo)
+    pipeline.build_graph()
+
+    should_stop = pipeline.run_mic_llm_roundtrip_once(duration_sec=5.0)
+
+    log.info("Ronda de Lucy Voz terminada (should_stop=%s)", should_stop)
 
 
 def main() -> None:
     try:
-        _audio_loop()
+        detected = _audio_loop()
+        if detected:
+            _run_lucy_roundtrip()
     except KeyboardInterrupt:
         log.info("Wake word interrumpido por teclado. Chau 💜")
         sys.exit(0)
