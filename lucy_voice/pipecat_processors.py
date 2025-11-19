@@ -129,6 +129,31 @@ class LucyOllamaTextLLMProcessor(FrameProcessor):
             "[LucyOllamaTextLLMProcessor] Respuesta generada por el modelo local (recortada a log): {}",
             answer[:200],
         )
+class LucyConsoleTextOutputProcessor(FrameProcessor):
+    """
+    Processor muy simple que muestra en consola cualquier TextFrame
+    que le llegue, para depurar el flujo de Pipecat.
+
+    Más adelante lo podemos reemplazar por algo que envíe el texto
+    a TTS, a un socket, etc.
+    """
+
+    def __init__(self, prefix: str = "[LucyPipecat-TextOut]") -> None:
+        super().__init__()
+        self.prefix = prefix
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        # Dejamos que Pipecat haga su manejo interno primero
+        await super().process_frame(frame, direction)
+
+        # Si es texto, lo mostramos
+        if isinstance(frame, TextFrame):
+            text = getattr(frame, "text", "")
+            logger.info("%s %s", self.prefix, text)
+            print(f"{self.prefix} {text}")
+
+        # Siempre dejamos pasar el frame para no cortar la cadena
+        await self.push_frame(frame, direction)
 
         # Empujamos un nuevo TextFrame con la respuesta de Lucy.
         response_frame = TextFrame(text=answer)

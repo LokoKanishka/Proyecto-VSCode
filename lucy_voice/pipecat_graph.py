@@ -3,9 +3,11 @@ pipecat_graph.py
 
 Primer esqueleto del grafo "real" de Pipecat para Lucy.
 
-Ahora devuelve un Pipeline que ya incluye un procesador de texto
-conectado al LLM local (Ollama), aunque todavía no lo estemos usando
-desde los modos actuales (texto/PTT/wake word).
+Devuelve un Pipeline que incluye:
+- un procesador de texto que llama al LLM local (Ollama);
+- un procesador que imprime los TextFrame en consola;
+aunque todavia no usemos este grafo desde los modos actuales
+(texto / PTT / wake word).
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from typing import Any, Optional
 from loguru import logger
 
 try:
-    # Import básico de Pipecat. Si no está instalado, dejamos un mensaje claro.
+    # Import basico de Pipecat. Si no esta instalado, dejamos un mensaje claro.
     from pipecat.pipeline.pipeline import Pipeline
 except ImportError as e:  # pragma: no cover
     Pipeline = None  # type: ignore
@@ -22,51 +24,48 @@ except ImportError as e:  # pragma: no cover
 else:
     _pipecat_import_error = None
 
-from lucy_voice.pipecat_processors import LucyOllamaTextLLMProcessor
+from lucy_voice.pipecat_processors import (
+    LucyOllamaTextLLMProcessor,
+    LucyConsoleTextOutputProcessor,
+)
 
 
 def build_lucy_pipeline(config: Optional[Any] = None) -> "Pipeline":
     """
-    Fábrica del Pipeline de Lucy.
+    Fabrica del Pipeline de Lucy.
 
-    En esta versión todavía no conectamos micrófono, ASR ni TTS dentro
+    En esta version todavia no conectamos microfono, ASR ni TTS dentro
     del grafo. Pero ya:
 
-    - Verificamos que Pipecat esté correctamente importado.
-    - Creamos un procesador de texto → LLM local (Ollama).
-    - Lo incluimos en la lista de procesadores del Pipeline.
+    - verificamos que Pipecat se importe correctamente;
+    - creamos un procesador de texto a LLM local (Ollama);
+    - agregamos un procesador que imprime los TextFrame en consola.
 
-    Aceptamos un objeto de configuración `config` (LucyPipelineConfig),
-    del cual por ahora usamos sólo `llm_model`.
+    Aceptamos un objeto de configuracion `config` (LucyPipelineConfig),
+    del cual por ahora usamos solo `llm_model`.
     """
     if Pipeline is None:
-        # Pipecat no se pudo importar: dejamos un error explícito.
+        # Pipecat no se pudo importar: dejamos un error explicito.
         logger.error(
             "[LucyPipecatGraph] No se pudo importar Pipecat: {}",
             _pipecat_import_error,
         )
         raise RuntimeError(
-            "Pipecat no está disponible en este entorno. "
+            "Pipecat no esta disponible en este entorno. "
             "Asegurate de tener instalado 'pipecat-ai' en el venv de Lucy Voz."
         )
 
-    # Elegimos el modelo a partir de la config de Lucy, con default.
+    # Elegimos el modelo a partir de la config de Lucy, con valor por defecto.
     model_name = getattr(config, "llm_model", "gpt-oss:20b")
 
-    # Más adelante, esta lista va a contener todos los procesadores reales:
-    #   - micrófono / input
-    #   - ASR (faster-whisper)
-    #   - LLM local (Ollama)
-    #   - TTS (Mimic 3)
-    #
-    # Por ahora arrancamos con el procesador de texto → LLM local.
     processors: list[Any] = [
         LucyOllamaTextLLMProcessor(model=model_name),
+        LucyConsoleTextOutputProcessor(prefix="[LucyPipecat-TextOut]"),
     ]
 
     logger.info(
         "[LucyPipecatGraph] build_lucy_pipeline(): creando Pipeline base "
-        "para Lucy (con procesador LLM LucyOllamaTextLLMProcessor, modelo = {})",
+        "para Lucy (modelo LLM = {})",
         model_name,
     )
 
