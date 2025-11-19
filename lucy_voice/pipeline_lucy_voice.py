@@ -44,7 +44,7 @@ class LucyPipelineConfig:
     asr_model: str = "faster-whisper-small"
     asr_model_size: str = "small"
     asr_samplerate: int = 16000
-    tts_voice: str = "es_ES/m-ailabs_low"  # voz castellano Mimic3 por defecto (estable)
+    tts_voice: str = "es_ES/m-ailabs_low"  # voz castellana Mimic3 (la que ya sabemos que se escucha)
     llm_model: str = "gpt-oss:20b"       # modelo pesado por defecto en Ollama
 
 
@@ -191,57 +191,45 @@ class LucyVoicePipeline:
     # -------------------------------------------------------------------------
     def _speak_with_tts(self, text: str) -> None:
         """
-        Convierte el texto de Lucy en audio usando Mimic 3 (si está disponible)
-        y lo reproduce por los parlantes.
-
-        Si faltan 'mimic3' o 'aplay', muestra un aviso pero no rompe el pipeline.
+        Sintetiza `text` con Mimic 3 usando la voz configurada
+        y reproduce el audio con `aplay`.
         """
         if not text:
             return
 
-        print("[LucyVoicePipeline] TTS: generando audio con Mimic 3…")
-
-        # Voz por defecto en castellano (configurable desde LucyPipelineConfig)
-        voice = getattr(self.config, "tts_voice", "es_ES/carlfm_low")
-        cmd = ["mimic3", "--voice", voice, text]
-
         try:
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-            )
-        except FileNotFoundError:
-            print(
-                "[LucyVoicePipeline] [WARN] No se encontró el comando 'mimic3'. "
-                "Asegurate de tener instalado 'mycroft-mimic3-tts' y que esté en el PATH."
-            )
-            return
-        except subprocess.CalledProcessError as e:
-            stderr = (e.stderr or b"").decode(errors="ignore").strip()
-            print(f"[LucyVoicePipeline] [WARN] Error al ejecutar mimic3: {stderr}")
-            return
+            import tempfile
+            import subprocess
+            from pathlib import Path
 
-        # Reproducir el audio WAV que Mimic 3 devuelve por stdout
-        try:
-            subprocess.run(
-                ["aplay"],
-                input=result.stdout,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True,
-            )
-        except FileNotFoundError:
-            print(
-                "[LucyVoicePipeline] [WARN] No se encontró 'aplay'. "
-                "Instalá 'alsa-utils' o reproducí el WAV con otro reproductor."
-            )
-        except subprocess.CalledProcessError:
-            print(
-                "[LucyVoicePipeline] [WARN] No se pudo reproducir el audio con 'aplay'. "
-                "Probá reproducir el WAV usando otro programa."
-            )
+            # Archivo WAV temporal
+            tmp_dir = Path(tempfile.gettempdir())
+            wav_path = tmp_dir / "lucy_tts_runtime.wav"
+
+            # Comando Mimic 3: va a leer el texto desde stdin
+            cmd_mimic3 = [
+                "mimic3",
+                "--voice",
+                self.config.tts_voice,
+                "--stdout",
+            ]
+
+            # Generamos el WAV enviando el texto por stdin (como el echo | mimic3)
+            with wav_path.open("wb") as f:
+                subprocess.run(
+                    cmd_mimic3,
+                    input=text.encode("utf-8"),
+                    stdout=f,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                )
+
+            # Reproducimos el WAV con aplay
+            subprocess.run(["aplay", "-q", str(wav_path)], check=False)
+
+        except Exception as exc:
+            print(f"[LucyVoicePipeline] [TTS] Error al sintetizar o reproducir: {exc}")
+
 
     # -------------------------------------------------------------------------
     # Bloque actual: audio → ASR (faster-whisper) → texto (sin LLM)
@@ -334,9 +322,10 @@ class LucyVoicePipeline:
             voz (micrófono) → texto (ASR) → LLM local → respuesta de Lucy (texto) → TTS.
 
         Devuelve:
-            True  si debe detenerse el loop de voz (comando "lucy desactivate").
+            True  si debe detenerse el loop de voz (comando "Lucy desactivate").
             False en cualquier otro caso.
         """
+        # 0) Grabar audio del micrófono
         try:
             wav_path = self._record_mic_to_wav(duration_sec=duration_sec)
         except RuntimeError:
@@ -368,7 +357,7 @@ class LucyVoicePipeline:
         )
         print(f"[LucyVoicePipeline] Texto reconocido (usuario): {user_text!r}")
 
-               # 2a) Comando especial de apagado por voz
+        # 2a) Comando especial de apagado por voz
         lowered = user_text.lower()
         normalized = lowered.replace(" ", "")
 
@@ -377,17 +366,37 @@ class LucyVoicePipeline:
             or "lucy deactivate" in lowered
             or "lucydesactivate" in normalized
             or "lucydesactivar" in normalized
+            or "lucydesactívate" in normalized
         ):
             visible_answer = (
                 "Ok, me desactivo por ahora. Si querés volver a hablar conmigo, "
                 "volvé a abrir Lucy voz."
             )
+            print(f"[LucyVoicePipeline] Lucy (apagado): {visible_answer}")
             self._speak_with_tts(visible_answer)
             print(
                 f"[LucyVoicePipeline] Respuesta de Lucy (apagado por voz): "
                 f"{visible_answer!r}"
             )
             return True
+
+        # 2b) LLM: pasar ese texto por el modelo local en Ollama
+        try:
+            answer = self.run_text_roundtrip(user_text)
+        except RuntimeError as e:
+            print(f"[LucyVoicePipeline] [ERROR] Falló la llamada al LLM: {e}")
+            return False
+
+        # 3) TTS: decir la respuesta en voz (si Mimic 3 está disponible)
+        visible_answer = self._visible_answer(answer)
+        print(f"[LucyVoicePipeline] Lucy: {visible_answer}")
+        print("[LucyVoicePipeline] TTS: generando audio con Mimic 3…")
+        self._speak_with_tts(visible_answer)
+
+        # Resumen consistente con lo que se dijo en voz
+        print(f"[LucyVoicePipeline] Respuesta de Lucy (roundtrip voz→LLM): {visible_answer!r}")
+
+        return False
 
 
     # -------------------------------------------------------------------------
