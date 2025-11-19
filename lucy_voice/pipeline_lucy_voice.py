@@ -25,7 +25,7 @@ import wave
 
 import sounddevice as sd
 from faster_whisper import WhisperModel
-from lucy_voice.pipecat_graph_stub import build_lucy_pipeline
+from lucy_voice.pipecat_graph import build_lucy_pipeline
 
 
 
@@ -71,7 +71,7 @@ class LucyVoicePipeline:
         """
         logger.info("[LucyVoicePipeline] build_graph(): usando stub build_lucy_pipeline()…")
 
-        pipeline = build_lucy_pipeline()
+        pipeline = build_lucy_pipeline(self.config)
 
         # Lo guardamos en la instancia para usarlo más adelante.
         self._graph = pipeline
