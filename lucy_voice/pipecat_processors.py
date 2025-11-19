@@ -129,28 +129,38 @@ class LucyOllamaTextLLMProcessor(FrameProcessor):
             "[LucyOllamaTextLLMProcessor] Respuesta generada por el modelo local (recortada a log): {}",
             answer[:200],
         )
-class LucyConsoleTextOutputProcessor(FrameProcessor):
+class LucyWhisperASRProcessor(FrameProcessor):
     """
-    Processor muy simple que muestra en consola cualquier TextFrame
-    que le llegue, para depurar el flujo de Pipecat.
+    Esqueleto de processor de ASR para Lucy usando faster-whisper.
 
-    Mas adelante lo podemos reemplazar por algo que envie el texto
-    a TTS, a un socket, etc.
+    Objetivo futuro:
+        - Recibir frames de audio (cuando definamos el tipo de frame de audio
+          que vamos a usar en el pipeline).
+        - Acumular audio hasta tener un fragmento completo.
+        - Pasar ese audio por faster-whisper.
+        - Emitir un TextFrame con la transcripcion.
+
+    Por ahora, este processor es un stub que solo deja pasar todos los frames
+    tal como llegan, sin modificar nada. Sirve como punto de partida para
+    integrar el ASR dentro de Pipecat.
     """
 
-    def __init__(self, prefix: str = "[LucyPipecat-TextOut]") -> None:
+    def __init__(self, model_size: str = "small", language: str = "es") -> None:
         super().__init__()
-        self.prefix = prefix
+        self.model_size = model_size
+        self.language = language
+        # Mas adelante: inicializar aca el modelo de faster-whisper
+        # y buffers de audio, etc.
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        # Dejamos que Pipecat haga su manejo interno primero
+        # Llamamos primero a la logica base de Pipecat
         await super().process_frame(frame, direction)
 
-        # Si es texto, lo mostramos
-        if isinstance(frame, TextFrame):
-            text = getattr(frame, "text", "")
-            logger.info("%s %s", self.prefix, text)
-            print(f"{self.prefix} {text}")
+        # TODO (futuro):
+        # - Si el frame es de audio y va en la direccion correcta,
+        #   acumularlo en un buffer.
+        # - Cuando se detecte fin de segmento (o VAD), correr faster-whisper
+        #   y generar un TextFrame con la transcripcion.
 
-        # Siempre dejamos pasar el frame para no cortar la cadena
+        # Por ahora, este stub solo deja pasar el frame sin tocarlo.
         await self.push_frame(frame, direction)
