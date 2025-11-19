@@ -134,7 +134,7 @@ class LucyConsoleTextOutputProcessor(FrameProcessor):
     Processor muy simple que muestra en consola cualquier TextFrame
     que le llegue, para depurar el flujo de Pipecat.
 
-    Más adelante lo podemos reemplazar por algo que envíe el texto
+    Mas adelante lo podemos reemplazar por algo que envie el texto
     a TTS, a un socket, etc.
     """
 
@@ -154,7 +154,3 @@ class LucyConsoleTextOutputProcessor(FrameProcessor):
 
         # Siempre dejamos pasar el frame para no cortar la cadena
         await self.push_frame(frame, direction)
-
-        # Empujamos un nuevo TextFrame con la respuesta de Lucy.
-        response_frame = TextFrame(text=answer)
-        await self.push_frame(response_frame, direction)
