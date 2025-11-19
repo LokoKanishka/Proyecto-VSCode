@@ -17,4 +17,5 @@ pyautogui
 
 # Audio y utilidades
 sounddevice
+soundfile
 numpy
