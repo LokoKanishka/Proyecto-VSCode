@@ -24,3 +24,5 @@ node_modules/
 ~/.ollama
 .venv-lucy-voz
 lucy_voice/tests/mic_test_input_from_pipeline.wav
+# Lucy wakeword data (audios locales, NO subir a git)
+lucy_voice/data/wakeword/
