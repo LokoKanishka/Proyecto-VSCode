@@ -13,23 +13,17 @@ Modo conversación por voz con Lucy (push-to-talk):
 Mientras no toques nada, NO graba.
 """
 
-from lucy_voice.pipeline_lucy_voice import LucyVoicePipeline, LucyPipelineConfig
+from lucy_voice.pipeline_lucy_voice import LucyVoicePipeline
 
 
-
-def main():
-    config = LucyPipelineConfig()
-    pipeline = LucyVoicePipeline(config)
-
-    # Por ahora no usamos el grafo de Pipecat en este modo
-    # pipeline.build_graph()
+def main() -> None:
+    pipeline = LucyVoicePipeline()
+    pipeline.build_graph()
 
     print("Lucy voz (modo VOZ).")
     print("Cada turno:")
     print("  - Apretá Enter solo para grabar")
-    print("  - Escribí 'salir' y Enter para terminar")
-    ...
-
+    print("  - Escribí 'salir' y Enter para terminar\n")
 
     try:
         while True:
