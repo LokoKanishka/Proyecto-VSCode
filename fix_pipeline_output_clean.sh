@@ -1,3 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+cat > lucy_voice/pipeline_lucy_voice.py << 'PYEOF'
 from __future__ import annotations
 
 import logging
@@ -268,3 +274,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+PYEOF
+
+echo "Listo: lucy_voice/pipeline_lucy_voice.py actualizado para esconder el 'Thinking...'."

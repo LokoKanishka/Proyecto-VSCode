@@ -1,3 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+echo ">> Regenerando lucy_voice/wakeword_iddkd.py con detector SIMPLE de voz (sin openWakeWord)..."
+
+cat > lucy_voice/wakeword_iddkd.py << 'PYEOF'
 from __future__ import annotations
 
 import logging
@@ -14,8 +23,8 @@ SAMPLE_RATE = 16000
 FRAME_SIZE = 1024            # ~64 ms
 CALIBRATION_SECONDS = 2.0    # tiempo de silencio para medir ruido
 MIN_ABS_THRESHOLD = 1e-4     # umbral mínimo absoluto de energía
-ENERGY_MULTIPLIER = 2.0      # cuántos desvíos estándar por encima del ruido
-HITS_REQUIRED = 4            # frames consecutivos por encima del umbral
+ENERGY_MULTIPLIER = 6.0      # cuántos desvíos estándar por encima del ruido
+HITS_REQUIRED = 8            # frames consecutivos por encima del umbral
 COOLDOWN_SECONDS = 1.5       # tiempo mínimo entre activaciones
 
 
@@ -120,7 +129,7 @@ def _listen_for_voice(threshold: float, logger: logging.Logger) -> None:
 
 def main() -> None:
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format="%(asctime)s | %(levelname)8s | %(name)s:%(lineno)d - %(message)s",
     )
     logger = logging.getLogger("LucyWakeWordSimple")
@@ -160,3 +169,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+PYEOF
+
+echo ">> Listo: wakeword_iddkd.py regenerado con detector simple de voz."

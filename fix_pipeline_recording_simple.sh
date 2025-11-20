@@ -1,3 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+cat > lucy_voice/pipeline_lucy_voice.py << 'PYEOF'
 from __future__ import annotations
 
 import logging
@@ -98,26 +104,6 @@ class LucyVoicePipeline:
 
     # ----------------- LLM (Ollama) -----------------
 
-    def _extract_visible_answer(self, raw: str) -> str:
-        """
-        Extrae solo la parte 'visible' cuando el modelo devuelve
-        trazas tipo 'Thinking...' y '...done thinking.'.
-        """
-        marker = "...done thinking."
-        if marker in raw:
-            visible = raw.split(marker, 1)[1].strip()
-            if visible:
-                return visible
-
-        # Fallbacks por si el modelo usa otros prefijos
-        for token in ["Respuesta:", "Answer:", "Final answer:", "Assistant:"]:
-            if token in raw:
-                tail = raw.split(token, 1)[1].strip()
-                if tail:
-                    return tail
-
-        return raw
-
     def _call_ollama(self, prompt: str) -> str:
         """
         Llama al modelo local de Ollama via CLI (`ollama run`).
@@ -152,9 +138,7 @@ class LucyVoicePipeline:
 
         raw = proc.stdout.decode("utf-8", errors="ignore").strip()
         self.log.debug("[Ollama raw] %r", raw)
-
-        clean = self._extract_visible_answer(raw)
-        return clean
+        return raw
 
     # ----------------- TTS (Mimic3) -----------------
 
@@ -268,3 +252,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+PYEOF
+
+echo "Listo: lucy_voice/pipeline_lucy_voice.py reescrito con grabación fija."
