@@ -1,0 +1,104 @@
+2025-11-21 14:33:53.449 | INFO     | pipecat:<module>:14 - ᓚᘏᗢ Pipecat 0.0.94 (Python 3.12.3 (main, Aug 14 2025, 17:47:21) [GCC 13.3.0]) ᓚᘏᗢ
+/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/.venv-lucy-voz/lib/python3.12/site-packages/webrtcvad.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+2025-11-21 14:33:53.968 | INFO     | lucy_voice.pipeline.pipecat_graph:build_lucy_pipeline:26 - Building Lucy Pipecat Pipeline...
+2025-11-21 14:33:53.968 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking Pipeline#0::Source -> WhisperASRProcessor#0
+2025-11-21 14:33:53.968 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking WhisperASRProcessor#0 -> OllamaLLMProcessor#0
+2025-11-21 14:33:53.968 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking OllamaLLMProcessor#0 -> MimicTTSProcessor#0
+2025-11-21 14:33:53.968 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking MimicTTSProcessor#0 -> AudioOutputNode#0
+2025-11-21 14:33:53.968 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking AudioOutputNode#0 -> Pipeline#0::Sink
+2025-11-21 14:33:53.968 | INFO     | lucy_voice.pipeline.pipecat_graph:build_lucy_pipeline:44 - Pipeline created.
+2025-11-21 14:33:53.968 | ERROR    | pipecat.processors.frame_processor:_check_started:813 - Pipeline#0::Source Trying to process InputAudioRawFrame#0(pts: None, source: None, size: 100, frames: 50, sample_rate: 16000, channels: 1) but StartFrame not received yet
+E2025-11-21 14:33:53.970 | INFO     | lucy_voice.pipeline.pipecat_graph:build_lucy_pipeline:26 - Building Lucy Pipecat Pipeline...
+2025-11-21 14:33:54.745 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking Pipeline#1::Source -> WhisperASRProcessor#1
+2025-11-21 14:33:54.745 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking WhisperASRProcessor#1 -> OllamaLLMProcessor#1
+2025-11-21 14:33:54.745 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking OllamaLLMProcessor#1 -> MimicTTSProcessor#1
+2025-11-21 14:33:54.745 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking MimicTTSProcessor#1 -> AudioOutputNode#1
+2025-11-21 14:33:54.745 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking AudioOutputNode#1 -> Pipeline#1::Sink
+2025-11-21 14:33:54.745 | INFO     | lucy_voice.pipeline.pipecat_graph:build_lucy_pipeline:44 - Pipeline created.
+2025-11-21 14:33:54.746 | ERROR    | pipecat.processors.frame_processor:_check_started:813 - WhisperASRProcessor#1 Trying to process TextFrame#0(pts: None, text: [Hola Lucy]) but StartFrame not received yet
+Executing <Task finished name='Task-7' coro=<TestPipecatIntegration.test_llm_processing() done, defined at /usr/lib/python3.12/unittest/mock.py:1402> exception=AssertionError("expected call not found.\nExpected: generate_response('Hola Lucy')\n  Actual: not called.") created at /usr/lib/python3.12/asyncio/runners.py:100> took 0.776 seconds
+F2025-11-21 14:33:54.747 | INFO     | lucy_voice.pipeline.pipecat_graph:build_lucy_pipeline:26 - Building Lucy Pipecat Pipeline...
+2025-11-21 14:33:55.336 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking Pipeline#2::Source -> WhisperASRProcessor#2
+2025-11-21 14:33:55.336 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking WhisperASRProcessor#2 -> OllamaLLMProcessor#2
+2025-11-21 14:33:55.336 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking OllamaLLMProcessor#2 -> MimicTTSProcessor#2
+2025-11-21 14:33:55.337 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking MimicTTSProcessor#2 -> AudioOutputNode#2
+2025-11-21 14:33:55.337 | DEBUG    | pipecat.processors.frame_processor:link:525 - Linking AudioOutputNode#2 -> Pipeline#2::Sink
+2025-11-21 14:33:55.337 | INFO     | lucy_voice.pipeline.pipecat_graph:build_lucy_pipeline:44 - Pipeline created.
+Executing <Task finished name='Task-12' coro=<TestPipecatIntegration.test_pipeline_construction() done, defined at /home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_voice/tests/test_pipecat_integration.py:10> exception=AssertionError('6 != 4') created at /usr/lib/python3.12/asyncio/runners.py:100> took 0.590 seconds
+F
+======================================================================
+ERROR: test_asr_processing (lucy_voice.tests.test_pipecat_integration.TestPipecatIntegration.test_asr_processing)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/unittest/async_case.py", line 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/async_case.py", line 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/mock.py", line 1407, in patched
+    return await func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_voice/tests/test_pipecat_integration.py", line 65, in test_asr_processing
+    self.assertEqual(len(asr_proc.audio_buffer), 1)
+                         ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PipelineSource' object has no attribute 'audio_buffer'
+
+======================================================================
+FAIL: test_llm_processing (lucy_voice.tests.test_pipecat_integration.TestPipecatIntegration.test_llm_processing)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/unittest/async_case.py", line 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/async_case.py", line 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/mock.py", line 1407, in patched
+    return await func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_voice/tests/test_pipecat_integration.py", line 45, in test_llm_processing
+    mock_llm_instance.generate_response.assert_called_with("Hola Lucy")
+  File "/usr/lib/python3.12/unittest/mock.py", line 935, in assert_called_with
+    raise AssertionError(error_message)
+AssertionError: expected call not found.
+Expected: generate_response('Hola Lucy')
+  Actual: not called.
+
+======================================================================
+FAIL: test_pipeline_construction (lucy_voice.tests.test_pipecat_integration.TestPipecatIntegration.test_pipeline_construction)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/unittest/async_case.py", line 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/async_case.py", line 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_voice/tests/test_pipecat_integration.py", line 17, in test_pipeline_construction
+    self.assertEqual(len(pipeline.processors), 4)
+AssertionError: 6 != 4
+
+----------------------------------------------------------------------
+Ran 3 tests in 1.371s
+
+FAILED (failures=2, errors=1)

@@ -13,16 +13,13 @@ Modo conversación por voz con Lucy (push-to-talk):
 Mientras no toques nada, NO graba.
 """
 
-from lucy_voice.pipeline_lucy_voice import LucyVoicePipeline, LucyPipelineConfig
-
-
+from lucy_voice.config import LucyConfig
+from lucy_voice.pipeline.voice_pipeline import LucyOrchestrator
 
 def main():
-    config = LucyPipelineConfig()
-    pipeline = LucyVoicePipeline(config)
-
-    # Por ahora no usamos el grafo de Pipecat en este modo
-    # pipeline.build_graph()
+    config = LucyConfig()
+    # Use the orchestrator for PTT mode (legacy/simple mode)
+    orchestrator = LucyOrchestrator(config)
 
     print("Lucy voz (modo VOZ).")
     print("Cada turno:")
@@ -41,7 +38,8 @@ def main():
 
             # Si sólo apretaste Enter (comando vacío), grabamos un turno de voz
             print()
-            should_stop = pipeline.run_mic_llm_roundtrip_once(duration_sec=5.0)
+            # Orchestrator roundtrip
+            should_stop = orchestrator.run_turn()
             print()
 
             if should_stop:

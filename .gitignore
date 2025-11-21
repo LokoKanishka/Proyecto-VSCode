@@ -23,6 +23,14 @@ node_modules/
 # Ollama
 ~/.ollama
 .venv-lucy-voz
+
+# Test audio files (no versionar)
 lucy_voice/tests/mic_test_input_from_pipeline.wav
+lucy_voice/tests/lucy_tts_test.wav
+
 # Lucy wakeword data (audios locales, NO subir a git)
 lucy_voice/data/wakeword/
+
+# Backups locales
+backups/
+

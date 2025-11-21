@@ -1,5 +1,5 @@
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
-from pipecat.frames.frames import Frame, InputAudioRawFrame, OutputAudioRawFrame
+from pipecat.frames.frames import Frame, InputAudioRawFrame, OutputAudioRawFrame, StartFrame, EndFrame
 from lucy_voice.pipeline.audio import AudioHandler
 from lucy_voice.config import LucyConfig
 import sounddevice as sd
@@ -12,62 +12,72 @@ class AudioInputNode(FrameProcessor):
         super().__init__()
         self.config = config
         self.log = logging.getLogger("AudioInputNode")
-        self.stream = None
-        self.running = False
+        self._audio_task = None
+        self._running = False
 
-    async def start(self):
-        self.running = True
-        self.stream = sd.InputStream(
-            samplerate=self.config.sample_rate,
-            channels=self.config.channels,
-            dtype=self.config.dtype,
-            blocksize=int(self.config.sample_rate * 0.02), # 20ms chunks
-        )
-        self.stream.start()
+    async def handle_start(self, frame: StartFrame):
+        """Called when StartFrame is received - this is when we start audio capture"""
+        await super().handle_start(frame)
+        
         self.log.info("Audio input started")
+        self._running = True
+        # Start the audio loop
+        self._audio_task = asyncio.create_task(self._audio_loop())
 
-    async def stop(self):
-        self.running = False
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
+    async def handle_end(self, frame: EndFrame):
+        """Called when EndFrame is received - cleanup"""
+        self._running = False
+        if self._audio_task:
+            self._audio_task.cancel()
+            try:
+                await self._audio_task
+            except asyncio.CancelledError:
+                pass
+            self._audio_task = None
+        
+        await super().handle_end(frame)
 
-    async def process_frame(self, frame: Frame, direction: FrameDirection):
-        await super().process_frame(frame, direction)
-
-    async def run_loop(self):
-        """
-        Manual loop to read audio and push frames.
-        """
-        self.log.info("Starting audio loop")
+    async def _audio_loop(self):
+        """Internal loop to read audio and push frames"""
+        self.log.info("Starting audio capture loop")
+        
         with sd.InputStream(
             samplerate=self.config.sample_rate,
             channels=self.config.channels,
             dtype=self.config.dtype,
             blocksize=int(self.config.sample_rate * 0.1) # 100ms
         ) as stream:
-            while self.running:
-                data, overflow = stream.read(stream.blocksize)
-                if overflow:
-                    self.log.warning("Audio overflow")
-                
-                # data is numpy array (frames, channels)
-                # InputAudioRawFrame expects bytes
-                audio_bytes = data.tobytes()
-                frame = InputAudioRawFrame(
-                    audio=audio_bytes, 
-                    sample_rate=self.config.sample_rate, 
-                    num_channels=self.config.channels
-                )
-                await self.push_frame(frame, FrameDirection.DOWNSTREAM)
-                await asyncio.sleep(0.01)
+            while self._running:
+                try:
+                    data, overflow = stream.read(stream.blocksize)
+                    if overflow:
+                        self.log.warning("Audio overflow")
+                    
+                    # data is numpy array (frames, channels)
+                    # InputAudioRawFrame expects bytes
+                    audio_bytes = data.tobytes()
+                    frame = InputAudioRawFrame(
+                        audio=audio_bytes, 
+                        sample_rate=self.config.sample_rate, 
+                        num_channels=self.config.channels
+                    )
+                    await self.push_frame(frame, FrameDirection.DOWNSTREAM)
+                    await asyncio.sleep(0.01)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    self.log.error(f"Error in audio loop: {e}")
+                    break
+
+
 
 class AudioOutputNode(FrameProcessor):
-    def __init__(self, config: LucyConfig):
+    def __init__(self, config: LucyConfig, on_complete=None):
         super().__init__()
         self.config = config
         self.log = logging.getLogger("AudioOutputNode")
         self.audio_handler = AudioHandler(config) # Reuse handler for playback
+        self.on_complete = on_complete
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -85,6 +95,13 @@ class AudioOutputNode(FrameProcessor):
             sd.play(data, self.config.sample_rate)
             sd.wait()
             
+            if self.on_complete:
+                if asyncio.iscoroutinefunction(self.on_complete):
+                    await self.on_complete()
+                else:
+                    self.on_complete()
+            
             await self.push_frame(frame, direction)
         else:
             await self.push_frame(frame, direction)
+

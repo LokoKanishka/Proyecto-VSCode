@@ -10,10 +10,12 @@ except ImportError as e:
     _pipecat_import_error = e
 
 from lucy_voice.config import LucyConfig
+from lucy_voice.pipeline.processors.audio_node import AudioInputNode, AudioOutputNode
+from lucy_voice.pipeline.processors.wakeword_node import WakeWordNode
+from lucy_voice.pipeline.processors.vad_node import VADNode
 from lucy_voice.pipeline.processors.asr_node import WhisperASRProcessor
 from lucy_voice.pipeline.processors.llm_node import OllamaLLMProcessor
 from lucy_voice.pipeline.processors.tts_node import MimicTTSProcessor
-from lucy_voice.pipeline.processors.audio_node import AudioInputNode, AudioOutputNode
 
 def build_lucy_pipeline(config: Optional[LucyConfig] = None) -> "Pipeline":
     if Pipeline is None:
@@ -26,14 +28,27 @@ def build_lucy_pipeline(config: Optional[LucyConfig] = None) -> "Pipeline":
     logger.info("Building Lucy Pipecat Pipeline...")
 
     # Create processors
-    # audio_input = AudioInputNode(config) # We might manage input separately for now
+    # Input
+    audio_input = AudioInputNode(config)
+    
+    # Filtering / Detection
+    wakeword = WakeWordNode(config)
+    vad = VADNode(config)
+    
+    # Processing
     asr = WhisperASRProcessor(config)
     llm = OllamaLLMProcessor(config)
     tts = MimicTTSProcessor(config)
-    audio_output = AudioOutputNode(config)
+    
+    # Output
+    # Wire callback to reset wakeword node after playback
+    audio_output = AudioOutputNode(config, on_complete=wakeword.reset)
+
 
     processors = [
-        # audio_input, # Input is usually the source, handled by runner
+        audio_input,
+        wakeword,
+        vad,
         asr,
         llm,
         tts,
@@ -43,3 +58,4 @@ def build_lucy_pipeline(config: Optional[LucyConfig] = None) -> "Pipeline":
     pipeline = Pipeline(processors)
     logger.info("Pipeline created.")
     return pipeline
+

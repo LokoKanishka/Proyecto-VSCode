@@ -199,7 +199,20 @@ def main():
     
     # Revertimos a 2D para que el LinearClassifier sea válido.
     # Luego usaremos un script para agregar el nodo Flatten.
-    initial_type = [('float_input', FloatTensorType([None, X.shape[1]]))]
+    # OpenWakeWord passes (batch, time, features) -> (1, 1, 96) usually.
+    # But sklearn expects (batch, features).
+    # We need to define input as 3D for ONNX, but convert_sklearn might complain if the model is 2D.
+    # Actually, the error "Got: 3 Expected: 2" means the MODEL expects 2D (because we trained it with 2D data and exported it as such),
+    # but OpenWakeWord is feeding it 3D data.
+    
+    # We need to insert a Flatten node or Reshape node at the beginning of the ONNX graph.
+    # Or, we can define the input as 3D and let skl2onnx handle it? No, LinearClassifier is 2D.
+    
+    # Correct approach: Define input as 3D [None, 1, 96] and add a Reshape to [None, 96].
+    # However, skl2onnx is high level.
+    
+    # Let's try defining input as [None, 1, X.shape[1]] and see if it works.
+    initial_type = [('float_input', FloatTensorType([None, 1, X.shape[1]]))]
     
     # Disable zipmap to get tensor output for probabilities
     options = {id(clf): {'zipmap': False}}

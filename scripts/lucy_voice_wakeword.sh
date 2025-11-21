@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# set -euo pipefail
 
 # === Config básica ===
 # Calcular la raíz del proyecto de forma portable (carpeta padre de scripts/)
@@ -28,4 +28,4 @@ fi
 source "$VENV_DIR/bin/activate"
 
 # 4) Lanzar Lucy voz (wakeword + pipeline de voz)
-python -m lucy_voice.wakeword_iddkd
+python -m lucy_voice.wakeword.listener

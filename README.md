@@ -5,14 +5,14 @@ Sistema de asistente de voz completamente local y open source, con detección de
 ## 🎯 Características
 
 - ✅ **Wake Word Personalizada**: Modelo custom "Hola Lucy" entrenado con OpenWakeWord
-- ✅ **Conversación Continua**: Modo conversacional natural con VAD (Voice Activity Detection)
-- ✅ **Interrupción por Voz**: Posibilidad de interrumpir a Lucy mientras habla
+- ✅ **Conversación Continua**: Modo conversacional natural con VAD (Voice Activity Detection) y Pipecat
 - ✅ **Herramientas del Sistema**: Abrir aplicaciones, URLs, tomar capturas, escribir texto
 - ✅ **100% Local**: Sin servicios cloud, total privacidad
 - ✅ **Voz Neural Femenina**: TTS con Mimic3 (LJ Speech)
 
 ## 🛠️ Stack Tecnológico
 
+- **Pipeline**: Pipecat (Async graph)
 - **ASR**: Faster Whisper (Systran/faster-whisper-small)
 - **LLM**: Ollama (gpt-oss:20b)
 - **TTS**: Mimic3 (en_US/ljspeech_low)
@@ -34,69 +34,57 @@ Sistema de asistente de voz completamente local y open source, con detección de
 git clone https://github.com/LokoKanishka/Proyecto-VSCode.git
 cd Proyecto-VSCode
 
-# Crear entorno virtual
-python -m venv .venv-lucy-voz
-source .venv-lucy-voz/bin/activate
-
-# Instalar dependencias
-pip install -r lucy_voice/requirements.txt
-
-# Descargar voz femenina
-mimic3-download en_US/ljspeech_low
+# Crear entorno virtual e instalar dependencias
+./scripts/install_deps.sh
 ```
 
 ## 🎮 Uso
 
-### Iniciar Lucy
+### Iniciar Lucy (Modo Wake Word)
+
+Este es el modo principal. Lucy escuchará "Hola Lucy" (o "Hey Jarvis" si no hay modelo custom).
 
 ```bash
-./scripts/lucy_voice_wakeword_loop.sh
+./scripts/lucy_voice_wakeword.sh
 ```
 
 ### Flujo de Conversación
 
 1. **Activación**: Di "Hola Lucy"
-2. **Conversación**: Habla normalmente, Lucy responde y sigue escuchando
-3. **Interrupción**: Habla fuerte mientras Lucy habla para interrumpirla
-4. **Desactivación**: Di "chau Lucy", "hasta luego" o espera silencio
-
-### Comandos de Ejemplo
-
-- "Hola Lucy... abrí Firefox"
-- "Hola Lucy... buscá 'clima Buenos Aires' en Google"
-- "Hola Lucy... tomá una captura de pantalla"
-- "Hola Lucy... contame sobre Pink Floyd"
+2. **Conversación**: Habla normalmente. Lucy detectará cuando termines de hablar.
+3. **Herramientas**: Pide "Abrí el navegador" o "Tomá una captura".
+4. **Terminar**: Lucy se queda escuchando hasta que digas "Chau" o pase el tiempo de espera (configurable).
 
 ## 📁 Estructura del Proyecto
 
 ```
 Proyecto-VSCode/
 ├── lucy_voice/
-│   ├── pipeline_lucy_voice.py      # Pipeline principal (ASR + LLM + TTS)
-│   ├── wakeword_listener.py        # Listener de wake word
-│   ├── lucy_tools.py               # Herramientas del sistema
-│   ├── train_wakeword_model.py     # Entrenamiento de modelo custom
-│   ├── record_wakeword_samples.py  # Grabación de muestras positivas
-│   ├── record_wakeword_negatives.py # Grabación de muestras negativas
-│   └── data/wakeword/
-│       └── modelos/
-│           └── hola_lucy.onnx      # Modelo wake word entrenado
+│   ├── pipeline/
+│   │   ├── pipecat_graph.py        # Definición del grafo Pipecat
+│   │   └── processors/             # Nodos del pipeline (ASR, LLM, TTS, VAD, WakeWord)
+│   ├── wakeword/
+│   │   ├── listener.py             # Entrypoint del listener
+│   │   └── train.py                # Entrenamiento de modelo custom
+│   ├── tools/
+│   │   └── lucy_tools.py           # Herramientas del sistema
+│   └── config.py                   # Configuración centralizada
 ├── scripts/
-│   └── lucy_voice_wakeword_loop.sh # Script de inicio
+│   ├── lucy_voice_wakeword.sh      # Script de inicio
+│   └── lucy_voice_ptt.sh           # Modo Push-to-Talk (Legacy)
 └── docs/
-    ├── LUCY-TOOLS-PROTOCOLO.md     # Protocolo de herramientas
-    └── VOCES-TTS.md                # Información sobre voces TTS
+    ├── ARCHITECTURE.md             # Detalles de arquitectura
+    └── USAGE.md                    # Guía de uso detallada
 ```
 
 ## 🔧 Configuración
 
-Editar `lucy_voice/pipeline_lucy_voice.py`:
+Editar `config.yaml` en la raíz del proyecto:
 
-```python
-class LucyPipelineConfig:
-    whisper_model_name: str = "Systran/faster-whisper-small"
-    ollama_model: str = "gpt-oss:20b"
-    tts_voice: str = "en_US/ljspeech_low"  # Cambiar voz aquí
+```yaml
+ollama_model: "gpt-oss:20b"
+wakeword_threshold: 0.15
+sample_rate: 16000
 ```
 
 ## 🎓 Entrenar Wake Word Custom
@@ -105,27 +93,18 @@ Si querés entrenar tu propio modelo:
 
 ```bash
 # 1. Grabar muestras positivas (decir "Hola Lucy" 20+ veces)
-python -m lucy_voice.record_wakeword_samples
+python -m lucy_voice.wakeword.record_positive
 
 # 2. Grabar muestras negativas (hablar sin decir "Hola Lucy")
-python -m lucy_voice.record_wakeword_negatives
+python -m lucy_voice.wakeword.record_negative
 
 # 3. Entrenar modelo
-python -m lucy_voice.train_wakeword_model
+python -m lucy_voice.wakeword.train
 ```
 
 ## 🐛 Troubleshooting
 
-### Lucy no me escucha
-- Verificar que el micrófono esté funcionando
-- Ajustar umbral de VAD en `pipeline_lucy_voice.py`
-
-### Transcripciones incorrectas
-- Considerar usar modelo Whisper más grande (`medium`)
-- Verificar calidad del micrófono
-
-### Interrupción muy sensible/poco sensible
-- Ajustar `energy_threshold` en `_start_interruption_monitor()`
+Ver `docs/USAGE.md` para más detalles.
 
 ## 📝 Licencia
 
@@ -135,9 +114,3 @@ MIT
 
 LokoKanishka
 
-## 🙏 Agradecimientos
-
-- OpenWakeWord
-- Faster Whisper
-- Mimic3
-- Ollama

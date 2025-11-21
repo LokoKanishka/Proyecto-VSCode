@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Lucy
+Comment=Asistente de voz local (Wake Word)
+Exec=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/scripts/launch_lucy.sh
+Icon=audio-input-microphone
+Terminal=true
+Categories=Utility;Audio;AI;
+StartupNotify=true

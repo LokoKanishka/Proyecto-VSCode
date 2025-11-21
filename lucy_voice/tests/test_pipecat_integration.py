@@ -12,8 +12,8 @@ class TestPipecatIntegration(unittest.IsolatedAsyncioTestCase):
         pipeline = build_lucy_pipeline(config)
         self.assertIsNotNone(pipeline)
         # Pipeline adds Source and Sink automatically
-        # Source -> ASR -> LLM -> TTS -> Output -> Sink
-        self.assertEqual(len(pipeline.processors), 6)
+        # Source -> AudioInput -> WakeWord -> VAD -> ASR -> LLM -> TTS -> AudioOutput -> Sink
+        self.assertEqual(len(pipeline.processors), 9)
 
     @patch("pipecat.processors.frame_processor.FrameProcessor.process_frame", new_callable=MagicMock)
     @patch("lucy_voice.pipeline.processors.llm_node.OllamaLLM")
@@ -29,8 +29,8 @@ class TestPipecatIntegration(unittest.IsolatedAsyncioTestCase):
         config = LucyConfig()
         pipeline = build_lucy_pipeline(config)
         
-        # Find LLM processor (Index 2: Source, ASR, LLM)
-        llm_proc = pipeline.processors[2] 
+        # Find LLM processor (Index 5: Source, AudioInput, WakeWord, VAD, ASR, LLM)
+        llm_proc = pipeline.processors[5] 
         
         # Push StartFrame first (now mocked, so maybe not needed, but good practice)
         # await llm_proc.process_frame(StartFrame(), FrameDirection.DOWNSTREAM)
@@ -42,8 +42,8 @@ class TestPipecatIntegration(unittest.IsolatedAsyncioTestCase):
         # FrameProcessor.push_frame calls next_processor.process_frame
         # We can mock the next processor (TTS)
         # Mock next processor (TTS) to verify it receives output
-        # TTS is at index 3
-        # tts_proc = pipeline.processors[3]
+        # TTS is at index 6
+        # tts_proc = pipeline.processors[6]
         # tts_proc.process_frame = MagicMock()
         
         # Run process_frame
@@ -66,10 +66,16 @@ class TestPipecatIntegration(unittest.IsolatedAsyncioTestCase):
 
         config = LucyConfig()
         pipeline = build_lucy_pipeline(config)
-        asr_proc = pipeline.processors[1] # Index 1: Source, ASR
+        asr_proc = pipeline.processors[4] # Index 4: Source, AudioInput, WakeWord, VAD, ASR
+
+
         
         # Push StartFrame
         # await asr_proc.process_frame(StartFrame(), FrameDirection.DOWNSTREAM)
+        
+        # Push UserStartedSpeakingFrame to enable recording
+        from pipecat.frames.frames import UserStartedSpeakingFrame
+        await asr_proc.process_frame(UserStartedSpeakingFrame(), FrameDirection.DOWNSTREAM)
 
         # Push InputAudioRawFrame
         frame = InputAudioRawFrame(audio=b'\x00'*100, sample_rate=16000, num_channels=1)
@@ -78,6 +84,7 @@ class TestPipecatIntegration(unittest.IsolatedAsyncioTestCase):
         # ASR node currently just buffers.
         # Verify buffer grew
         self.assertEqual(len(asr_proc.audio_buffer), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
