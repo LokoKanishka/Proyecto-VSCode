@@ -1,0 +1,28 @@
+# Lucy Voice Configuration
+
+# Whisper ASR
+whisper_model_name: "Systran/faster-whisper-small"
+whisper_device: "cpu"
+whisper_compute_type: "int8"
+
+# Ollama LLM
+ollama_model: "gpt-oss:20b"
+ollama_host: "http://localhost:11434"
+
+# TTS
+tts_voice: "en_US/ljspeech_low"
+
+# Audio / VAD
+sample_rate: 16000
+channels: 1
+dtype: "float32"
+record_seconds_fixed: 4.0
+vad_aggressiveness: 2
+vad_frame_duration_ms: 30
+silence_duration_stop: 1.0
+max_record_seconds: 10.0
+
+# Wake Word
+wakeword_threshold: 0.15
+wakeword_cooldown: 4.0
+# wakeword_model_paths: ["lucy_voice/data/wakeword/modelos/hola_lucy.onnx"]

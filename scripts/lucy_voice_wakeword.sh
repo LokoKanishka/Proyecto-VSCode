@@ -2,7 +2,9 @@
 set -euo pipefail
 
 # === Config básica ===
-PROJECT_DIR="$HOME/Lucy_Workspace/Proyecto-VSCode"
+# Calcular la raíz del proyecto de forma portable (carpeta padre de scripts/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV_DIR="$PROJECT_DIR/.venv-lucy-voz"
 
 echo "[LucyVoice] Iniciando Lucy voz (modo wake word simple)..."

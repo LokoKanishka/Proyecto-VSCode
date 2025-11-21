@@ -19,14 +19,16 @@ from sklearn.metrics import classification_report
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
 
+from lucy_voice.config import LucyConfig
+
 # -----------------------------------------------------------------------------
 # Configuración
 # -----------------------------------------------------------------------------
-BASE_DIR = pathlib.Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data" / "wakeword" / "hola_lucy"
+config = LucyConfig()
+DATA_DIR = config.base_dir / "lucy_voice" / "data" / "wakeword" / "hola_lucy"
 POS_DIR = DATA_DIR / "positive"
 NEG_DIR = DATA_DIR / "negative"
-MODELS_DIR = BASE_DIR / "data" / "wakeword" / "modelos"
+MODELS_DIR = config.base_dir / "lucy_voice" / "data" / "wakeword" / "modelos"
 
 MODEL_NAME = "hola_lucy"
 OUTPUT_ONNX = MODELS_DIR / f"{MODEL_NAME}.onnx"

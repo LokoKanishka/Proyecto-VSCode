@@ -8,13 +8,15 @@ import datetime as dt
 import sounddevice as sd
 import soundfile as sf  # también open-source, liviano
 
-# Parámetros básicos
-SAMPLE_RATE = 16000
-CHANNELS = 1
-DURATION_SEC = 1.5  # duración de cada clip de "hola Lucy"
+from lucy_voice.config import LucyConfig
 
-BASE_DIR = pathlib.Path(__file__).resolve().parent
-POS_DIR = BASE_DIR / "data" / "wakeword" / "hola_lucy" / "positive"
+# Parámetros básicos
+config = LucyConfig()
+SAMPLE_RATE = config.sample_rate
+CHANNELS = config.channels
+DURATION_SEC = 1.5
+
+POS_DIR = config.base_dir / "lucy_voice" / "data" / "wakeword" / "hola_lucy" / "positive"
 
 def record_one_sample(index: int):
     """Graba un clip corto de 'hola Lucy' y lo guarda como WAV."""

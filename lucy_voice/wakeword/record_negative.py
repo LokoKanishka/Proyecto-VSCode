@@ -8,13 +8,15 @@ import datetime as dt
 import sounddevice as sd
 import soundfile as sf  # mismo que usamos en el grabador positivo
 
-# Parámetros básicos
-SAMPLE_RATE = 16000
-CHANNELS = 1
-DURATION_SEC = 1.5  # duración de cada clip negativo
+from lucy_voice.config import LucyConfig
 
-BASE_DIR = pathlib.Path(__file__).resolve().parent
-NEG_DIR = BASE_DIR / "data" / "wakeword" / "hola_lucy" / "negative"
+# Parámetros básicos
+config = LucyConfig()
+SAMPLE_RATE = config.sample_rate
+CHANNELS = config.channels
+DURATION_SEC = 1.5
+
+NEG_DIR = config.base_dir / "lucy_voice" / "data" / "wakeword" / "hola_lucy" / "negative"
 
 def record_one_sample(index: int, label: str = "neg"):
     """Graba un clip corto negativo (ruido, otras palabras) y lo guarda como WAV."""
