@@ -20,7 +20,7 @@ class Mimic3TTS:
 
         try:
             proc = subprocess.run(
-                ["mimic3", "--voice", self.config.tts_voice],
+                ["mimic3", "--voice", self.config.tts_voice, "--stdout"],
                 input=text.encode("utf-8"),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

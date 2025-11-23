@@ -8,6 +8,7 @@ class OllamaLLM:
     def __init__(self, config: LucyConfig):
         self.config = config
         self.log = logging.getLogger("OllamaLLM")
+        self.history = [] # List of (role, content) tuples
 
     def _extract_visible_answer(self, raw: str) -> str:
         marker = "...done thinking."
@@ -36,15 +37,27 @@ class OllamaLLM:
             "Si no usás herramientas, respondé brevemente en español rioplatense."
         )
 
+        # Build context from history
+        context_str = ""
+        for role, content in self.history[-10:]: # Keep last 10 turns
+            if role == "user":
+                context_str += f"Usuario: {content}\n"
+            else:
+                context_str += f"Lucy: {content}\n"
+
         if tool_result:
             full_prompt = (
                 f"{system_prompt}\n"
+                f"{context_str}"
                 f"Resultado de la herramienta: {tool_result}\n"
                 "Explicáselo al usuario brevemente."
             )
+            # Don't add tool result to history as a user message, but maybe as system info?
+            # For simplicity, we treat it as part of the current turn context
         else:
             full_prompt = (
                 f"{system_prompt}\n"
+                f"{context_str}"
                 f"Usuario: {prompt}"
             )
 
@@ -65,7 +78,15 @@ class OllamaLLM:
         raw = proc.stdout.decode("utf-8", errors="ignore").strip()
         self.log.debug("[Ollama raw] %r", raw)
         
-        return self._extract_visible_answer(raw)
+        answer = self._extract_visible_answer(raw)
+        
+        # Update history
+        if not tool_result:
+            self.history.append(("user", prompt))
+        
+        self.history.append(("assistant", answer))
+        
+        return answer
 
     def extract_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
         """

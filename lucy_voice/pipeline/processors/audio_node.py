@@ -116,7 +116,11 @@ class AudioOutputNode(FrameProcessor):
             data = np.frombuffer(frame.audio, dtype=self.config.dtype)
             
             self.log.info(f"Playing audio frame ({len(data)} samples)")
-            sd.play(data, self.config.sample_rate)
+            
+            # Use frame sample rate if available, else config
+            sr = getattr(frame, 'sample_rate', self.config.sample_rate)
+            
+            sd.play(data, sr)
             sd.wait()
             
             if self.on_complete:

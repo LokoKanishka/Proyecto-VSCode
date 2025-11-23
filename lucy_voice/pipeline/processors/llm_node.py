@@ -5,6 +5,8 @@ from lucy_voice.config import LucyConfig
 from lucy_voice.tools.lucy_tools import ToolManager
 import logging
 
+import asyncio
+
 class OllamaLLMProcessor(FrameProcessor):
     def __init__(self, config: LucyConfig):
         super().__init__()
@@ -23,7 +25,8 @@ class OllamaLLMProcessor(FrameProcessor):
             text = frame.text.strip()
             if text:
                 self.log.info(f"Processing text: {text}")
-                response = self.llm.generate_response(text)
+                # Run blocking LLM call in thread
+                response = await asyncio.to_thread(self.llm.generate_response, text)
                 
                 # Check for tools
                 tool_call = self.llm.extract_tool_call(response)
@@ -43,7 +46,7 @@ class OllamaLLMProcessor(FrameProcessor):
                     self.log.info(f"Tool result: {result}")
                     
                     # Feed result back to LLM
-                    final_response = self.llm.generate_response(text, tool_result=result)
+                    final_response = await asyncio.to_thread(self.llm.generate_response, text, tool_result=result)
                     self.log.info(f"LLM Final Response: {final_response}")
                     
                     await self.push_frame(TextFrame(final_response), direction)
