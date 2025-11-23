@@ -12,17 +12,40 @@ class AudioInputNode(FrameProcessor):
         super().__init__()
         self.config = config
         self.log = logging.getLogger("AudioInputNode")
+        self.log.info("AudioInputNode initialized (v2)")
         self._audio_task = None
         self._running = False
 
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        # Log ANY frame received
+        self.log.info(f"AudioInputNode received frame: {type(frame)} from {direction}")
+        
+        # Let base class handle state and propagation first
+        await super().process_frame(frame, direction)
+        
+        # We must push the StartFrame downstream so other nodes receive it!
+        await self.push_frame(frame, direction)
+        
+        if isinstance(frame, StartFrame):
+            self.log.info("Manual StartFrame detection triggered")
+            await self.handle_start(frame)
+
     async def handle_start(self, frame: StartFrame):
         """Called when StartFrame is received - this is when we start audio capture"""
-        await super().handle_start(frame)
+        self.log.info(f"AudioInputNode received StartFrame: {frame}")
+        # await super().handle_start(frame) # FrameProcessor does not have handle_start
         
         self.log.info("Audio input started")
         self._running = True
+        
+        # Give StartFrame a moment to propagate to downstream nodes
+        await asyncio.sleep(0.2)
+        
         # Start the audio loop
         self._audio_task = asyncio.create_task(self._audio_loop())
+        
+        # StartFrame is already pushed by super().process_frame in process_frame
+        # await self.push_frame(frame, FrameDirection.DOWNSTREAM)
 
     async def handle_end(self, frame: EndFrame):
         """Called when EndFrame is received - cleanup"""
@@ -49,7 +72,8 @@ class AudioInputNode(FrameProcessor):
         ) as stream:
             while self._running:
                 try:
-                    data, overflow = stream.read(stream.blocksize)
+                    # Run blocking read in a separate thread
+                    data, overflow = await asyncio.to_thread(stream.read, stream.blocksize)
                     if overflow:
                         self.log.warning("Audio overflow")
                     

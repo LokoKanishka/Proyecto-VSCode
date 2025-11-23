@@ -63,33 +63,14 @@ def extract_features(wav_files, ow_model, label, n_chunks_per_clip=16):
         try:
             data, sr = sf.read(wav_path)
             if sr != 16000:
-                # Resamplear si fuera necesario (simple skip)
-                # Pero asumimos que grabamos a 16k.
                 pass
             
-            # Convertir a int16 para openwakeword
-            # data está en float32 [-1, 1] -> int16
             data_int16 = (data * 32767).astype(np.int16)
             if len(data.shape) > 1:
                 data_int16 = data_int16[:, 0] # mono
             
-            # Alimentar al modelo chunk a chunk
-            # openwakeword mantiene estado interno, así que reseteamos antes de cada clip
             ow_model.reset()
             
-            # El modelo procesa chunks de 1280
-            # Vamos a alimentar todo el clip y recolectar embeddings
-            # Pero openwakeword.predict() devuelve predicciones, no embeddings directamente
-            # A MENOS que usemos un modelo de embeddings.
-            # La clase Model() carga por defecto modelos de wakeword.
-            # Para obtener embeddings, usamos el modelo interno melspectrogram + embedding.
-            
-            # TRUCO: Model() tiene un método predict() que devuelve scores.
-            # Pero también expone .get_embeddings() si se configuró o si accedemos al grafo.
-            # La forma oficial de entrenar custom models en openwakeword es usar 
-            # los embeddings generados por el modelo base.
-            
-            # Vamos a simular el streaming:
             chunk_size = 1280
             num_chunks = len(data_int16) // chunk_size
             
@@ -97,48 +78,39 @@ def extract_features(wav_files, ow_model, label, n_chunks_per_clip=16):
             
             for i in range(num_chunks):
                 chunk = data_int16[i*chunk_size : (i+1)*chunk_size]
-                # predict() actualiza el estado interno y calcula embeddings
                 ow_model.predict(chunk)
                 
-                # Ahora extraemos el embedding del último chunk procesado
-                # Model.preprocessor_model devuelve melspec
-                # Model.models['embedding_model'] (si existe) devuelve embeddings?
-                # En la versión actual de openwakeword, hay una forma más directa?
-                
-                # Según la doc de openwakeword training:
-                # Se usa el modelo 'embedding_model.onnx' (o similar).
-                # Pero la clase Model() ya lo carga internamente para sus predicciones.
-                # Accedemos a los embeddings de la última inferencia:
-                # ow_model.get_embeddings() -> devuelve dict con embeddings de cada modelo cargado?
-                # No, devuelve los embeddings del modelo base compartido.
-                
-                # Revisando código fuente de openwakeword (simulado):
-                # ow_model.get_embeddings() devuelve un array (1, 96) aprox.
-                
+                # Get embedding for this chunk (1, 96)
+                # We flatten it to (96,)
                 emb = ow_model.preprocessor.get_features()
                 clip_embeddings.append(emb.flatten())
             
-            # Ahora tenemos N embeddings para este clip.
-            # ¿Cómo etiquetamos? 
-            # Para muestras POSITIVAS, los embeddings cercanos al final del clip (donde se dice "Lucy")
-            # deberían ser positivos. 
-            # Para simplificar, tomamos TODOS como positivos si es clip positivo?
-            # NO. Solo los que corresponden a la palabra clave.
-            # Pero no tenemos alineación precisa.
-            # ESTRATEGIA SIMPLE (Weakly Supervised):
-            # - Positivos: Tomamos los embeddings del último 50% del clip (asumiendo que "Hola Lucy" está ahí).
-            # - Negativos: Tomamos todos los embeddings.
+            # Now we need to create windows of 16 embeddings
+            # openwakeword default models use a window of 16 frames (1.28s)
+            # So our custom model input must be (16, 96) flattened -> 1536
             
-            if label == 1:
-                # Tomar últimos N chunks (ej. 1 segundo = ~12 chunks)
-                # "Hola Lucy" dura ~1 seg.
-                start_idx = max(0, len(clip_embeddings) - 16) 
-                selected = clip_embeddings[start_idx:]
-            else:
-                selected = clip_embeddings
-            
-            for vec in selected:
-                features.append(vec)
+            window_size = 16
+            if len(clip_embeddings) < window_size:
+                continue
+                
+            # Sliding window
+            for i in range(len(clip_embeddings) - window_size + 1):
+                window = clip_embeddings[i : i + window_size]
+                # Concatenate all 16 embeddings -> (1536,)
+                feature_vector = np.concatenate(window)
+                
+                # Labeling strategy:
+                # If positive file, only windows near the end are positive?
+                # Or all windows?
+                # Simple approach: 
+                # If label=1, assume the wake word is present in the clip.
+                # But where? Usually these clips are short and contain the word.
+                # Let's assume the word is centered or towards the end.
+                # We'll take all windows for now, but maybe weight the end ones higher?
+                # For simplicity: All windows from positive clips are positive.
+                # (This might introduce noise if there's silence at start)
+                
+                features.append(feature_vector)
                 labels.append(label)
                 
         except Exception as e:
@@ -197,40 +169,68 @@ def main():
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     log.info(f"Exportando modelo a {OUTPUT_ONNX}...")
     
-    # Revertimos a 2D para que el LinearClassifier sea válido.
-    # Luego usaremos un script para agregar el nodo Flatten.
-    # OpenWakeWord passes (batch, time, features) -> (1, 1, 96) usually.
-    # But sklearn expects (batch, features).
-    # We need to define input as 3D for ONNX, but convert_sklearn might complain if the model is 2D.
-    # Actually, the error "Got: 3 Expected: 2" means the MODEL expects 2D (because we trained it with 2D data and exported it as such),
-    # but OpenWakeWord is feeding it 3D data.
-    
-    # We need to insert a Flatten node or Reshape node at the beginning of the ONNX graph.
-    # Or, we can define the input as 3D and let skl2onnx handle it? No, LinearClassifier is 2D.
-    
-    # Correct approach: Define input as 3D [None, 1, 96] and add a Reshape to [None, 96].
-    # However, skl2onnx is high level.
-    
-    # Let's try defining input as [None, 1, X.shape[1]] and see if it works.
-    initial_type = [('float_input', FloatTensorType([None, 1, X.shape[1]]))]
+    # Define input as 2D initially for sklearn compatibility
+    initial_type = [('float_input', FloatTensorType([None, X.shape[1]]))]
     
     # Disable zipmap to get tensor output for probabilities
     options = {id(clf): {'zipmap': False}}
     onnx_model = convert_sklearn(clf, initial_types=initial_type, options=options)
     
-    # Post-process: Keep only the probability output and ensure it's the first one
-    # The outputs are usually [label, probabilities]. We want [probabilities].
-    # We can just remove the first output from the graph.
+    # Post-process: Keep only the probability output
     if len(onnx_model.graph.output) > 1:
-        # Remove output_label
         onnx_model.graph.output.remove(onnx_model.graph.output[0])
         
-    # Rename the remaining output to something standard if needed, but openwakeword just takes the first one.
+    # -------------------------------------------------------------------------
+    # CRITICAL FIX: Patch the ONNX model to accept 3D input (Batch, Time, Features)
+    # openwakeword feeds (1, 16, 96) but our model expects (1, 1536).
+    # We need to insert a Flatten node.
+    # -------------------------------------------------------------------------
+    import onnx
+    from onnx import helper, TensorProto
     
+    # 1. Change input shape to 3D [None, 16, 96]
+    # We assume X.shape[1] is 1536, which is 16 * 96.
+    n_frames = 16
+    n_features = 96
+    
+    input_tensor = onnx_model.graph.input[0]
+    input_tensor.type.tensor_type.shape.dim[0].dim_param = 'batch'
+    input_tensor.type.tensor_type.shape.dim[1].dim_value = n_frames # 16
+    # Add 3rd dimension
+    dim3 = input_tensor.type.tensor_type.shape.dim.add()
+    dim3.dim_value = n_features # 96
+    
+    # 2. Create a Flatten node
+    # Input: 'float_input' (now 3D)
+    # Output: 'flattened_input' (2D)
+    flatten_node = helper.make_node(
+        'Flatten',
+        inputs=['float_input'],
+        outputs=['flattened_input'],
+        axis=1,
+        name='Flatten_Input'
+    )
+    
+    # 3. Insert the node at the beginning
+    onnx_model.graph.node.insert(0, flatten_node)
+    
+    # 4. Rewire the original first node to use 'flattened_input'
+    # The original first node (usually LinearClassifier or similar) used 'float_input'.
+    # We need to find it and change its input.
+    # Note: sklearn-onnx might produce a Scaler or ZipMap first.
+    # We just look for any node consuming 'float_input' (except our new Flatten node)
+    for node in onnx_model.graph.node:
+        if node.name == 'Flatten_Input':
+            continue
+        for i, input_name in enumerate(node.input):
+            if input_name == 'float_input':
+                node.input[i] = 'flattened_input'
+                
+    # Save
     with open(OUTPUT_ONNX, "wb") as f:
         f.write(onnx_model.SerializeToString())
         
-    log.info("¡Modelo guardado exitosamente!")
+    log.info("¡Modelo guardado y parcheado exitosamente!")
     log.info("Ahora podés probarlo con el listener.")
 
 if __name__ == "__main__":

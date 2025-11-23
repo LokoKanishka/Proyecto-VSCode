@@ -9,7 +9,7 @@ from pipecat.pipeline.task import PipelineTask
 
 def setup_logging():
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format="%(asctime)s | %(levelname)8s | %(name)s:%(lineno)d - %(message)s",
     )
 

@@ -33,18 +33,25 @@ class VADNode(FrameProcessor):
             return
 
         if isinstance(frame, InputAudioRawFrame):
-            # Accumulate buffer
-            self.buffer += frame.audio
-            
-            # Process chunks of 30ms
-            chunk_bytes = self.frame_size * 2 # 16-bit
-            
+            # El audio viene como float32 [-1, 1] desde AudioInputNode
+            audio_f32 = np.frombuffer(frame.audio, dtype=np.float32)
+
+            # webrtcvad espera int16 a 16 kHz
+            audio_i16 = np.clip(audio_f32 * 32767.0, -32768, 32767).astype(np.int16)
+            audio_bytes = audio_i16.tobytes()
+
+            # Acumulamos en el buffer pero ya en formato int16
+            self.buffer += audio_bytes
+
+            # Procesamos chunks de 30 ms (16-bit)
+            chunk_bytes = self.frame_size * 2  # 16-bit
+
             while len(self.buffer) >= chunk_bytes:
                 chunk = self.buffer[:chunk_bytes]
                 self.buffer = self.buffer[chunk_bytes:]
-                
+
                 is_speech = self.vad.is_speech(chunk, self.sample_rate)
-                
+
                 if is_speech:
                     self.speech_frames += 1
                     self.silence_frames = 0
@@ -59,12 +66,8 @@ class VADNode(FrameProcessor):
                         self.is_speaking = False
                         self.log.info("VAD: User stopped speaking")
                         await self.push_frame(UserStoppedSpeakingFrame(), direction)
-            
-            # Always pass audio through?
-            # Or only when speaking?
-            # Usually VAD passes all audio so ASR can have context, 
-            # but marks start/stop.
-            # ASR node will buffer and use the marks.
+
+            # Siempre pasamos el frame hacia abajo
             await self.push_frame(frame, direction)
             
         else:

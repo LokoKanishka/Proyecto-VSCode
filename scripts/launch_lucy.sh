@@ -4,8 +4,12 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR/.."
 
+# Debug logging
+LOG_FILE="/tmp/lucy_launch.log"
+echo "$(date): Launching Lucy..." > "$LOG_FILE"
+
 # Run the main script
-"$SCRIPT_DIR/lucy_voice_wakeword.sh"
+"$SCRIPT_DIR/lucy_voice_wakeword.sh" 2>&1 | tee -a "$LOG_FILE"
 
 # Capture exit code
 EXIT_CODE=$?

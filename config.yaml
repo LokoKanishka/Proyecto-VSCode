@@ -10,7 +10,7 @@ ollama_model: "gpt-oss:20b"
 ollama_host: "http://localhost:11434"
 
 # TTS
-tts_voice: "en_US/ljspeech_low"
+tts_voice: "es_ES/carlfm_low"
 
 # Audio / VAD
 sample_rate: 16000
@@ -23,6 +23,7 @@ silence_duration_stop: 1.0
 max_record_seconds: 10.0
 
 # Wake Word
-wakeword_threshold: 0.15
+wakeword_threshold: 0.05
 wakeword_cooldown: 4.0
-# wakeword_model_paths: ["lucy_voice/data/wakeword/modelos/hola_lucy.onnx"]
+# wakeword_model_paths: ["lucy_voice/data/wakeword/modelos/hola_lucy.onnx"]  # Custom model (disabled due to false positives)
+wakeword_model_paths: [] # Empty list uses defaults (alexa, hey_jarvis, etc)

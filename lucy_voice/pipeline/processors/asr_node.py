@@ -23,9 +23,7 @@ class WhisperASRProcessor(FrameProcessor):
         if isinstance(frame, UserStartedSpeakingFrame):
             self.log.info("ASR: Start recording")
             self.is_recording = True
-            self.audio_buffer = [] # Clear buffer or keep context?
-            # Ideally we keep a bit of context if VAD was late.
-            # But for now, clear.
+            self.audio_buffer = []
             await self.push_frame(frame, direction)
             
         elif isinstance(frame, UserStoppedSpeakingFrame):
@@ -33,46 +31,44 @@ class WhisperASRProcessor(FrameProcessor):
             self.is_recording = False
             
             if self.audio_buffer:
-                # Transcribe
+                # Concatenar todo el audio grabado (float32, 16 kHz)
                 audio_np = np.concatenate(self.audio_buffer)
-                self.audio_buffer = []
                 
-                # Run in executor to avoid blocking async loop?
-                # Whisper is CPU intensive.
-                # For now, blocking call (fast-whisper is fastish).
-                text = self.asr.transcribe(audio_np)
-                if text and text.strip():
-                    self.log.info(f"ASR Recognized: {text}")
-                    await self.push_frame(TextFrame(text), direction)
+                # El wrapper puede devolver:
+                #  - sólo texto (str)
+                #  - o (texto, idioma)
+                result = self.asr.transcribe(audio_np)
+                
+                lang = None
+                if isinstance(result, tuple):
+                    text, lang = result
                 else:
-                    self.log.info("ASR: No text recognized or empty.")
+                    text = result
+                
+                if isinstance(text, str) and text.strip():
+                    clean = text.strip()
+                    self.log.info("ASR final text: %r (lang=%r)", clean, lang)
+                    # Enviamos texto al LLM
+                    await self.push_frame(TextFrame(clean), direction)
+                else:
+                    self.log.info("ASR: Empty transcription (text=%r, lang=%r)", text, lang)
+                
+                # Limpiamos buffer después de transcribir
+                self.audio_buffer = []
+            else:
+                self.log.info("ASR: No audio to transcribe")
             
+            # También dejamos pasar el frame de StopSpeaking
             await self.push_frame(frame, direction)
 
         elif isinstance(frame, InputAudioRawFrame):
-            # Always buffer if we are recording?
-            # Or buffer always and trim?
-            # VADNode passes all audio.
-            # If we only buffer when is_recording, we might miss the start.
-            # But VADNode emits Start AFTER it detected speech (so it's already late).
-            # So VADNode should probably have buffered the start?
-            # My VADNode implementation passes audio as it comes.
-            # So ASR sees audio BEFORE StartFrame.
-            
-            # Strategy: Buffer always, but keep ring buffer?
-            # Or: Just buffer when is_recording is True?
-            # If VADNode is "Aggressive", it might be fine.
-            # But usually we want pre-roll.
-            
-            # Let's assume VADNode is good enough or we accept slight cut.
-            # To fix pre-roll, VADNode should have emitted the buffered audio AFTER StartFrame?
-            # In my VADNode, I didn't do that. I just pushed frames.
-            
-            # Let's just buffer if is_recording for now.
+            # Bufferear solo mientras se está grabando
             if self.is_recording:
                 audio_np = np.frombuffer(frame.audio, dtype=np.float32)
-                self.audio_buffer.append(audio_np)
+                if audio_np.size > 0:
+                    self.audio_buffer.append(audio_np)
             
+            # Siempre dejamos pasar el audio hacia abajo en la pipeline
             await self.push_frame(frame, direction)
             
         else:
