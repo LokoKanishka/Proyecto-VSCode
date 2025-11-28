@@ -357,33 +357,33 @@ class LucyVoicePipeline:
         )
         print(f"[LucyVoicePipeline] Texto reconocido (usuario): {user_text!r}")
 
-# === Apagado por voz: normalizar texto y detectar comandos tipo "Lucy desactivate" ===
-recognized_text = user_text
-norm = recognized_text.lower()
+        # === Apagado por voz: normalizar texto y detectar comandos tipo "Lucy desactivate" ===
+        recognized_text = user_text
+        norm = recognized_text.lower()
 
-# Quitar signos básicos que pueden molestar en la coincidencia
-for ch in [".", ",", "¿", "?", "¡", "!", ":", ";"]:
-    norm = norm.replace(ch, " ")
+        # Quitar signos básicos que pueden molestar en la coincidencia
+        for ch in [".", ",", "¿", "?", "¡", "!", ":", ";"]:
+            norm = norm.replace(ch, " ")
 
-# Colapsar espacios
-norm = " ".join(norm.split())
+        # Colapsar espacios
+        norm = " ".join(norm.split())
 
-shutdown_patterns = [
-    "lucy desactivate",
-    "lucy desactivat",      # por si corta raro
-    "lucy desactiva te",
-    "lucy desactiva",
-    "desactiva lucy",
-    "desactivate lucy",
-]
+        shutdown_patterns = [
+            "lucy desactivate",
+            "lucy desactivat",      # por si corta raro
+            "lucy desactiva te",
+            "lucy desactiva",
+            "desactiva lucy",
+            "desactivate lucy",
+        ]
 
-if any(pat in norm for pat in shutdown_patterns):
-    visible_answer = "Desactivándome ahora. Hasta luego."
-    print(f"[LucyVoicePipeline] Lucy: {visible_answer}")
-  self._speak_with_tts(visible_answer)
-    # Devolver True para que el que llama (incluido el wake word) sepa que debe cortar
-    return True
-# === fin bloque apagado por voz ===
+        if any(pat in norm for pat in shutdown_patterns):
+            visible_answer = "Desactivándome ahora. Hasta luego."
+            print(f"[LucyVoicePipeline] Lucy: {visible_answer}")
+            self._speak_with_tts(visible_answer)
+            # Devolver True para que el que llama (incluido el wake word) sepa que debe cortar
+            return True
+        # === fin bloque apagado por voz ===
 
 
         # 2b) LLM: pasar ese texto por el modelo local en Ollama
@@ -450,6 +450,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 
 

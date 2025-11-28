@@ -6,7 +6,10 @@ Thumbs.db
 .vscode/
 
 # Python
+.venv*/
+venv*/
 __pycache__/
+*.py[cod]
 
 # Node
 node_modules/
@@ -14,6 +17,10 @@ node_modules/
 # Cachés
 *.log
 *.tmp
+
+# Archivos de audio y zips grandes de prueba
+*.wav
+*.zip
 
 # Modelos, pesos y archivos grandes (NO versionar nunca)
 *.bin
@@ -33,4 +40,3 @@ lucy_voice/data/wakeword/
 
 # Backups locales
 backups/
-
