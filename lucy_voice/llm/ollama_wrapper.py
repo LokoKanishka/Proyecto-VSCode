@@ -104,5 +104,24 @@ class OllamaLLM:
                     return data
         except Exception as e:
             self.log.warning(f"Error procesando posible tool: {e}")
-            
+        
         return None
+
+    def warmup(self) -> None:
+        """
+        Carga el modelo en Ollama con un prompt corto para reducir la latencia
+        del primer turno. No altera el historial ni devuelve frames.
+        """
+        try:
+            subprocess.run(
+                ["ollama", "run", self.config.ollama_model],
+                input=b"ping",
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+            self.log.info("Ollama warm-up completed.")
+        except FileNotFoundError:
+            self.log.warning("Ollama warm-up skipped: binary not found.")
+        except subprocess.CalledProcessError as exc:
+            self.log.warning("Ollama warm-up failed: %s", exc)

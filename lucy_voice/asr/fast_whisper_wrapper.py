@@ -28,10 +28,16 @@ class WhisperASR:
         """
         audio_f32 = audio.astype("float32")
 
+        # Lucy Voz: forzamos language="es" para mejorar estabilidad en entorno hispanohablante.
+        language = self.config.whisper_language if self.config.whisper_force_language else None
+        task = self.config.whisper_task or "transcribe"
+
         segments, info = self.model.transcribe(
             audio_f32,
             beam_size=1,
             vad_filter=False,
+            language=language,
+            task=task,
         )
 
         text_chunks = []

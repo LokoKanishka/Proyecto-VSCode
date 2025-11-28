@@ -10,20 +10,29 @@ class VADNode(FrameProcessor):
         super().__init__()
         self.config = config
         self.log = logging.getLogger("VADNode")
-        self.vad = webrtcvad.Vad(3) # Mode 3: Aggressive
+        self.vad = webrtcvad.Vad(self.config.vad_aggressiveness)
         
         self.sample_rate = config.sample_rate
-        self.frame_duration_ms = 30 # webrtcvad supports 10, 20, 30
+        self.frame_duration_ms = config.vad_frame_duration_ms or 30 # webrtcvad supports 10, 20, 30
         self.frame_size = int(self.sample_rate * self.frame_duration_ms / 1000)
         
         self.buffer = b""
         self.is_speaking = False
         self.silence_frames = 0
         self.speech_frames = 0
+        self.utterance_frames = 0
         
-        # Parameters
-        self.min_speech_frames = 5 # ~150ms
-        self.min_silence_frames = 20 # ~600ms (Wait for 0.6s silence to stop)
+        # Parameters (derived so they remain configurable in YAML)
+        self.min_speech_frames = max(1, int(self.config.vad_min_speech_ms / self.frame_duration_ms)) # ~300ms
+        self.min_silence_frames = max(1, int(self.config.vad_silence_duration_ms / self.frame_duration_ms)) # ~0.9s
+        self.min_utterance_frames = max(
+            self.min_speech_frames,
+            int(self.config.vad_min_utterance_ms / self.frame_duration_ms),
+        ) # ~1.7-1.8s of total window before allowing stop
+        self.max_utterance_frames = max(
+            self.min_utterance_frames,
+            int((self.config.max_record_seconds * 1000) / self.frame_duration_ms),
+        )
         
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -55,17 +64,41 @@ class VADNode(FrameProcessor):
                 if is_speech:
                     self.speech_frames += 1
                     self.silence_frames = 0
+                    if self.is_speaking:
+                        self.utterance_frames += 1
                     if self.speech_frames >= self.min_speech_frames and not self.is_speaking:
                         self.is_speaking = True
+                        self.utterance_frames = self.speech_frames
                         self.log.info("VAD: User started speaking")
                         await self.push_frame(UserStartedSpeakingFrame(), direction)
                 else:
                     self.silence_frames += 1
                     self.speech_frames = 0
-                    if self.silence_frames >= self.min_silence_frames and self.is_speaking:
-                        self.is_speaking = False
-                        self.log.info("VAD: User stopped speaking")
-                        await self.push_frame(UserStoppedSpeakingFrame(), direction)
+                    if self.is_speaking:
+                        self.utterance_frames += 1
+
+                        if self.utterance_frames >= self.max_utterance_frames:
+                            self.log.info("VAD: Max utterance reached, forcing stop.")
+                            self.is_speaking = False
+                            self.silence_frames = 0
+                            self.speech_frames = 0
+                            self.utterance_frames = 0
+                            await self.push_frame(UserStoppedSpeakingFrame(), direction)
+                            continue
+
+                        if self.silence_frames >= self.min_silence_frames:
+                            if self.utterance_frames < self.min_utterance_frames:
+                                self.log.info(
+                                    "VAD: Ignoring short utterance (%.2fs) and waiting...",
+                                    (self.utterance_frames * self.frame_duration_ms) / 1000.0,
+                                )
+                                continue
+
+                            self.is_speaking = False
+                            self.log.info("VAD: User stopped speaking")
+                            await self.push_frame(UserStoppedSpeakingFrame(), direction)
+                            self.utterance_frames = 0
+                            self.silence_frames = 0
 
             # Siempre pasamos el frame hacia abajo
             await self.push_frame(frame, direction)

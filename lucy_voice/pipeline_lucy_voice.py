@@ -25,7 +25,7 @@ import wave
 
 import sounddevice as sd
 from faster_whisper import WhisperModel
-from lucy_voice.pipecat_graph_stub import build_lucy_pipeline
+from lucy_voice.pipeline.pipecat_graph import build_lucy_pipeline
 
 
 
@@ -450,5 +450,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 

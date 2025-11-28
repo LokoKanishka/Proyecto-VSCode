@@ -15,13 +15,16 @@ class LucyConfig:
     whisper_model_name: str = "Systran/faster-whisper-small"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
+    whisper_language: str = "es"
+    whisper_task: str = "transcribe"
+    whisper_force_language: bool = True
     
     # Ollama
     ollama_model: str = "gpt-oss:20b"
     ollama_host: str = "http://localhost:11434"
     
     # TTS
-    tts_voice: str = "en_US/ljspeech_low"
+    tts_voice: str = "es_ES/m-ailabs_low"
     
     # Audio / VAD
     sample_rate: int = 16000
@@ -30,6 +33,9 @@ class LucyConfig:
     record_seconds_fixed: float = 4.0
     vad_aggressiveness: int = 2
     vad_frame_duration_ms: int = 30
+    vad_min_speech_ms: int = 300
+    vad_silence_duration_ms: int = 900
+    vad_min_utterance_ms: int = 1700
     silence_duration_stop: float = 1.0
     max_record_seconds: float = 10.0
     

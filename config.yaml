@@ -4,6 +4,9 @@
 whisper_model_name: "Systran/faster-whisper-small"
 whisper_device: "cpu"
 whisper_compute_type: "int8"
+whisper_language: "es"
+whisper_task: "transcribe"
+whisper_force_language: true
 
 # Ollama LLM
 ollama_model: "gpt-oss:20b"
@@ -19,6 +22,9 @@ dtype: "float32"
 record_seconds_fixed: 4.0
 vad_aggressiveness: 2
 vad_frame_duration_ms: 30
+vad_min_speech_ms: 300
+vad_silence_duration_ms: 900
+vad_min_utterance_ms: 1800
 silence_duration_stop: 1.0
 max_record_seconds: 10.0
 

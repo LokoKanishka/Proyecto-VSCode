@@ -18,7 +18,7 @@ class AudioInputNode(FrameProcessor):
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         # Log ANY frame received
-        self.log.info(f"AudioInputNode received frame: {type(frame)} from {direction}")
+        self.log.debug(f"AudioInputNode received frame: {type(frame)} from {direction}")
         
         # Let base class handle state and propagation first
         await super().process_frame(frame, direction)
@@ -132,4 +132,3 @@ class AudioOutputNode(FrameProcessor):
             await self.push_frame(frame, direction)
         else:
             await self.push_frame(frame, direction)
-
