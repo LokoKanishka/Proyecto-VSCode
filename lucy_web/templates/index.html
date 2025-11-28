@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lucy Voice - Chat Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Left Sidebar -->
+        <aside class="sidebar-left">
+            <div class="sidebar-header">
+                <h2>💜 Lucy Voice</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <button class="nav-button active">
+                    <span class="icon">💬</span>
+                    Chat
+                </button>
+                <button class="nav-button">
+                    <span class="icon">🎤</span>
+                    Voice Mode
+                </button>
+                <button class="nav-button">
+                    <span class="icon">📝</span>
+                    History
+                </button>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="model-info">
+                    <span class="label">Model:</span>
+                    <span id="current-model" class="value">Loading...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <div class="chat-header">
+                <h1>Chat with a Large Language Model</h1>
+                <div class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span id="status-text">Ready</span>
+                </div>
+            </div>
+
+            <div id="chat-messages" class="chat-messages">
+                <div class="welcome-message">
+                    <h2>Bienvenido a Lucy Voice</h2>
+                    <ul>
+                        <li>Escribí mensajes y obtené respuestas inteligentes</li>
+                        <li>Usá el micrófono para conversaciones por voz</li>
+                        <li>Cambiá modelos y configuraciones en el panel derecho</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="user-input" 
+                        placeholder="Escribe un mensaje..."
+                        rows="1"
+                    ></textarea>
+                    <div class="input-actions">
+                        <button id="voice-btn" class="icon-button" title="Grabar voz">
+                            <span>🎤</span>
+                        </button>
+                        <button id="send-btn" class="send-button">
+                            Enviar
+                        </button>
+                    </div>
+                </div>
+                <div class="input-hint">
+                    Presioná Enter para enviar, Shift+Enter para nueva línea
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar (Settings) -->
+        <aside class="sidebar-right">
+            <div class="settings-header">
+                <h3>Settings</h3>
+            </div>
+            
+            <div class="settings-section">
+                <h4>Model</h4>
+                <select id="model-selector" class="model-dropdown">
+                    <option>Loading models...</option>
+                </select>
+            </div>
+
+            <div class="settings-section">
+                <h4>Voice Controls</h4>
+                <div class="toggle-group">
+                    <label class="toggle-item">
+                        <input type="checkbox" id="wake-word-toggle">
+                        <span>Wake Word Mode</span>
+                    </label>
+                    <label class="toggle-item">
+                        <input type="checkbox" id="auto-speak-toggle" checked>
+                        <span>Auto Speak Responses</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h4>Conversation Mode</h4>
+                <div class="button-group">
+                    <button class="mode-button active">Text</button>
+                    <button class="mode-button">Voice</button>
+                    <button class="mode-button">Both</button>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h4>Tools</h4>
+                <div class="tool-list">
+                    <div class="tool-item">
+                        <span>🔍 Search Internet</span>
+                        <input type="checkbox">
+                    </div>
+                    <div class="tool-item">
+                        <span>📁 Open Files</span>
+                        <input type="checkbox">
+                    </div>
+                    <div class="tool-item">
+                        <span>⚙️ System Control</span>
+                        <input type="checkbox">
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/websocket.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/voice.js') }}"></script>
+</body>
+</html>

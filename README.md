@@ -1,5 +1,7 @@
 # Lucy Voice - Asistente de Voz Local
 
+> **Última actualización**: 2025-11-28 15:55:59 (UTC-3)
+
 Sistema de asistente de voz completamente local y open source, con detección de wake word personalizada, conversación continua y capacidad de ejecutar herramientas del sistema.
 
 ## 🎯 Características

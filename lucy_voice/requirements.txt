@@ -25,3 +25,8 @@ sounddevice
 soundfile
 numpy
 webrtcvad
+
+# Web UI dependencies
+flask
+flask-socketio
+python-socketio
