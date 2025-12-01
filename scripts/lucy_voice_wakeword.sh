@@ -1,3 +1,5 @@
+# LEGACY: script de Lucy voz original (wakeword/PTT). No se usa por defecto.
+
 #!/usr/bin/env bash
 # set -euo pipefail
 
