@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Lucy
-Comment=Asistente de voz local (Wake Word)
-Exec=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/scripts/launch_lucy_terminal.sh
+Comment=Lucy nodo de voz modular (VAD, manos libres)
+Exec=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/scripts/lucy_voice_modular_node.sh
 Icon=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/resources/lucy_icon.png
 Terminal=false
 Categories=Utility;Audio;AI;
