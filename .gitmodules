@@ -1,0 +1,3 @@
+[submodule "external/nodo-de-voz-modular-de-lucy"]
+	path = external/nodo-de-voz-modular-de-lucy
+	url = https://github.com/LokoKanishka/nodo-de-voz-modular-de-lucy.git
