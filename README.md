@@ -1,118 +1,196 @@
-# Lucy Voice - Asistente de Voz Local
+# Lucy Voice - Asistente de Voz Local (Nodo Modular)
 
-> **Última actualización**: 2025-11-28 15:55:59 (UTC-3)
+> Última actualización automática: 2025-12-01 23:20:58 -03
 
-Sistema de asistente de voz completamente local y open source, con detección de wake word personalizada, conversación continua y capacidad de ejecutar herramientas del sistema.
+Lucy es un asistente de voz **100% local y open source** pensado para correr en una PC de escritorio con Linux (Ubuntu), usando:
 
-## 🎯 Características
+- Reconocimiento de voz (ASR) local
+- LLM local vía **Ollama**
+- TTS local con **Mimic3**
+- Control de aplicaciones y herramientas del sistema
 
-- ✅ **Wake Word Personalizada**: Modelo custom "Hola Lucy" entrenado con OpenWakeWord
-- ✅ **Conversación Continua**: Modo conversacional natural con VAD (Voice Activity Detection) y Pipecat
-- ✅ **Herramientas del Sistema**: Abrir aplicaciones, URLs, tomar capturas, escribir texto
-- ✅ **100% Local**: Sin servicios cloud, total privacidad
-- ✅ **Voz Neural Femenina**: TTS con Mimic3 (LJ Speech)
+Desde fines de 2025 el **modo oficial** de Lucy Voz es el **nodo de voz modular**, y el pipeline anterior con wake word / Pipecat pasó a ser **LEGACY**.
 
-## 🛠️ Stack Tecnológico
+---
 
-- **Pipeline**: Pipecat (Async graph)
-- **ASR**: Faster Whisper (Systran/faster-whisper-small)
-- **LLM**: Ollama (gpt-oss:20b)
-- **TTS**: Mimic3 (en_US/ljspeech_low)
-- **Wake Word**: OpenWakeWord (modelo custom)
-- **VAD**: webrtcvad
-- **Tools**: pyautogui, subprocess
+## 1. Arquitectura actual (Lucy Voz v2)
 
-## 📋 Requisitos
+La arquitectura actual se organiza así:
 
+- **Repositorio principal:** `Proyecto-VSCode`
+- **Nodo de voz modular:** submódulo en  
+  `external/nodo-de-voz-modular-de-lucy`
+- **Lanzador oficial de voz:**  
+  `scripts/lucy_voice_modular_node.sh`
+- **Acceso directo gráfico:**  
+  `lucy.desktop` → apunta al lanzador anterior
+
+El nodo modular integra:
+
+- **ASR:** Whisper (vía `openai-whisper`)
+- **LLM:** Ollama (p. ej. `gpt-oss:20b`)
+- **TTS:** Mimic3 (`es_ES/m-ailabs_low` u otra voz)
+- **VAD:** `webrtcvad` para modo manos libres
+- **Comando de sueño:** "lucy dormi" / "lucy dormí" para terminar la sesión por voz
+
+El pipeline Pipecat + wakeword ONNX vive ahora en `legacy/` y solo se conserva como referencia histórica.
+
+---
+
+## 2. Características principales (modo modular)
+
+- ✅ **Modo manos libres** con VAD  
+  Presionás **Enter una sola vez** y Lucy entra en un bucle:
+  escucha → transcribe → piensa → habla → vuelve a escuchar.
+
+- ✅ **Comando de sueño por voz**  
+  Si la transcripción contiene el comando de cierre (por ej. _"lucy dormi"_), Lucy:
+  - confirma que recibió la orden
+  - cierra la sesión de forma limpia
+
+- ✅ **100% local / offline**  
+  - Whisper local
+  - Ollama local
+  - Mimic3 local
+
+- ✅ **Parámetros visibles**  
+  En cada arranque se muestran (en la terminal):
+  - voz Mimic3
+  - `Emotion exaggeration`
+  - `CFG weight`
+  - modelo LLM actual (`gpt-oss:20b`, etc.)
+
+---
+
+## 3. Requisitos
+
+- Linux (probado en Ubuntu)
 - Python 3.12+
-- Ollama instalado con modelo `gpt-oss:20b`
+- Ollama instalado y corriendo (con el modelo que quieras usar, por ejemplo `gpt-oss:20b`)
 - Mimic3 instalado
-- Micrófono y altavoces/auriculares
+- Micrófono y salida de audio configurados
 
-## 🚀 Instalación
+---
+
+## 4. Instalación
+
+Clonar el repo:
 
 ```bash
-# Clonar repositorio
 git clone https://github.com/LokoKanishka/Proyecto-VSCode.git
 cd Proyecto-VSCode
+````
 
-# Crear entorno virtual e instalar dependencias
+Crear entorno virtual e instalar dependencias:
+
+```bash
 ./scripts/install_deps.sh
 ```
 
-## 🎮 Uso
+(El script crea `.venv-lucy-voz` y resuelve las dependencias de Lucy Voz y del nodo modular.)
 
-### Iniciar Lucy (Modo Wake Word)
+---
 
-Este es el modo principal. Lucy escuchará "Hola Lucy" (o "Hey Jarvis" si no hay modelo custom).
+## 5. Uso rápido
+
+### 5.1. Desde el acceso directo gráfico
+
+1. Instalá el `.desktop` (si aún no lo hiciste):
+
+   * Copiar `lucy.desktop` a:
+
+     * `~/.local/share/applications/`
+     * (opcional) `/usr/share/applications/` para que sea global
+
+2. Buscá **"Lucy"** en el menú de aplicaciones y hacé clic.
+
+3. Se abre una terminal con algo del estilo:
+
+   ```text
+   🤖 Local Voice Assistant with Mimic3 TTS
+   Using Mimic3 voice: es_ES/m-ailabs_low
+   Emotion exaggeration: 0.5
+   CFG weight: 0.5
+   LLM model: gpt-oss:20b
+
+   Press Enter once to start speaking (Ctrl+C to exit).
+   ```
+
+4. Presioná **Enter una vez** para empezar el bucle de escucha.
+
+### 5.2. Desde consola
 
 ```bash
-./scripts/lucy_voice_wakeword.sh
+cd ~/Lucy_Workspace/Proyecto-VSCode
+./scripts/lucy_voice_modular_node.sh
 ```
 
-### Flujo de Conversación
+El flujo es el mismo que con el acceso directo.
 
-1. **Activación**: Di "Hola Lucy"
-2. **Conversación**: Habla normalmente. Lucy detectará cuando termines de hablar.
-3. **Herramientas**: Pide "Abrí el navegador" o "Tomá una captura".
-4. **Terminar**: Lucy se queda escuchando hasta que digas "Chau" o pase el tiempo de espera (configurable).
+---
 
-## 📁 Estructura del Proyecto
+## 6. Configuración
 
-```
-Proyecto-VSCode/
-├── lucy_voice/
-│   ├── pipeline/
-│   │   ├── pipecat_graph.py        # Definición del grafo Pipecat
-│   │   └── processors/             # Nodos del pipeline (ASR, LLM, TTS, VAD, WakeWord)
-│   ├── wakeword/
-│   │   ├── listener.py             # Entrypoint del listener
-│   │   └── train.py                # Entrenamiento de modelo custom
-│   ├── tools/
-│   │   └── lucy_tools.py           # Herramientas del sistema
-│   └── config.py                   # Configuración centralizada
-├── scripts/
-│   ├── lucy_voice_wakeword.sh      # Script de inicio
-│   └── lucy_voice_ptt.sh           # Modo Push-to-Talk (Legacy)
-└── docs/
-    ├── ARCHITECTURE.md             # Detalles de arquitectura
-    └── USAGE.md                    # Guía de uso detallada
-```
+La configuración general vive en `config.yaml` en la raíz del proyecto.
 
-## 🔧 Configuración
-
-Editar `config.yaml` en la raíz del proyecto:
+Ejemplo mínimo de parámetros relevantes:
 
 ```yaml
 ollama_model: "gpt-oss:20b"
-wakeword_threshold: 0.15
 sample_rate: 16000
+
+voice_modular:
+  enabled: true
+  whisper_model: "base"
+  vad_sample_rate: 16000
+  vad_aggressiveness: 2
+  sleep_commands:
+    - "lucy dormi"
+    - "lucy dormí"
 ```
 
-## 🎓 Entrenar Wake Word Custom
+> ⚠️ El resto de claves de `config.yaml` puede variar; revisá el archivo real en tu repo local.
 
-Si querés entrenar tu propio modelo:
+Documentación ampliada del nodo modular: ver `docs/VOICE_MODULAR.md`.
 
-```bash
-# 1. Grabar muestras positivas (decir "Hola Lucy" 20+ veces)
-python -m lucy_voice.wakeword.record_positive
+---
 
-# 2. Grabar muestras negativas (hablar sin decir "Hola Lucy")
-python -m lucy_voice.wakeword.record_negative
+## 7. Estructura del proyecto (resumen)
 
-# 3. Entrenar modelo
-python -m lucy_voice.wakeword.train
+```text
+Proyecto-VSCode/
+├── external/
+│   └── nodo-de-voz-modular-de-lucy/   # Nodo de voz modular (ASR + VAD + TTS + LLM)
+├── scripts/
+│   ├── lucy_voice_modular_node.sh     # Lanzador oficial (v2)
+│   ├── cleanup_old_voice_system.sh    # Script de limpieza del pipeline viejo
+│   └── ...                            # Otros scripts varios
+├── docs/
+│   ├── VOICE_MODULAR.md               # Documentación del nodo modular
+│   ├── LEGACY_VOICE_PIPELINE.md       # Descripción del pipeline Pipecat legado
+│   └── backup/                        # Backups automáticos de README/config
+├── lucy_web/                          # Código web / tools auxiliares
+├── legacy/                            # Sistema de voz viejo (wakeword + Pipecat)
+├── config.yaml
+├── lucy.desktop
+└── ...
 ```
 
-## 🐛 Troubleshooting
+---
 
-Ver `docs/USAGE.md` para más detalles.
+## 8. Pipeline viejo (LEGACY)
 
-## 📝 Licencia
+El sistema original de Lucy Voz estaba basado en:
 
-MIT
+* Pipeline de audio/conversación con **Pipecat**
+* Wake word entrenada con **OpenWakeWord** (ej. "Hola Lucy")
+* ASR con **Faster Whisper**
+* Scripts de entrenamiento y prueba de wake word
+* Varios scripts `fix_*` para preparar/limpiar el entorno
 
-## 👥 Autor
+Todo ese código se movió a `legacy/` para que no interfiera con el flujo actual, pero se conserva como:
 
-LokoKanishka
+* referencia técnica,
+* y posible base para experimentos futuros.
 
+Para más detalle histórico, ver `docs/LEGACY_VOICE_PIPELINE.md`.

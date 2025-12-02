@@ -33,3 +33,14 @@ wakeword_threshold: 0.05
 wakeword_cooldown: 4.0
 # wakeword_model_paths: ["lucy_voice/data/wakeword/modelos/hola_lucy.onnx"]  # Custom model (disabled due to false positives)
 wakeword_model_paths: [] # Empty list uses defaults (alexa, hey_jarvis, etc)
+
+# --- Voz modular de Lucy (v2) ---
+
+voice_modular:
+  enabled: true
+  whisper_model: "base"
+  vad_sample_rate: 16000
+  vad_aggressiveness: 2
+  sleep_commands:
+    - "lucy dormi"
+    - "lucy dormí"
