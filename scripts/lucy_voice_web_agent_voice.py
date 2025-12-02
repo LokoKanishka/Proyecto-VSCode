@@ -2,36 +2,24 @@
 """
 Lucy Voice Web Agent (loop manos libres + web sólo por comando)
 
-Comportamiento:
+Regla de voz:
+
+- Chat normal (sin "busca en web"): SIEMPRE responde con voz (Mimic3) + texto.
+- Respuesta web ("busca en web ..."): SOLO texto por defecto.
+  - Voz SOLO si:
+        - lo pedís en la misma frase ("busca en web ... y leelo")
+        - o después decís "lee la respuesta", "leelo", "lucy lee".
+
+Comportamiento general:
 
 - Presionás Enter UNA sola vez para empezar.
 - Lucy entra en un loop de frames (~5 s) con:
 
     [Lucy Voz Web] Escuchando (5 s)…
 
-- Si decís algo como:
-    "busca en web la economia argentina"
-    "lucy busca en la web inflacion argentina"
-  → Usa lucy_agents.web_agent.run_web_research(query)
-    → Muestra el texto en pantalla
-    → NO lo lee por defecto.
-    → Si en la MISMA frase decís también "leelo / lee la respuesta",
-      lo lee también con Mimic3.
-
-- Si decís:
-    "lee la respuesta", "leelo", "lucy lee"
-  → Lee en voz alta la última respuesta (sea web o chat).
-
-- Para el resto de frases (sin "busca en web" ni "lee…"):
-  → Se comporta "normal":
-     - llama a un modelo local de Ollama (gpt-oss:20b por defecto),
-       como chat de Lucy.
-     - imprime la respuesta en pantalla.
-     - NO la lee automáticamente (solo por comando de lectura).
-
 - Para terminar por voz:
     "lucy dormi", "lucy dormite", "dormi", "dormite".
-- Para cortar todo de golpe: Ctrl+C en la terminal.
+- Para cortar todo: Ctrl+C en la terminal.
 """
 
 from __future__ import annotations
@@ -66,6 +54,8 @@ DEFAULT_VOICE_ID = os.getenv("LUCY_VOICE_TTS_VOICE", "es_ES/m-ailabs_low")
 DEFAULT_CHAT_MODEL_ID = os.getenv("LUCY_VOICE_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL_ID)
 
 
+# --------- Normalización y comandos de control --------- #
+
 def normalize_text(text: str) -> str:
     """Normaliza texto para detección de comandos.
 
@@ -80,7 +70,7 @@ def normalize_text(text: str) -> str:
 
 
 def is_sleep_command(norm_text: str) -> bool:
-    """Detecta 'lucy dormi', 'lucy dormite', 'dormi', 'dormite'."""
+    """Detecta órdenes de dormir."""
     triggers = [
         "lucy dormi",
         "lucy dormite",
@@ -145,6 +135,8 @@ def extract_web_query(norm_text: str, original_text: str) -> Optional[Tuple[str,
     return None
 
 
+# --------- Audio, Whisper y voz --------- #
+
 def record_frame(seconds: int = FRAME_SECONDS) -> np.ndarray:
     """Graba un frame corto de audio (loop manos libres)."""
     print(f"[Lucy Voz Web] Escuchando ({seconds} s)…")
@@ -200,6 +192,8 @@ def speak_with_mimic3(text: str, voice: str = DEFAULT_VOICE_ID) -> None:
         print(f"[Lucy Voz Web] Error al usar mimic3: {exc}")
 
 
+# --------- Chat local con Ollama --------- #
+
 def chat_with_llm(
     history: List[Dict[str, str]],
     user_text: str,
@@ -230,6 +224,8 @@ def chat_with_llm(
     return answer
 
 
+# --------- Loop principal --------- #
+
 def main() -> None:
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print(" Lucy Voice Web Agent (loop manos libres)")
@@ -237,13 +233,14 @@ def main() -> None:
     print(f"STT: Whisper (modelo local)")
     print(f"Chat LLM: Ollama ({DEFAULT_CHAT_MODEL_ID})")
     print("Web Agent: lucy_agents.web_agent (DDGS + Ollama)")
-    print("TTS: Mimic3 (solo si se lo pedís por voz)")
+    print("TTS: Mimic3")
     print("")
     print("Instrucciones:")
     print("  - Presioná Enter una sola vez para empezar a hablar.")
     print("  - Para buscar en la web, decí algo como:")
     print("       «busca en web la economia argentina»")
     print("       «lucy busca en la web inflacion argentina»")
+    print("  - Chat normal (sin 'busca en web'): Lucy responde con texto + voz.")
     print("  - Para que lea en voz alta la última respuesta (web o chat), decí:")
     print("       «lee la respuesta», «leelo», «lucy lee»")
     print("  - Para que se duerma, podés decir «lucy dormi» o «dormite lucy».")
@@ -335,7 +332,10 @@ def main() -> None:
         print("──────── Respuesta de Lucy (chat local) ────────\n")
         print(answer)
         print("\n───────────────────────────────────────────────\n")
-        # No se lee en voz alta automáticamente: solo por comando "lee…"
+
+        # *** Voz automática para chat normal ***
+        print("[Lucy Voz Web] Leyendo en voz alta la respuesta del chat local…")
+        speak_with_mimic3(last_answer)
 
 
 if __name__ == "__main__":
