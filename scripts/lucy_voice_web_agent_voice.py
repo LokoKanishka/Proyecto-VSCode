@@ -1,142 +1,113 @@
 #!/usr/bin/env python3
 """
-Lucy Voice Web Agent (loop manos libres)
+Lucy Voice Web Agent (loop manos libres v4)
 
 - STT: Whisper local
-- Chat LLM: Ollama (gpt-oss:20b)
+- Chat LLM: Ollama (gpt-oss:20b por defecto)
 - Web Agent: lucy_agents.web_agent.run_web_research (DDGS + Ollama)
-- TTS: Mimic3
+- TTS: Mimic3 + aplay
 
-Comportamiento:
-- Presionás Enter una sola vez.
-- Cada turno:
-    - Escucha ~5s.
-    - Transcribe con Whisper.
-    - Si detecta comando de dormir -> termina.
-    - Si detecta comando de leer -> lee por voz la última respuesta (web o chat).
-    - Si detecta comando de buscar en web -> usa Web Agent y NO lee por voz (queda en pantalla).
-    - Si no hay comando especial -> responde con chat local + voz.
+Reglas:
+- Presionás Enter una sola vez para arrancar el loop.
+- Chat normal (sin pedir web):
+    -> responde con texto + voz.
+- Si la frase menciona "buscar" + "web/internet/google":
+    -> usa el Web Agent, muestra solo texto (no voz).
+- "lee la respuesta" / "leelo" / "lucy lee":
+    -> lee por voz la última respuesta (web o chat).
+- "lucy dormi" / "dormite lucy":
+    -> termina el programa.
 """
 
 import os
 import sys
 import subprocess
+import textwrap
+import shlex
+
 from typing import Optional
 
-import sounddevice as sd
 import numpy as np
+import sounddevice as sd
 import whisper
 from unidecode import unidecode
+from shutil import which
+
+# --- Aseguramos que el proyecto raíz esté en sys.path --- #
+
+# __file__ = .../scripts/lucy_voice_web_agent_voice.py
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPTS_DIR)
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 try:
-    import ollama  # cliente Python de Ollama
+    import ollama
 except ImportError:
     ollama = None
 
 try:
-    # run_web_research es nuestro agente de web
-    from lucy_agents.web_agent import run_web_research
-except ImportError:
+    from lucy_agents.web_agent import run_web_research, DEFAULT_OLLAMA_MODEL_ID as WEB_DEFAULT_MODEL
+except Exception as exc:
+    print(f"[Lucy Voz Web] Aviso: no pude importar lucy_agents.web_agent ({exc})")
     run_web_research = None
+    WEB_DEFAULT_MODEL = "gpt-oss:20b"
 
 
 SAMPLE_RATE = 16000
 LISTEN_SECONDS = 5
-DEFAULT_OLLAMA_MODEL_ID = os.environ.get("LUCY_OLLAMA_MODEL", "gpt-oss:20b")
+
+CHAT_MODEL_ID = os.environ.get("LUCY_OLLAMA_MODEL", WEB_DEFAULT_MODEL)
 
 
 SYSTEM_PROMPT = (
-    "Sos Lucy, un asistente local que responde en español rioplatense, "
-    "de forma breve, clara y con tono cuidado (sin tratar al usuario como niño). "
-    "Estás corriendo 100% en la máquina del usuario, sin internet. "
-    "Cuando respondas, hacelo directamente, sin aclarar que sos un modelo de lenguaje."
+    "Sos Lucy, un asistente local en la máquina de Diego. "
+    "Hablás en español rioplatense, con tono cuidado y directo. "
+    "Respondés de forma clara, breve y precisa, sin tratar al usuario como niño."
 )
 
 
 def normalize_text(text: str) -> str:
-    """Minúsculas + sin tildes, para detectar comandos por voz."""
-    return unidecode(text.lower()).strip()
+    """Pasa a minúsculas, sin tildes ni espacios múltiples."""
+    return " ".join(unidecode(text.lower()).strip().split())
 
 
 def is_sleep_command(text_norm: str) -> bool:
-    return ("lucy dormi" in text_norm) or ("dormite lucy" in text_norm)
+    return ("lucy dormi" in text_norm) or ("lucy dormite" in text_norm) or (
+        text_norm == "dormi"
+    ) or (text_norm == "dormite")
 
 
 def is_read_command(text_norm: str) -> bool:
     keys = [
         "lee la respuesta",
-        "leela respuesta",
         "lee respuesta",
+        "leela respuesta",
+        "lee el texto",
+        "lee eso",
         "leelo",
         "lucy lee",
+        "lee la anterior",
         "leeme la respuesta",
         "leela",
     ]
     return any(k in text_norm for k in keys)
 
 
-def extract_web_query(text: str) -> Optional[str]:
-    """
-    Si la frase pide "buscar en la web", devuelve la consulta.
-    Acepta cosas como:
-      - "busca en web la economia argentina"
-      - "busca en la web inflacion argentina"
-      - "podés buscar bruce wayne en la web"
-      - "lucy, buscame en internet la cotizacion del dolar"
-    """
-    t = normalize_text(text)
-
-    # Patrones explícitos
-    patterns = [
-        "busca en web",
-        "busca en la web",
-        "buscá en web",
-        "buscá en la web",
-        "buscar en web",
-        "buscar en la web",
-        "busca en internet",
-        "buscar en internet",
-        "busca en google",
-        "buscar en google",
-        "lucy busca en web",
-        "lucy busca en la web",
-    ]
-    for p in patterns:
-        if p in t:
-            tail = t.split(p, 1)[1].strip()
-            return tail or None
-
-    # Heurística general: tiene alguna forma de "buscar" + "web/internet/google"
-    if any(w in t for w in ("web", "internet", "google")) and any(
-        b in t for b in ("busca", "buscar", "buscame", "buscarme")
-    ):
-        cleaned = t
-        for w in [
-            "lucy",
-            "podes",
-            "podés",
-            "puedes",
-            "por favor",
-            "busca",
-            "buscá",
-            "buscar",
-            "buscame",
-            "buscarme",
-            "en la web",
-            "en web",
-            "en internet",
-            "en google",
-        ]:
-            cleaned = cleaned.replace(w, "")
-        cleaned = " ".join(cleaned.split())
-        return cleaned or None
-
-    return None
+def wants_web_search(text_norm: str) -> bool:
+    """Devuelve True si la frase suena a 'buscar en la web'."""
+    has_where = any(k in text_norm for k in ("web", "internet", "google"))
+    has_verb = any(
+        v in text_norm
+        for v in ("busca", "buscá", "buscar", "buscame", "buscarme", "buscando")
+    )
+    return has_where and has_verb
 
 
 def record_audio(seconds: float = LISTEN_SECONDS, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
-    """Graba audio mono en float32 [-1,1]."""
-    print(f"[Lucy Voz Web] Escuchando ({seconds:.0f} s)…")
+    """Graba audio mono float32 [-1, 1] durante `seconds`."""
+    print(f"[Lucy Voz Web] Escuchando ({int(seconds)} s)…")
     audio = sd.rec(
         int(seconds * sample_rate),
         samplerate=sample_rate,
@@ -144,46 +115,68 @@ def record_audio(seconds: float = LISTEN_SECONDS, sample_rate: int = SAMPLE_RATE
         dtype="float32",
     )
     sd.wait()
-    # Devuelve vector 1D
     return audio[:, 0]
 
 
-def chat_with_ollama(prompt: str, model_id: str = DEFAULT_OLLAMA_MODEL_ID) -> str:
-    """Llama al modelo local de Ollama."""
-    if ollama is None:
-        return (
-            "[Lucy] Error: la librería 'ollama' no está instalada en este entorno. "
-            "Instalala en .venv-lucy-voz para usar el chat local."
+def find_mimic3_binary() -> Optional[str]:
+    """Intenta encontrar el binario de mimic3 (PATH o .venv-lucy-voz/bin)."""
+    # Candidato 1: en PATH
+    if which("mimic3") is not None:
+        return "mimic3"
+
+    # Candidato 2: dentro de la venv del proyecto
+    venv_mimic3 = os.path.join(PROJECT_ROOT, ".venv-lucy-voz", "bin", "mimic3")
+    if os.path.isfile(venv_mimic3):
+        return venv_mimic3
+
+    return None
+
+
+def speak_with_mimic3(text: str, voice: str = "es_ES/m-ailabs_low") -> None:
+    """Reproduce el texto usando mimic3 | aplay."""
+    text = text.strip()
+    if not text:
+        return
+
+    mimic3_bin = find_mimic3_binary()
+    aplay_bin = which("aplay")
+
+    if mimic3_bin is None or aplay_bin is None:
+        print(
+            "[Lucy Voz Web] Aviso: mimic3 o aplay no se encontraron en el sistema; "
+            "respondo solo por texto."
         )
+        return
+
+    wrapped = textwrap.fill(text, width=120)
+    cmd = f"{shlex.quote(mimic3_bin)} --voice {shlex.quote(voice)} {shlex.quote(wrapped)} | {shlex.quote(aplay_bin)} -q"
+
+    try:
+        subprocess.run(cmd, shell=True, check=False)
+    except KeyboardInterrupt:
+        print("[Lucy Voz Web] Reproducción interrumpida por el usuario.")
+    except Exception as exc:
+        print(f"[Lucy Voz Web] Error al reproducir voz: {exc}")
+
+
+def chat_with_ollama(prompt: str) -> str:
+    """Llama al modelo local de Ollama para chat."""
+    if ollama is None:
+        return "[Lucy] Error: la librería 'ollama' no está instalada en este entorno."
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
     try:
-        resp = ollama.chat(model=model_id, messages=messages)
-        content = resp.get("message", {}).get("content", "").strip()
-        return content or "[Lucy] No obtuve contenido del modelo local."
-    except Exception as e:
-        return f"[Lucy] Error al llamar a Ollama: {e}"
-
-
-def speak_with_mimic3(text: str) -> None:
-    """Lee el texto por TTS usando mimic3."""
-    text = text.strip()
-    if not text:
-        return
-
-    cmd = ["mimic3", "--voice", "es_ES/m-ailabs_low"]
-    try:
-        proc = subprocess.Popen(
-            cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        proc.communicate(input=text.encode("utf-8"))
-    except KeyboardInterrupt:
-        print("[Lucy Voz Web] Reproducción interrumpida por el usuario.")
-    except Exception as e:
-        print(f"[Lucy Voz Web] Error al reproducir voz: {e}")
+        resp = ollama.chat(model=CHAT_MODEL_ID, messages=messages)
+        content = (resp.get("message", {}) or {}).get("content", "")
+        content = (content or "").strip()
+        if not content:
+            return "[Lucy] El modelo local no devolvió contenido."
+        return content
+    except Exception as exc:
+        return f"[Lucy] Error al llamar a Ollama: {exc}"
 
 
 def main() -> None:
@@ -191,18 +184,18 @@ def main() -> None:
     print(" Lucy Voice Web Agent (loop manos libres)")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print("STT: Whisper (modelo local)")
-    print(f"Chat LLM: Ollama ({DEFAULT_OLLAMA_MODEL_ID})")
+    print(f"Chat LLM: Ollama ({CHAT_MODEL_ID})")
     print("Web Agent: lucy_agents.web_agent (DDGS + Ollama)")
-    print("TTS: Mimic3\n")
+    print("TTS: Mimic3 + aplay\n")
     print("Instrucciones:")
     print("  - Presioná Enter una sola vez para empezar a hablar.")
     print("  - Para buscar en la web, decí algo como:")
     print("       «busca en web la economia argentina»")
     print("       «podés buscar bruce wayne en la web»")
-    print("  - Chat normal (sin 'buscar en web'): Lucy responde con texto + voz.")
-    print("  - Para que lea en voz alta la última respuesta (web o chat), decí:")
+    print("  - Chat normal (sin pedir web): Lucy responde con texto + voz.")
+    print("  - Para leer en voz alta la última respuesta, decí:")
     print("       «lee la respuesta», «leelo», «lucy lee»")
-    print("  - Para que se duerma, podés decir «lucy dormi» o «dormite lucy».")
+    print("  - Para dormir, decí «lucy dormi» o «dormite lucy».")
     print("  - Ctrl+C corta el programa.\n")
 
     print("[Lucy Voz Web] Cargando modelo Whisper: small (puede tardar la primera vez)…")
@@ -215,13 +208,19 @@ def main() -> None:
 
     try:
         while True:
-            audio = record_audio()
-            # Transcribimos audio con Whisper
+            # 1) Grabamos audio
             try:
-                result = model.transcribe(audio, fp16=False, language="es")
+                audio = record_audio()
+            except Exception as exc:
+                print(f"[Lucy Voz Web] Error al grabar audio: {exc}")
+                continue
+
+            # 2) Transcribimos con Whisper
+            try:
+                result = model.transcribe(audio, language="es", fp16=False)
                 text = (result.get("text") or "").strip()
-            except Exception as e:
-                print(f"[Lucy Voz Web] Error al transcribir audio: {e}")
+            except Exception as exc:
+                print(f"[Lucy Voz Web] Error al transcribir audio: {exc}")
                 continue
 
             if not text:
@@ -231,12 +230,12 @@ def main() -> None:
             print(f"\nYou (voz): {text}\n")
             norm = normalize_text(text)
 
-            # 1) Comando de dormir
+            # 3) Comando de dormir
             if is_sleep_command(norm):
                 print("[Lucy Voz Web] Recibí 'lucy dormi'. Me voy a dormir y cierro la sesión.")
                 break
 
-            # 2) Comando de lectura de última respuesta
+            # 4) Comando de leer última respuesta
             if is_read_command(norm):
                 if last_answer.strip():
                     print("[Lucy Voz Web] Leyendo en voz alta la última respuesta…")
@@ -245,21 +244,26 @@ def main() -> None:
                     print("[Lucy Voz Web] Todavía no tengo ninguna respuesta para leer.")
                 continue
 
-            # 3) Comando de búsqueda en la web
-            web_query = extract_web_query(text)
-            if web_query:
+            # 5) Comando de búsqueda web
+            if wants_web_search(norm):
                 if run_web_research is None:
-                    print("[Lucy Voz Web] Error: el módulo lucy_agents.web_agent no está disponible.")
+                    print(
+                        "[Lucy Voz Web] Pedido de búsqueda web, "
+                        "pero lucy_agents.web_agent no está disponible."
+                    )
                     continue
 
-                print(f"[Lucy Voz Web] Buscando en la web: {web_query!r}…\n")
+                task = text.strip()
+                print(f"[Lucy Voz Web] Ejecutando búsqueda en la web para: {task!r}\n")
                 try:
                     answer = run_web_research(
-                        task=web_query,
-                        model_id=DEFAULT_OLLAMA_MODEL_ID,
+                        task=task,
+                        model_id=CHAT_MODEL_ID,
+                        max_results=8,
+                        verbosity=1,
                     )
-                except Exception as e:
-                    print(f"[Lucy Voz Web] Error al ejecutar el Web Agent: {e}")
+                except Exception as exc:
+                    print(f"[Lucy Voz Web] Error al ejecutar el Web Agent: {exc}")
                     continue
 
                 last_answer = answer if isinstance(answer, str) else str(answer)
@@ -267,11 +271,10 @@ def main() -> None:
                 print("──────── Respuesta de Lucy Web ────────\n")
                 print(last_answer)
                 print("\n───────────────────────────────────────\n")
-                # IMPORTANTE: NO leer en voz alta automáticamente.
-                # Solo se leerá si luego el usuario dice "lee la respuesta".
+                # Importante: NO leer en voz alta automáticamente.
                 continue
 
-            # 4) Caso normal: chat local con voz
+            # 6) Caso normal: chat local con voz
             print("[Lucy Voz Web] Mensaje normal: respondo con el modelo local (sin web)…\n")
             answer = chat_with_ollama(text)
             last_answer = answer
