@@ -6,11 +6,13 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${PROJECT_ROOT}"
 
-if [ ! -d ".venv-lucy-voz" ]; then
-  python3 -m venv .venv-lucy-voz
+if [[ ! -d ".venv-lucy-voz" ]]; then
+  echo "[Lucy web-agent] ERROR: no se encontró .venv-lucy-voz en ${PROJECT_ROOT}" >&2
+  exit 1
 fi
 
-# shellcheck source=/dev/null
+# Activar entorno virtual
+# shellcheck disable=SC1091
 source ".venv-lucy-voz/bin/activate"
 
 python "scripts/lucy_web_agent_cli.py" "$@"

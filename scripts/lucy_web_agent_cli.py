@@ -1,73 +1,68 @@
-#!/usr/bin/env python
-"""CLI simple para usar el agente web de Lucy desde la terminal.
-
-Ejemplos:
-
-    python scripts/lucy_web_agent_cli.py "Buscá noticias de hoy sobre la economía argentina"
-    python scripts/lucy_web_agent_cli.py --verbose "Compará las RTX 5090 con las 4090 para gaming"
-
-También se puede usar sin argumentos; en ese caso pide la tarea por stdin.
-"""
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 import argparse
-import textwrap
+import os
+import sys
+from textwrap import dedent
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from lucy_agents.web_agent import run_web_research, DEFAULT_OLLAMA_MODEL_ID
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="lucy_web_agent_cli",
-        description="Agente de investigación web de Lucy (smolagents + Ollama + DuckDuckGo).",
+        prog="lucy_web_agent",
+        description="Agente de búsqueda web de Lucy (DuckDuckGo + Ollama).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent(
-            """\
-            Tip:
-              - Asegurate de tener Ollama corriendo y el modelo `gpt-oss:20b`
-                descargado (ollama pull gpt-oss:20b).
-              - Este script NO usa ninguna API de pago: todo el modelo corre local.
-            """
+        epilog=dedent(
+            """Ejemplos:
+  lucy_web_agent_cli.py "Buscá noticias recientes sobre la economía argentina..."
+  lucy_web_agent_cli.py -m gpt-oss:20b "Qué está pasando con el cambio climático en 2025?"
+"""
         ),
     )
     parser.add_argument(
         "task",
-        nargs="*",
-        help="Tarea o pregunta a investigar (si se deja vacío, se pide por stdin).",
+        help="Consigna completa en español (qué querés que investigue y resuma Lucy).",
     )
     parser.add_argument(
+        "-m",
         "--model-id",
-        default=DEFAULT_OLLAMA_MODEL_ID,
-        help=(
-            "ID del modelo para LiteLLM. "
-            "Por defecto usa un modelo local de Ollama: %(default)s"
-        ),
+        default=os.getenv("LUCY_WEB_AGENT_MODEL", DEFAULT_OLLAMA_MODEL_ID),
+        help=f"Modelo de Ollama a usar (por defecto: {DEFAULT_OLLAMA_MODEL_ID}).",
     )
     parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Muestra más información de depuración del agente.",
+        "-k",
+        "--max-results",
+        type=int,
+        default=8,
+        help="Cantidad de resultados de DuckDuckGo a considerar (por defecto: 8).",
     )
 
     args = parser.parse_args()
-    task = " ".join(args.task).strip()
 
-    if not task:
-        task = input("Escribí la tarea para el agente web de Lucy: ").strip()
-        if not task:
-            raise SystemExit("No se recibió ninguna tarea. Abortando.")
+    print("")
+    print("╭──────────────── Lucy Web Agent ────────────────╮")
+    print(f"│  Modelo: {args.model_id:<37} │")
+    print(f"│  Resultados DuckDuckGo: {args.max_results:<21} │")
+    print("╰────────────────────────────────────────────────╯")
+    print("")
+    print(f"Tarea: {args.task}")
+    print("")
 
-    verbosity = 2 if args.verbose else 1
-
-    print("\n[Lucy Web] Ejecutando agente de investigación...\n")
     answer = run_web_research(
-        task=task,
+        task=args.task,
         model_id=args.model_id,
-        verbosity=verbosity,
+        max_results=args.max_results,
     )
 
-    print("\n====== Respuesta del agente web de Lucy ======\n")
+    print("\n──────── Respuesta de Lucy Web ────────\n")
     print(answer)
-    print("\n==============================================\n")
+    print("\n───────────────────────────────────────\n")
 
 
 if __name__ == "__main__":
