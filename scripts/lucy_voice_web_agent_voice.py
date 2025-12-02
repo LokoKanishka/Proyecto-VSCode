@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Lucy Voice Web Agent (loop manos libres v4)
+Lucy Voice Web Agent (loop manos libres v5)
 
 - STT: Whisper local
 - Chat LLM: Ollama (gpt-oss:20b por defecto)
@@ -13,7 +13,7 @@ Reglas:
     -> responde con texto + voz.
 - Si la frase menciona "buscar" + "web/internet/google":
     -> usa el Web Agent, muestra solo texto (no voz).
-- "lee la respuesta" / "leelo" / "lucy lee":
+- "lee la respuesta" / "leelo" / "lucy lee" / "quiero que me leas los resultados":
     -> lee por voz la última respuesta (web o chat).
 - "lucy dormi" / "dormite lucy":
     -> termina el programa.
@@ -24,7 +24,6 @@ import sys
 import subprocess
 import textwrap
 import shlex
-
 from typing import Optional
 
 import numpy as np
@@ -35,7 +34,6 @@ from shutil import which
 
 # --- Aseguramos que el proyecto raíz esté en sys.path --- #
 
-# __file__ = .../scripts/lucy_voice_web_agent_voice.py
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPTS_DIR)
 
@@ -60,7 +58,6 @@ LISTEN_SECONDS = 5
 
 CHAT_MODEL_ID = os.environ.get("LUCY_OLLAMA_MODEL", WEB_DEFAULT_MODEL)
 
-
 SYSTEM_PROMPT = (
     "Sos Lucy, un asistente local en la máquina de Diego. "
     "Hablás en español rioplatense, con tono cuidado y directo. "
@@ -80,19 +77,65 @@ def is_sleep_command(text_norm: str) -> bool:
 
 
 def is_read_command(text_norm: str) -> bool:
-    keys = [
+    """
+    Detecta pedidos como:
+      - lee la respuesta / lee los resultados
+      - leé la respuesta de la web
+      - quiero que me leas los resultados
+      - leeme los resultados / leeme eso
+    """
+
+    # Frases explícitas que seguro significan "leé la última respuesta"
+    explicit_patterns = [
         "lee la respuesta",
         "lee respuesta",
+        "lee los resultados",
+        "leer la respuesta",
+        "leer los resultados",
         "leela respuesta",
+        "leeme la respuesta",
+        "leeme los resultados",
         "lee el texto",
         "lee eso",
+        "lee todo",
         "leelo",
+        "leelos",
         "lucy lee",
         "lee la anterior",
-        "leeme la respuesta",
-        "leela",
+        "leeme la anterior",
+        "lee la respuesta de la web",
+        "lees la respuesta",
+        "lees los resultados",
     ]
-    return any(k in text_norm for k in keys)
+    if any(p in text_norm for p in explicit_patterns):
+        return True
+
+    # Heurística general: verbo de leer + referencia a respuesta/resultados/texto/web
+    has_read_verb = any(
+        v in text_norm
+        for v in (
+            "lee",
+            "leer",
+            "leeme",
+            "lea",
+            "leas",
+            "lees",   # por si dice "lees esto"
+        )
+    )
+    has_object = any(
+        w in text_norm
+        for w in (
+            "respuesta",
+            "resultados",
+            "resultado",
+            "texto",
+            "web",
+            "eso",
+            "todo",
+        )
+    )
+
+    return has_read_verb and has_object
 
 
 def wants_web_search(text_norm: str) -> bool:
@@ -194,7 +237,8 @@ def main() -> None:
     print("       «podés buscar bruce wayne en la web»")
     print("  - Chat normal (sin pedir web): Lucy responde con texto + voz.")
     print("  - Para leer en voz alta la última respuesta, decí:")
-    print("       «lee la respuesta», «leelo», «lucy lee»")
+    print("       «lee la respuesta», «leelo», «lucy lee»,")
+    print("       «quiero que me leas los resultados», etc.")
     print("  - Para dormir, decí «lucy dormi» o «dormite lucy».")
     print("  - Ctrl+C corta el programa.\n")
 
