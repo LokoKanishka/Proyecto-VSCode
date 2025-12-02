@@ -1,74 +1,121 @@
 from __future__ import annotations
 
-from typing import List, Optional
+import os
+import textwrap
+from typing import Dict, List, Optional
 
-from smolagents import CodeAgent, DuckDuckGoSearchTool, LiteLLMModel
+from ddgs import DDGS
+import ollama
+
+# Nombre del modelo tal como lo ve el servidor de Ollama
+DEFAULT_OLLAMA_MODEL_ID = os.getenv("LUCY_WEB_AGENT_OLLAMA_MODEL", "gpt-oss:20b")
 
 
-DEFAULT_OLLAMA_MODEL_ID = "ollama_chat/gpt-oss:20b"
-
-
-def build_model(model_id: str = DEFAULT_OLLAMA_MODEL_ID) -> LiteLLMModel:
-    """Construye el modelo LLM para el agente web.
-
-    Por defecto usa un modelo local de Ollama a través de LiteLLM.
-    Cambiá `model_id` si querés usar otro modelo de Ollama.
+def search_web(query: str, max_results: int = 8) -> List[Dict[str, str]]:
     """
-    # Para Ollama no hace falta API key; LiteLLM usa la instalación local.
-    return LiteLLMModel(model_id=model_id)
-
-
-def build_agent(
-    model_id: str = DEFAULT_OLLAMA_MODEL_ID,
-    additional_imports: Optional[List[str]] | None = None,
-    verbosity: int = 1,
-) -> CodeAgent:
-    """Crea un CodeAgent con herramientas de búsqueda web.
-
-    - Usa DuckDuckGoSearchTool para buscar en la web.
-    - Usa un modelo local de Ollama vía LiteLLM como "cerebro".
+    Usa DDGS (DuckDuckGo) para buscar texto.
+    Devuelve una lista de dicts con title/snippet/url.
     """
-    if additional_imports is None:
-        additional_imports = [
-            "math",
-            "json",
-            "datetime",
-            "textwrap",
-        ]
+    results: List[Dict[str, str]] = []
+    with DDGS() as ddgs:
+        for r in ddgs.text(query, max_results=max_results):
+            results.append(
+                {
+                    "title": (r.get("title") or "").strip(),
+                    "snippet": (r.get("body") or "").strip(),
+                    "url": (r.get("href") or "").strip(),
+                }
+            )
+    return results
 
-    model = build_model(model_id=model_id)
-    search_tool = DuckDuckGoSearchTool()
 
-    agent = CodeAgent(
-        tools=[search_tool],
-        model=model,
-        add_base_tools=True,
-        additional_authorized_imports=additional_imports,
-        verbosity_level=verbosity,
-    )
-    return agent
+def build_context_from_results(results: List[Dict[str, str]]) -> str:
+    """
+    Arma un bloque de texto numerado con los resultados.
+    """
+    lines: List[str] = []
+    for idx, r in enumerate(results, start=1):
+        block = textwrap.dedent(
+            f"""
+            [{idx}] Título: {r["title"]}
+                Resumen: {r["snippet"]}
+                URL: {r["url"]}
+            """
+        ).strip()
+        lines.append(block)
+    return "\n\n".join(lines)
 
 
 def run_web_research(
     task: str,
-    model_id: str = DEFAULT_OLLAMA_MODEL_ID,
-    verbosity: int = 1,
+    model_id: Optional[str] = None,
+    max_results: int = 8,
+    verbosity: int = 0,
 ) -> str:
-    """Ejecuta una tarea de investigación web y devuelve la respuesta final.
-
-    `task` debería describir claramente qué querés que haga Lucy, por ejemplo:
-    - "Buscá noticias de hoy sobre inflación en Argentina y resumilas para un podcast"
-    - "Compará reseñas recientes de monitores 1440p 27 pulgadas para gaming"
     """
-    agent = build_agent(model_id=model_id, verbosity=verbosity)
-    result = agent.run(task)
+    Hace una búsqueda web con DDGS y resume usando un modelo local de Ollama.
 
-    # `agent.run` suele devolver directamente un string, pero por las dudas
-    # soportamos generadores/streams.
-    if isinstance(result, str):
-        return result
+    task: consigna en español, tal como la formularía la persona usuaria.
+    """
+    model = model_id or DEFAULT_OLLAMA_MODEL_ID
 
-    try:
-        return "".join(str(chunk) for chunk in result)
-    except TypeError:
-        return str(result)
+    if verbosity:
+        print(f"[Lucy web-agent] Usando modelo Ollama: {model}")
+        print(f"[Lucy web-agent] Buscando en DDGS (max_results={max_results})...")
+
+    results = search_web(task, max_results=max_results)
+
+    if not results:
+        return (
+            "No pude encontrar resultados en DuckDuckGo para esa búsqueda.\n"
+            "Probá reformulando la consigna o usando términos más generales."
+        )
+
+    if verbosity:
+        print(f"[Lucy web-agent] Se obtuvieron {len(results)} resultados.\n")
+
+    context = build_context_from_results(results)
+
+    system_prompt = textwrap.dedent(
+        """
+        Sos Lucy Web, una asistente de investigación que usa resultados de
+        DuckDuckGo (librería ddgs) para responder preguntas sobre noticias
+        y temas de actualidad.
+
+        Tu tarea es:
+        - Leer con atención los resultados provistos.
+        - Elaborar una respuesta en castellano claro, como para estudiantes
+          de secundaria en Argentina.
+        - Mencionar con [n] entre corchetes qué resultado respalda cada
+          dato importante (por ejemplo [1], [2], ...).
+        - Señalar cuando un dato sea aproximado, incierto o haya desacuerdos
+          entre las fuentes.
+        - No inventar URLs ni cifras que no aparezcan en los resultados.
+        """
+    ).strip()
+
+    user_content = textwrap.dedent(
+        f"""
+        Tarea del usuario: {task}
+
+        A continuación tenés un listado de resultados de búsqueda con títulos,
+        resúmenes breves y URL. Usalos como base para tu respuesta.
+
+        RESULTADOS:
+        {context}
+        """
+    ).strip()
+
+    if verbosity >= 2:
+        print("[Lucy web-agent] Enviando contexto al modelo...\n")
+
+    response = ollama.chat(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    answer = response["message"]["content"].strip()
+    return answer

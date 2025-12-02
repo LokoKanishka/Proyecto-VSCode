@@ -1,66 +1,88 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python
+"""
+CLI para el Lucy Web Agent (DDGS + Ollama local).
+
+Ejemplo de uso:
+
+    ./scripts/lucy_web_agent.sh "Buscá noticias recientes sobre la economía argentina y resumilas..."
+
+"""
+
+from __future__ import annotations
 
 import argparse
 import os
 import sys
-from textwrap import dedent
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from lucy_agents.web_agent import run_web_research, DEFAULT_OLLAMA_MODEL_ID
+from lucy_agents.web_agent import run_web_research, DEFAULT_OLLAMA_MODEL_ID  # noqa: E402
 
 
-def main() -> None:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="lucy_web_agent",
-        description="Agente de búsqueda web de Lucy (DuckDuckGo + Ollama).",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=dedent(
-            """Ejemplos:
-  lucy_web_agent_cli.py "Buscá noticias recientes sobre la economía argentina..."
-  lucy_web_agent_cli.py -m gpt-oss:20b "Qué está pasando con el cambio climático en 2025?"
-"""
-        ),
+        description="Lucy Web Agent (DDGS + modelo local de Ollama)."
     )
     parser.add_argument(
         "task",
-        help="Consigna completa en español (qué querés que investigue y resuma Lucy).",
+        nargs="+",
+        help="Consulta o tarea de investigación en lenguaje natural.",
     )
     parser.add_argument(
-        "-m",
         "--model-id",
-        default=os.getenv("LUCY_WEB_AGENT_MODEL", DEFAULT_OLLAMA_MODEL_ID),
-        help=f"Modelo de Ollama a usar (por defecto: {DEFAULT_OLLAMA_MODEL_ID}).",
+        default=None,
+        help=(
+            "ID del modelo en Ollama (por ejemplo gpt-oss:20b). "
+            f"Por defecto: {DEFAULT_OLLAMA_MODEL_ID}."
+        ),
     )
     parser.add_argument(
-        "-k",
         "--max-results",
         type=int,
         default=8,
-        help="Cantidad de resultados de DuckDuckGo a considerar (por defecto: 8).",
+        help="Cantidad máxima de resultados web (default: 8).",
     )
-
-    args = parser.parse_args()
-
-    print("")
-    print("╭──────────────── Lucy Web Agent ────────────────╮")
-    print(f"│  Modelo: {args.model_id:<37} │")
-    print(f"│  Resultados DuckDuckGo: {args.max_results:<21} │")
-    print("╰────────────────────────────────────────────────╯")
-    print("")
-    print(f"Tarea: {args.task}")
-    print("")
-
-    answer = run_web_research(
-        task=args.task,
-        model_id=args.model_id,
-        max_results=args.max_results,
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Aumenta verbosidad (-v, -vv).",
     )
+    return parser.parse_args()
 
-    print("\n──────── Respuesta de Lucy Web ────────\n")
+
+def main() -> None:
+    args = parse_args()
+    task = " ".join(args.task)
+
+    model_label = args.model_id or DEFAULT_OLLAMA_MODEL_ID
+
+    print(
+        "╭──────────────── Lucy Web Agent ────────────────╮"
+    )
+    print(f"│  Modelo: {model_label:<33}│")
+    print(f"│  Resultados DDGS: {args.max_results:<23}│")
+    print("╰────────────────────────────────────────────────╯\n")
+
+    print("Tarea:", task)
+    print()
+
+    try:
+        answer = run_web_research(
+            task=task,
+            model_id=args.model_id,
+            max_results=args.max_results,
+            verbosity=args.verbose,
+        )
+    except Exception as exc:  # pragma: no cover - salida de error sencilla
+        print("\n[Lucy web-agent] Error al ejecutar la tarea:\n")
+        print(repr(exc))
+        sys.exit(1)
+
+    print("──────── Respuesta de Lucy Web ────────\n")
     print(answer)
     print("\n───────────────────────────────────────\n")
 
