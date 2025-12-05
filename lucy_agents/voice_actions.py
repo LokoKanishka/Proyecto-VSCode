@@ -38,6 +38,13 @@ def _normalize(text: str) -> str:
     return t
 
 
+def _encode_query(q: str) -> str:
+    """Codificación muy simple para queries en URLs (espacios -> '+')."""
+    q = q.strip()
+    q = re.sub(r"\s+", " ", q)
+    return q.replace(" ", "+")
+
+
 # =========================
 # 2. Heurísticas de planning
 # =========================
@@ -51,9 +58,28 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
     t = _normalize(text)
     actions: List[PlannedAction] = []
 
-    # --- 2.1 Abrir Google (navegador) ---
-    # Cubre: "abrí / podés abrir google", "abrir el navegador", etc.
-    if ("google" in t or "navegador" in t or "browser" in t) and any(
+    # --- 2.1 Buscar en Google ---
+    if "buscar" in t and "google" in t:
+        # tratar de capturar "buscar ... en google"
+        m = re.search(r"buscar\s+(.+?)\s+en\s+google", t)
+        if m:
+            query = m.group(1)
+        else:
+            # fallback: todo lo que sigue a "buscar"
+            m2 = re.search(r"buscar\s+(.+)", t)
+            query = m2.group(1) if m2 else ""
+        if query:
+            encoded = _encode_query(query)
+            url = f"https://www.google.com/search?q={encoded}"
+            actions.append(
+                PlannedAction(
+                    tool="desktop",
+                    command=f"xdg-open {url}",
+                    description=f"Buscar en Google: {query}",
+                )
+            )
+    # --- 2.2 Abrir Google sin query ---
+    elif ("google" in t or "navegador" in t or "browser" in t) and any(
         v in t for v in ("abr", "pod", "pued")
     ):
         actions.append(
@@ -64,8 +90,26 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
             )
         )
 
-    # --- 2.2 Abrir YouTube ---
-    if "youtube" in t and any(v in t for v in ("abr", "pod", "pued")):
+    # --- 2.3 Buscar en YouTube ---
+    if "buscar" in t and "youtube" in t:
+        m = re.search(r"buscar\s+(.+?)\s+en\s+youtube", t)
+        if m:
+            query = m.group(1)
+        else:
+            m2 = re.search(r"buscar\s+(.+)", t)
+            query = m2.group(1) if m2 else ""
+        if query:
+            encoded = _encode_query(query)
+            url = f"https://www.youtube.com/results?search_query={encoded}"
+            actions.append(
+                PlannedAction(
+                    tool="desktop",
+                    command=f"xdg-open {url}",
+                    description=f"Buscar en YouTube: {query}",
+                )
+            )
+    # --- 2.4 Abrir YouTube sin query ---
+    elif "youtube" in t and any(v in t for v in ("abr", "pod", "pued")):
         actions.append(
             PlannedAction(
                 tool="desktop",
@@ -74,7 +118,7 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
             )
         )
 
-    # --- 2.3 Abrir proyecto de Lucy en VS Code ---
+    # --- 2.5 Abrir proyecto de Lucy en VS Code ---
     if (
         "abrí" in t
         or "abre" in t
@@ -98,7 +142,7 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
                 )
             )
 
-    # --- 2.4 Mostrar / leer README ---
+    # --- 2.6 Mostrar / leer README ---
     if "readme" in t:
         if re.search(r"\b(mostr(a|á)|mostrame|lee|leé|leer)\b", t):
             actions.append(
@@ -108,10 +152,6 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
                     description="Leer README.md en la terminal",
                 )
             )
-
-    # En el futuro, acá podemos agregar:
-    # - tool="web" para disparar el web-agent con una query
-    # - otros comandos de escritorio (capturas, abrir docs, etc.)
 
     return actions
 
@@ -151,7 +191,6 @@ def maybe_handle_desktop_intent(text: str) -> bool:
                 f"[LucyVoiceActions] Resultado ({act.tool}) {act.command!r}: {rc}"
             )
         else:
-            # Placeholder para futuros tools (web, etc.)
             print(
                 f"[LucyVoiceActions] Tool desconocida {act.tool!r}, "
                 f"acción {act.command!r} ignorada."
@@ -164,9 +203,9 @@ if __name__ == "__main__":
     # Pequeño test manual (no se usa en producción):
     tests = [
         "podés abrir Google?",
-        "primero abrí Google y después abrí YouTube",
-        "abrí el proyecto de lucy",
-        "mostrame el readme",
+        "podés buscar escucho ofertas en youtube?",
+        "puedes buscar noticias sobre constantinopla en google",
+        "abrí el proyecto de lucy y mostrame el readme",
         "esto no debería disparar nada",
     ]
     for t in tests:
