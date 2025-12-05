@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from lucy_agents.desktop_bridge import run_desktop_command
 
@@ -29,6 +29,10 @@ class PlannedAction:
     tool: str          # por ahora siempre "desktop"
     command: str       # comando para el Desktop Agent
     description: str   # para logs humanos (opcional)
+
+
+# Motor recordado para búsquedas posteriores ("ahora busca X")
+LAST_SEARCH_ENGINE: Optional[str] = None  # "google" | "youtube" | None
 
 
 def _normalize(text: str) -> str:
@@ -45,6 +49,45 @@ def _encode_query(q: str) -> str:
     return q.replace(" ", "+")
 
 
+def _has_search_verb(t: str) -> bool:
+    """
+    Detecta variantes simples de 'buscar':
+    'buscar', 'busca', 'buscá', 'podés buscar', etc.
+    """
+    patterns = [
+        "buscar ",
+        "buscar?",
+        "busca ",
+        "busca?",
+        "buscá ",
+        "buscá?",
+        "podes buscar",
+        "podés buscar",
+        "puedes buscar",
+        "poder buscar",
+        "ahora busca",
+    ]
+    return any(p in t for p in patterns)
+
+
+def _extract_query_after_buscar(t: str) -> str:
+    """
+    Extrae lo que viene después de 'buscar'/'busca' en la frase.
+    No intenta ser perfecto, solo útil para queries tipo:
+      'podés buscar escucho ofertas en youtube'
+      'ahora busca escucho ofertas de blender'
+    """
+    m = re.search(r"busca(?:r)?\s+(.+)", t)
+    if not m:
+        return ""
+    query = m.group(1)
+    # recortar muletillas finales muy comunes
+    for tail in (" por favor", " porfa", " gracias"):
+        if query.endswith(tail):
+            query = query[: -len(tail)]
+    return query.strip()
+
+
 # =========================
 # 2. Heurísticas de planning
 # =========================
@@ -55,19 +98,26 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
     (posiblemente vacía) que representan lo que Lucy debería hacer
     a nivel escritorio.
     """
+    global LAST_SEARCH_ENGINE
+
     t = _normalize(text)
     actions: List[PlannedAction] = []
 
-    # --- 2.1 Buscar en Google ---
-    if "buscar" in t and "google" in t:
-        # tratar de capturar "buscar ... en google"
-        m = re.search(r"buscar\s+(.+?)\s+en\s+google", t)
+    has_search = _has_search_verb(t)
+    has_google = "google" in t
+    has_youtube = "youtube" in t
+
+    # ---------- 2.1 Google ----------
+
+    # 2.1.a Buscar en Google con query explícita
+    if has_google and has_search:
+        # intentar capturar "buscar ... en google"
+        m = re.search(r"busca(?:r)?\s+(.+?)\s+en\s+google", t)
         if m:
-            query = m.group(1)
+            query = m.group(1).strip()
         else:
-            # fallback: todo lo que sigue a "buscar"
-            m2 = re.search(r"buscar\s+(.+)", t)
-            query = m2.group(1) if m2 else ""
+            query = _extract_query_after_buscar(t)
+
         if query:
             encoded = _encode_query(query)
             url = f"https://www.google.com/search?q={encoded}"
@@ -78,8 +128,10 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
                     description=f"Buscar en Google: {query}",
                 )
             )
-    # --- 2.2 Abrir Google sin query ---
-    elif ("google" in t or "navegador" in t or "browser" in t) and any(
+            LAST_SEARCH_ENGINE = "google"
+
+    # 2.1.b Abrir Google sin query
+    elif (has_google or "navegador" in t or "browser" in t) and any(
         v in t for v in ("abr", "pod", "pued")
     ):
         actions.append(
@@ -89,15 +141,18 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
                 description="Abrir Google en el navegador",
             )
         )
+        LAST_SEARCH_ENGINE = "google"
 
-    # --- 2.3 Buscar en YouTube ---
-    if "buscar" in t and "youtube" in t:
-        m = re.search(r"buscar\s+(.+?)\s+en\s+youtube", t)
+    # ---------- 2.2 YouTube ----------
+
+    # 2.2.a Buscar en YouTube con query explícita
+    if has_youtube and has_search:
+        m = re.search(r"busca(?:r)?\s+(.+?)\s+en\s+youtube", t)
         if m:
-            query = m.group(1)
+            query = m.group(1).strip()
         else:
-            m2 = re.search(r"buscar\s+(.+)", t)
-            query = m2.group(1) if m2 else ""
+            query = _extract_query_after_buscar(t)
+
         if query:
             encoded = _encode_query(query)
             url = f"https://www.youtube.com/results?search_query={encoded}"
@@ -108,8 +163,10 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
                     description=f"Buscar en YouTube: {query}",
                 )
             )
-    # --- 2.4 Abrir YouTube sin query ---
-    elif "youtube" in t and any(v in t for v in ("abr", "pod", "pued")):
+            LAST_SEARCH_ENGINE = "youtube"
+
+    # 2.2.b Abrir YouTube sin query
+    elif has_youtube and any(v in t for v in ("abr", "pod", "pued")):
         actions.append(
             PlannedAction(
                 tool="desktop",
@@ -117,8 +174,31 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
                 description="Abrir YouTube en el navegador",
             )
         )
+        LAST_SEARCH_ENGINE = "youtube"
 
-    # --- 2.5 Abrir proyecto de Lucy en VS Code ---
+    # ---------- 2.3 Buscar usando el último motor recordado ----------
+
+    if has_search and not has_google and not has_youtube and LAST_SEARCH_ENGINE:
+        query = _extract_query_after_buscar(t)
+        if query:
+            encoded = _encode_query(query)
+            if LAST_SEARCH_ENGINE == "google":
+                url = f"https://www.google.com/search?q={encoded}"
+                desc = f"Buscar en Google (motor recordado): {query}"
+            else:  # youtube
+                url = f"https://www.youtube.com/results?search_query={encoded}"
+                desc = f"Buscar en YouTube (motor recordado): {query}"
+
+            actions.append(
+                PlannedAction(
+                    tool="desktop",
+                    command=f"xdg-open {url}",
+                    description=desc,
+                )
+            )
+
+    # ---------- 2.4 Abrir proyecto de Lucy en VS Code ----------
+
     if (
         "abrí" in t
         or "abre" in t
@@ -142,7 +222,8 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
                 )
             )
 
-    # --- 2.6 Mostrar / leer README ---
+    # ---------- 2.5 Mostrar / leer README ----------
+
     if "readme" in t:
         if re.search(r"\b(mostr(a|á)|mostrame|lee|leé|leer)\b", t):
             actions.append(
@@ -203,7 +284,8 @@ if __name__ == "__main__":
     # Pequeño test manual (no se usa en producción):
     tests = [
         "podés abrir Google?",
-        "podés buscar escucho ofertas en youtube?",
+        "abrí youtube y busca escucho ofertas de blender",
+        "ahora busca escucho ofertas de blender",
         "puedes buscar noticias sobre constantinopla en google",
         "abrí el proyecto de lucy y mostrame el readme",
         "esto no debería disparar nada",
