@@ -30,6 +30,10 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
+
+def _log(msg: str) -> None:
+    print(msg, flush=True)
+
 # Comandos iniciales permitidos (primer token, para shell)
 SAFE_PREFIXES: List[str] = [
     "xdg-open",
@@ -228,14 +232,20 @@ def is_safe_command(command: str) -> bool:
 
 def run_shell_command(command: str) -> int:
     """Ejecuta un comando de shell si pasa los filtros."""
-    print(f"[LucyDesktop] Pedido de ejecución: {command!r}")
+    _log(f"[LucyDesktop] Pedido de ejecución: {command!r}")
 
     if not is_safe_command(command):
         print("[LucyDesktop] Comando rechazado por seguridad.", file=sys.stderr)
         return 1
 
     try:
-        completed = subprocess.run(command, shell=True, check=False)
+        _log(f"[LucyDesktop] Running allowed command: {command!r}")
+        completed = subprocess.run(command, shell=True, check=False, capture_output=True)
+        _log(f"[LucyDesktop] Command exit code: {completed.returncode}")
+        if completed.stderr:
+            _log(f"[LucyDesktop] stderr: {completed.stderr.decode(errors='ignore')!r}")
+        if completed.stdout:
+            _log(f"[LucyDesktop] stdout: {completed.stdout.decode(errors='ignore')!r}")
         return completed.returncode
     except KeyboardInterrupt:
         print("\n[LucyDesktop] Interrumpido por el usuario.", file=sys.stderr)
@@ -273,6 +283,8 @@ def interactive_loop() -> int:
         if not line:
             continue
 
+        _log(f"[LucyDesktop] Interactive command: {line!r}")
+
         if line.lower() in {"salir", "exit", "quit"}:
             print("[LucyDesktop] Chau 💜")
             return 0
@@ -293,6 +305,7 @@ def interactive_loop() -> int:
 # ===========
 
 def main(argv: List[str] | None = None) -> int:
+    _log(f"[LucyDesktop] argv: {sys.argv!r}")
     parser = argparse.ArgumentParser(
         description="Lucy Desktop Agent – manos locales con filtros de seguridad.",
     )
