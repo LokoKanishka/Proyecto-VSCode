@@ -28,6 +28,28 @@ def _normalize(text: str) -> str:
 # --- Intenciones concretas ---
 
 
+def _intent_open_google_browser(text: str) -> Optional[str]:
+    """
+    Intención: abrir Google (navegador por defecto).
+
+    Frases esperadas:
+      - "abrí google"
+      - "podes abrir google"
+      - "podés abrir google"
+      - "puedes abrir google"
+      - "abrí el navegador"
+    """
+    t = _normalize(text)
+
+    if "google" in t or "navegador" in t or "browser" in t:
+        # Algún verbo de capacidad / acción
+        if any(v in t for v in ("abr", "pod", "pued")):
+            # Delegamos en xdg-open para que use el navegador predeterminado
+            return "xdg-open https://www.google.com"
+
+    return None
+
+
 def _intent_open_project(text: str) -> Optional[str]:
     """
     Intención: abrir el proyecto Lucy en VS Code.
@@ -41,9 +63,8 @@ def _intent_open_project(text: str) -> Optional[str]:
     """
     t = _normalize(text)
 
-    # Reglas muy simples para empezar
-    if "abrí" in t or "abre" in t or "abrir" in t:
-        if "proyecto" in t or "lucy" in t or "código" in t or "code" in t:
+    if "abrí" in t or "abre" in t or "abrir" in t or "abri " in t:
+        if "proyecto" in t or "lucy" in t or "código" in t or "codigo" in t or "code" in t:
             return "code ."
 
     if "vscode" in t or "visual studio code" in t:
@@ -64,8 +85,8 @@ def _intent_open_readme(text: str) -> Optional[str]:
     t = _normalize(text)
 
     if "readme" in t:
-        # Aceptamos "mostrá", "leé", "lee", etc.
-        if re.search(r"\bmostr(a|á)|lee|leé|leer\b", t):
+        # Aceptamos "mostrá", "mostrame", "leé", "lee", "leer", etc.
+        if re.search(r"\b(mostr(a|á)|mostrame|lee|leé|leer)\b", t):
             return "read README.md"
 
     return None
@@ -86,8 +107,8 @@ def maybe_handle_desktop_intent(text: str) -> bool:
     if not t:
         return False
 
-    # 1) Probar intenciones específicas
-    for handler in (_intent_open_project, _intent_open_readme):
+    # Orden importa: primero navegador, luego proyecto, luego README
+    for handler in (_intent_open_google_browser, _intent_open_project, _intent_open_readme):
         cmd = handler(t)
         if cmd:
             print(f"[LucyVoiceActions] Intención de escritorio detectada: {cmd!r}")
@@ -95,17 +116,17 @@ def maybe_handle_desktop_intent(text: str) -> bool:
             print(f"[LucyVoiceActions] Resultado comando {cmd!r}: {rc}")
             return True
 
-    # 2) Nada reconocido
     return False
 
 
 if __name__ == "__main__":
-    # Pequeño test manual:
+    # Pequeño test manual
     tests = [
+        "podés abrir Google?",
+        "abrí el navegador",
         "abrí el proyecto de lucy",
         "abrí vscode",
         "mostrame el readme",
-        "leé el archivo README por favor",
         "esto no debería disparar nada",
     ]
     for t in tests:
