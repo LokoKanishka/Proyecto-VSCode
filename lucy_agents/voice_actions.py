@@ -50,6 +50,15 @@ def _clean_query(q: str) -> str:
     for tail in (" por favor", " porfa", " gracias"):
         if q.endswith(tail):
             q = q[: -len(tail)]
+    for tail in (
+        " y reproducirlo",
+        " y que lo reproduzcas",
+        " y que lo pongas",
+        " y darle play",
+        " y darle play por favor",
+    ):
+        if q.endswith(tail):
+            q = q[: -len(tail)]
     q = q.strip(" ¿?¡!.,")
     q = re.sub(r"\s+", " ", q)
     # Cortar relleno típico después de la query (ej. 'y me abrís...')
@@ -96,6 +105,7 @@ def _extract_query_for_engine(t: str, engine: str) -> str:
     """
     patterns = [
         rf"{engine}[^\n]*?busc[aá](?:r)?\s+(.+)",                     # ...youtube... buscá X
+        rf"busc[aá](?:r)?\s+(?:en|por)\s+{engine}\s+(.+)",           # buscá en youtube X
         rf"busc[aá](?:r)?\s+(.+?)\s+(?:en|por)\s+{engine}",           # buscá X en youtube
         rf"ahora[^\n]*?busc[aá](?:r)?\s+(.+?)\s+(?:en|por)\s+{engine}",  # ahora buscá X en youtube
     ]
@@ -248,7 +258,32 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
 # 3. Orquestador público
 # =========================
 
-def maybe_handle_desktop_intent(text: str) -> bool:
+def _wants_playback(text: str) -> bool:
+    """Heurística simple para pedidos de reproducción/play."""
+    lowered = text.lower()
+    playback_markers = (
+        "reproduc",
+        "ponelo",
+        "ponerlo",
+        "pone el programa",
+        "poner el programa",
+        "darle play",
+        "dale play",
+    )
+    return any(marker in lowered for marker in playback_markers)
+
+
+def _plan_targets_youtube(plan: list[PlannedAction]) -> bool:
+    """Detecta si algún paso apunta a YouTube."""
+    for act in plan:
+        cmd = act.command.lower()
+        desc = act.description.lower()
+        if "youtube.com" in cmd or "youtu.be" in cmd or "youtube" in desc:
+            return True
+    return False
+
+
+def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     """
     Intenta manejar una intención de escritorio a partir de texto.
 
@@ -284,7 +319,18 @@ def maybe_handle_desktop_intent(text: str) -> bool:
                 f"acción {act.command!r} ignorada."
             )
 
-    return True
+    wants_play = _wants_playback(text)
+    targets_yt = _plan_targets_youtube(plan)
+
+    if wants_play and targets_yt:
+        spoken = (
+            "Te abrí la búsqueda en YouTube para ese programa, pero todavía no puedo "
+            "elegir el video ni darle play. Tenés que apretar vos en el que quieras."
+        )
+    else:
+        spoken = "Listo, ya lo abrí en tu escritorio."
+
+    return True, spoken
 
 
 if __name__ == "__main__":
