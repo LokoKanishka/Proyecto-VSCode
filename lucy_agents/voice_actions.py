@@ -3,129 +3,169 @@
 Acciones de escritorio disparadas por comandos de voz (texto).
 
 Este módulo no hace STT ni TTS: recibe texto ya transcripto y,
-si detecta alguna intención de escritorio, llama a las manos locales
-(vía desktop_bridge) y devuelve True. Si no reconoce nada, devuelve False.
+si detecta alguna INTENCIÓN de escritorio, arma un pequeño PLAN
+(lista de acciones) y lo ejecuta usando las manos locales
+(vía desktop_bridge).
+
+Hoy solo tenemos tool "desktop", pero la estructura ya deja espacio
+para agregar tool "web", etc.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Optional
+from dataclasses import dataclass
+from typing import List
 
 from lucy_agents.desktop_bridge import run_desktop_command
 
-# --- Utilidades de normalización ---
+
+# =========================
+# 1. Modelo de planificación
+# =========================
+
+@dataclass
+class PlannedAction:
+    tool: str          # por ahora siempre "desktop"
+    command: str       # comando para el Desktop Agent
+    description: str   # para logs humanos (opcional)
 
 
 def _normalize(text: str) -> str:
     """Normaliza texto para matching simple."""
     t = text.lower().strip()
-    # Normalizar variantes de 'lucy' con y/i al final, etc.
     t = t.replace("luci", "lucy")
     return t
 
 
-# --- Intenciones concretas ---
+# =========================
+# 2. Heurísticas de planning
+# =========================
 
-
-def _intent_open_google_browser(text: str) -> Optional[str]:
+def _plan_from_text(text: str) -> List[PlannedAction]:
     """
-    Intención: abrir Google (navegador por defecto).
-
-    Frases esperadas:
-      - "abrí google"
-      - "podes abrir google"
-      - "podés abrir google"
-      - "puedes abrir google"
-      - "abrí el navegador"
+    Dado un texto en castellano, devuelve una lista de acciones
+    (posiblemente vacía) que representan lo que Lucy debería hacer
+    a nivel escritorio.
     """
     t = _normalize(text)
+    actions: List[PlannedAction] = []
 
-    if "google" in t or "navegador" in t or "browser" in t:
-        # Algún verbo de capacidad / acción
-        if any(v in t for v in ("abr", "pod", "pued")):
-            # Delegamos en xdg-open para que use el navegador predeterminado
-            return "xdg-open https://www.google.com"
+    # --- 2.1 Abrir Google (navegador) ---
+    # Cubre: "abrí / podés abrir google", "abrir el navegador", etc.
+    if ("google" in t or "navegador" in t or "browser" in t) and any(
+        v in t for v in ("abr", "pod", "pued")
+    ):
+        actions.append(
+            PlannedAction(
+                tool="desktop",
+                command="xdg-open https://www.google.com",
+                description="Abrir Google en el navegador",
+            )
+        )
 
-    return None
+    # --- 2.2 Abrir YouTube ---
+    if "youtube" in t and any(v in t for v in ("abr", "pod", "pued")):
+        actions.append(
+            PlannedAction(
+                tool="desktop",
+                command="xdg-open https://www.youtube.com",
+                description="Abrir YouTube en el navegador",
+            )
+        )
 
+    # --- 2.3 Abrir proyecto de Lucy en VS Code ---
+    if (
+        "abrí" in t
+        or "abre" in t
+        or "abrir" in t
+        or "abri " in t
+        or "vscode" in t
+        or "visual studio code" in t
+    ):
+        if (
+            "proyecto" in t
+            or "lucy" in t
+            or "código" in t
+            or "codigo" in t
+            or "code" in t
+        ):
+            actions.append(
+                PlannedAction(
+                    tool="desktop",
+                    command="code .",
+                    description="Abrir el proyecto de Lucy en VS Code",
+                )
+            )
 
-def _intent_open_project(text: str) -> Optional[str]:
-    """
-    Intención: abrir el proyecto Lucy en VS Code.
-
-    Frases esperadas (ejemplos):
-      - "abrí el proyecto"
-      - "abrí el proyecto de lucy"
-      - "abrí vscode"
-      - "abrí visual studio code"
-      - "abrí el código"
-    """
-    t = _normalize(text)
-
-    if "abrí" in t or "abre" in t or "abrir" in t or "abri " in t:
-        if "proyecto" in t or "lucy" in t or "código" in t or "codigo" in t or "code" in t:
-            return "code ."
-
-    if "vscode" in t or "visual studio code" in t:
-        return "code ."
-
-    return None
-
-
-def _intent_open_readme(text: str) -> Optional[str]:
-    """
-    Intención: mostrar el README en la terminal.
-
-    Frases esperadas:
-      - "mostrame el readme"
-      - "leé el readme"
-      - "leé el archivo readme"
-    """
-    t = _normalize(text)
-
+    # --- 2.4 Mostrar / leer README ---
     if "readme" in t:
-        # Aceptamos "mostrá", "mostrame", "leé", "lee", "leer", etc.
         if re.search(r"\b(mostr(a|á)|mostrame|lee|leé|leer)\b", t):
-            return "read README.md"
+            actions.append(
+                PlannedAction(
+                    tool="desktop",
+                    command="read README.md",
+                    description="Leer README.md en la terminal",
+                )
+            )
 
-    return None
+    # En el futuro, acá podemos agregar:
+    # - tool="web" para disparar el web-agent con una query
+    # - otros comandos de escritorio (capturas, abrir docs, etc.)
+
+    return actions
 
 
-# --- Orquestador ---
-
+# =========================
+# 3. Orquestador público
+# =========================
 
 def maybe_handle_desktop_intent(text: str) -> bool:
     """
     Intenta manejar una intención de escritorio a partir de texto.
 
-    Devuelve True si ejecutó alguna acción (aunque falle el comando),
-    False si no reconoció ninguna intención.
+    - Construye un pequeño plan de acciones.
+    - Ejecuta todas las acciones en orden.
+    - Devuelve True si hubo al menos una acción, False si no hubo ninguna.
+
+    IMPORTANTE: Solo se ocupa de tool "desktop".
     """
     text = text or ""
     t = text.strip()
     if not t:
         return False
 
-    # Orden importa: primero navegador, luego proyecto, luego README
-    for handler in (_intent_open_google_browser, _intent_open_project, _intent_open_readme):
-        cmd = handler(t)
-        if cmd:
-            print(f"[LucyVoiceActions] Intención de escritorio detectada: {cmd!r}")
-            rc = run_desktop_command(cmd)
-            print(f"[LucyVoiceActions] Resultado comando {cmd!r}: {rc}")
-            return True
+    plan = _plan_from_text(t)
+    if not plan:
+        return False
 
-    return False
+    print("[LucyVoiceActions] Plan de escritorio generado:")
+    for i, act in enumerate(plan, start=1):
+        print(f"  {i}. [{act.tool}] {act.description} -> {act.command!r}")
+
+    # Ejecutar en orden
+    for act in plan:
+        if act.tool == "desktop":
+            rc = run_desktop_command(act.command)
+            print(
+                f"[LucyVoiceActions] Resultado ({act.tool}) {act.command!r}: {rc}"
+            )
+        else:
+            # Placeholder para futuros tools (web, etc.)
+            print(
+                f"[LucyVoiceActions] Tool desconocida {act.tool!r}, "
+                f"acción {act.command!r} ignorada."
+            )
+
+    return True
 
 
 if __name__ == "__main__":
-    # Pequeño test manual
+    # Pequeño test manual (no se usa en producción):
     tests = [
         "podés abrir Google?",
-        "abrí el navegador",
+        "primero abrí Google y después abrí YouTube",
         "abrí el proyecto de lucy",
-        "abrí vscode",
         "mostrame el readme",
         "esto no debería disparar nada",
     ]
