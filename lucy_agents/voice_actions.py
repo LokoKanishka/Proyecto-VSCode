@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import List, Optional
+from urllib.parse import quote_plus
 
 from lucy_agents.desktop_bridge import run_desktop_command
 
@@ -39,14 +40,30 @@ def _normalize(text: str) -> str:
     """Normaliza texto para matching simple."""
     t = text.lower().strip()
     t = t.replace("luci", "lucy")
+    t = " ".join(t.split())
     return t
 
 
-def _encode_query(q: str) -> str:
-    """Codificación muy simple para queries en URLs (espacios -> '+')."""
+def _clean_query(q: str) -> str:
+    """Limpia la query de muletillas y espacios."""
     q = q.strip()
+    for tail in (" por favor", " porfa", " gracias"):
+        if q.endswith(tail):
+            q = q[: -len(tail)]
+    q = q.strip(" ¿?¡!.,")
     q = re.sub(r"\s+", " ", q)
-    return q.replace(" ", "+")
+    # Cortar relleno típico después de la query (ej. 'y me abrís...')
+    for pat in (r"\s+y\s+me\s+", r"\s+y\s+que\s+"):
+        parts = re.split(pat, q, maxsplit=1)
+        if len(parts) > 1:
+            q = parts[0].strip()
+            break
+    return q
+
+
+def _encode_query(q: str) -> str:
+    """Codifica la query para URL usando solo la stdlib."""
+    return quote_plus(_clean_query(q))
 
 
 def _has_search_verb(t: str) -> bool:
@@ -54,20 +71,7 @@ def _has_search_verb(t: str) -> bool:
     Detecta variantes simples de 'buscar':
     'buscar', 'busca', 'buscá', 'podés buscar', etc.
     """
-    patterns = [
-        "buscar ",
-        "buscar?",
-        "busca ",
-        "busca?",
-        "buscá ",
-        "buscá?",
-        "podes buscar",
-        "podés buscar",
-        "puedes buscar",
-        "poder buscar",
-        "ahora busca",
-    ]
-    return any(p in t for p in patterns)
+    return bool(re.search(r"\bbusc[aá](?:r)?\b", t) or "podes buscar" in t or "podés buscar" in t or "puedes buscar" in t)
 
 
 def _extract_query_after_buscar(t: str) -> str:
@@ -77,15 +81,39 @@ def _extract_query_after_buscar(t: str) -> str:
       'podés buscar escucho ofertas en youtube'
       'ahora busca escucho ofertas de blender'
     """
-    m = re.search(r"busca(?:r)?\s+(.+)", t)
+    m = re.search(r"busc[aá](?:r)?\s+(.+)", t)
     if not m:
         return ""
-    query = m.group(1)
-    # recortar muletillas finales muy comunes
-    for tail in (" por favor", " porfa", " gracias"):
-        if query.endswith(tail):
-            query = query[: -len(tail)]
-    return query.strip()
+    return _clean_query(m.group(1))
+
+
+def _extract_query_for_engine(t: str, engine: str) -> str:
+    """
+    Busca patrones explícitos para un motor concreto (google/youtube).
+    Ejemplos:
+      - 'buscá X en youtube'
+      - 'abrí youtube y buscá X'
+    """
+    patterns = [
+        rf"{engine}[^\n]*?busc[aá](?:r)?\s+(.+)",                     # ...youtube... buscá X
+        rf"busc[aá](?:r)?\s+(.+?)\s+(?:en|por)\s+{engine}",           # buscá X en youtube
+        rf"ahora[^\n]*?busc[aá](?:r)?\s+(.+?)\s+(?:en|por)\s+{engine}",  # ahora buscá X en youtube
+    ]
+    for pat in patterns:
+        m = re.search(pat, t)
+        if m:
+            return _clean_query(m.group(1))
+    return ""
+
+
+def _has_open_verb(t: str) -> bool:
+    """Detecta verbos de abrir."""
+    return bool(
+        re.search(
+            r"\babr(?:e|i|ir|í|as|ás|amos|ime|eme|ilo|ila|an)?\b",
+            t,
+        )
+    )
 
 
 # =========================
@@ -109,31 +137,19 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
 
     # ---------- 2.1 Google ----------
 
-    # 2.1.a Buscar en Google con query explícita
-    if has_google and has_search:
-        # intentar capturar "buscar ... en google"
-        m = re.search(r"busca(?:r)?\s+(.+?)\s+en\s+google", t)
-        if m:
-            query = m.group(1).strip()
-        else:
-            query = _extract_query_after_buscar(t)
-
-        if query:
-            encoded = _encode_query(query)
-            url = f"https://www.google.com/search?q={encoded}"
-            actions.append(
-                PlannedAction(
-                    tool="desktop",
-                    command=f"xdg-open {url}",
-                    description=f"Buscar en Google: {query}",
-                )
+    google_query = _extract_query_for_engine(t, "google") if has_search or has_google else ""
+    if google_query:
+        encoded = _encode_query(google_query)
+        url = f"https://www.google.com/search?q={encoded}"
+        actions.append(
+            PlannedAction(
+                tool="desktop",
+                command=f"xdg-open {url}",
+                description=f"Abrir Google y buscar '{google_query}'",
             )
-            LAST_SEARCH_ENGINE = "google"
-
-    # 2.1.b Abrir Google sin query
-    elif (has_google or "navegador" in t or "browser" in t) and any(
-        v in t for v in ("abr", "pod", "pued")
-    ):
+        )
+        LAST_SEARCH_ENGINE = "google"
+    elif has_google and _has_open_verb(t):
         actions.append(
             PlannedAction(
                 tool="desktop",
@@ -145,28 +161,19 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
 
     # ---------- 2.2 YouTube ----------
 
-    # 2.2.a Buscar en YouTube con query explícita
-    if has_youtube and has_search:
-        m = re.search(r"busca(?:r)?\s+(.+?)\s+en\s+youtube", t)
-        if m:
-            query = m.group(1).strip()
-        else:
-            query = _extract_query_after_buscar(t)
-
-        if query:
-            encoded = _encode_query(query)
-            url = f"https://www.youtube.com/results?search_query={encoded}"
-            actions.append(
-                PlannedAction(
-                    tool="desktop",
-                    command=f"xdg-open {url}",
-                    description=f"Buscar en YouTube: {query}",
-                )
+    youtube_query = _extract_query_for_engine(t, "youtube") if has_search or has_youtube else ""
+    if youtube_query:
+        encoded = _encode_query(youtube_query)
+        url = f"https://www.youtube.com/results?search_query={encoded}"
+        actions.append(
+            PlannedAction(
+                tool="desktop",
+                command=f"xdg-open {url}",
+                description=f"Abrir YouTube y buscar '{youtube_query}'",
             )
-            LAST_SEARCH_ENGINE = "youtube"
-
-    # 2.2.b Abrir YouTube sin query
-    elif has_youtube and any(v in t for v in ("abr", "pod", "pued")):
+        )
+        LAST_SEARCH_ENGINE = "youtube"
+    elif has_youtube and _has_open_verb(t):
         actions.append(
             PlannedAction(
                 tool="desktop",
@@ -184,10 +191,10 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
             encoded = _encode_query(query)
             if LAST_SEARCH_ENGINE == "google":
                 url = f"https://www.google.com/search?q={encoded}"
-                desc = f"Buscar en Google (motor recordado): {query}"
+                desc = f"Buscar en Google (motor recordado): '{query}'"
             else:  # youtube
                 url = f"https://www.youtube.com/results?search_query={encoded}"
-                desc = f"Buscar en YouTube (motor recordado): {query}"
+                desc = f"Buscar en YouTube (motor recordado): '{query}'"
 
             actions.append(
                 PlannedAction(
@@ -284,8 +291,9 @@ if __name__ == "__main__":
     # Pequeño test manual (no se usa en producción):
     tests = [
         "podés abrir Google?",
-        "abrí youtube y busca escucho ofertas de blender",
-        "ahora busca escucho ofertas de blender",
+        "abrí youtube y buscá escucho ofertas de blender",
+        "ahora buscá escucho ofertas de blender",
+        "bien quiero que ahora abras youtube que ahora se escucho ofertas y me abras el programa transmitido hace dos días",
         "puedes buscar noticias sobre constantinopla en google",
         "abrí el proyecto de lucy y mostrame el readme",
         "esto no debería disparar nada",
