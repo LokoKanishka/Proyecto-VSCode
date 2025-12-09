@@ -1,329 +1,130 @@
 #!/usr/bin/env python3
 """
-Lucy Desktop Agent (manos locales mínimas + lectura de archivos)
+Lucy Desktop Agent
 
-Modos de uso:
-- Interactivo:
-    ./scripts/lucy_desktop_agent.sh
-
-    Comandos internos (no van al shell):
-        ls [RUTA]
-        read RUTA
-
-    Comandos de escritorio (van al shell con filtros):
-        xdg-open URL
-        code .
-        nautilus .
-        etc. (ver SAFE_PREFIXES)
-
-- Comando único:
-    ./scripts/lucy_desktop_agent.sh -c "xdg-open https://www.google.com"
+Puente simple y bien logueado entre Lucy y el sistema operativo.
+Ejecuta SOLO comandos permitidos (allowlist) y deja trazas completas
+para que se pueda reconstruir qué pasó mirando la consola.
 """
 
-from __future__ import annotations
-
-import argparse
-import os
+import sys
 import shlex
 import subprocess
-import sys
-from pathlib import Path
 from typing import List, Tuple
 
 
 def _log(msg: str) -> None:
-    print(msg, flush=True)
+    """Log con prefijo estándar."""
+    print(f"[LucyDesktop] {msg}", flush=True)
 
-# Comandos iniciales permitidos (primer token, para shell)
-SAFE_PREFIXES: List[str] = [
+
+# Log de entrada SIEMPRE que se cargue el script como programa
+_log(f"script entry, argv={sys.argv!r}")
+
+
+# Binaries permitidos (primer token del comando)
+ALLOWED_BINARIES = {
     "xdg-open",
-    "gio",
-    "firefox",
-    "vlc",
     "code",
     "nautilus",
-    "thunar",
-    "gnome-screenshot",
-    "gnome-terminal",
-    "google-chrome",
-    "chromium",
-    "evince",
-    "okular",
-    "gedit",
-    "libreoffice",
-]
-
-# Subcadenas peligrosas bloqueadas
-BANNED_SUBSTRINGS: List[str] = [
-    " rm -rf",
-    " rm -r ",
-    " rm -f ",
-    "mkfs",
-    "dd if=",
-    "mkpartition",
-    "parted ",
-    "wipefs",
-    "cryptsetup",
-    "userdel",
-    "groupdel",
-    "shutdown",
-    "reboot",
-    "poweroff",
-    ":(){:|:&};:",
-    "> /dev/sd",
-    ">/dev/sd",
-]
-
-# Raíces "amigables" para mensajes en ls/read
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-HOME_DIR = Path.home()
+    "wmctrl",
+}
 
 
-# ===============================
-# 1. Comandos internos: ls, read
-# ===============================
-
-def handle_internal(command: str) -> Tuple[bool, int]:
+def _parse_command(command_str: str) -> Tuple[bool, List[str]]:
     """
-    Maneja comandos internos:
-      - ls [RUTA]
-      - read RUTA
-
-    Devuelve (handled, return_code).
-    handled = True si el comando era interno (aunque falle).
+    Parsea y valida el comando.
+    Devuelve (allowed, argv_list).
+    Si allowed es False, argv_list puede estar vacío.
     """
-    stripped = command.strip()
-    if not stripped:
-        return False, 0
+    command_str = (command_str or "").strip()
+    if not command_str:
+        _log("Comando vacío recibido.")
+        return False, []
 
-    parts = stripped.split(maxsplit=1)
-    cmd = parts[0]
-    arg = parts[1] if len(parts) > 1 else ""
-
-    if cmd == "ls":
-        return True, internal_ls(arg)
-
-    if cmd == "read":
-        return True, internal_read(arg)
-
-    return False, 0
-
-
-def _pretty_path(p: Path) -> str:
     try:
-        p = p.resolve()
-    except Exception:  # noqa: BLE001
-        return str(p)
-    try:
-        return str(p).replace(str(PROJECT_ROOT), "<PROYECTO>").replace(str(HOME_DIR), "<HOME>")
-    except Exception:  # noqa: BLE001
-        return str(p)
-
-
-def internal_ls(path_arg: str) -> int:
-    """Implementación simple de 'ls [ruta]'."""
-    target = Path(path_arg) if path_arg else Path.cwd()
-    try:
-        target = target.expanduser().resolve()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[LucyDesktop][ls] No pude resolver la ruta: {exc}", file=sys.stderr)
-        return 1
-
-    if not target.exists():
-        print(f"[LucyDesktop][ls] La ruta no existe: {target}", file=sys.stderr)
-        return 1
-    if not target.is_dir():
-        print(f"[LucyDesktop][ls] No es un directorio: {target}", file=sys.stderr)
-        return 1
-
-    print(f"[LucyDesktop][ls] Contenido de {_pretty_path(target)}:")
-    try:
-        entries = sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
-    except PermissionError:
-        print("[LucyDesktop][ls] Permiso denegado para listar este directorio.", file=sys.stderr)
-        return 1
-
-    if not entries:
-        print("  (vacío)")
-        return 0
-
-    for entry in entries:
-        mark = "/" if entry.is_dir() else ""
-        print(f"  {entry.name}{mark}")
-    return 0
-
-
-def internal_read(path_arg: str) -> int:
-    """Implementación de 'read RUTA': muestra contenido de un archivo de texto."""
-    if not path_arg:
-        print("[LucyDesktop][read] Uso: read RUTA/AL/ARCHIVO", file=sys.stderr)
-        return 1
-
-    target = Path(path_arg).expanduser()
-    try:
-        target = target.resolve()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[LucyDesktop][read] No pude resolver la ruta: {exc}", file=sys.stderr)
-        return 1
-
-    if not target.exists():
-        print(f"[LucyDesktop][read] El archivo no existe: {target}", file=sys.stderr)
-        return 1
-    if not target.is_file():
-        print(f"[LucyDesktop][read] No es un archivo: {target}", file=sys.stderr)
-        return 1
-
-    print(f"[LucyDesktop][read] Leyendo {_pretty_path(target)}:\n")
-    try:
-        # Leemos en modo texto con fallback a UTF-8
-        with target.open("r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                # Evitar prints hiperlargos en archivos gigantes: cortamos después de cierto límite
-                # pero por ahora lo dejamos sin límite y más adelante se puede ajustar.
-                print(line.rstrip("\n"))
-    except PermissionError:
-        print("[LucyDesktop][read] Permiso denegado para leer el archivo.", file=sys.stderr)
-        return 1
-    except Exception as exc:  # noqa: BLE001
-        print(f"[LucyDesktop][read] Error al leer el archivo: {exc}", file=sys.stderr)
-        return 1
-
-    return 0
-
-
-# ==========================
-# 2. Comandos de escritorio
-# ==========================
-
-def is_safe_command(command: str) -> bool:
-    """Heurística de seguridad básica para comandos de shell."""
-    normalized = command.strip()
-    if not normalized:
-        return False
-
-    # Nunca permitimos sudo
-    if normalized.startswith("sudo "):
-        print("[LucyDesktop] Bloqueado: no se permite 'sudo'.", file=sys.stderr)
-        return False
-
-    lower = normalized.lower()
-    for bad in BANNED_SUBSTRINGS:
-        if bad in lower:
-            print(f"[LucyDesktop] Bloqueado por patrón peligroso: {bad!r}", file=sys.stderr)
-            return False
-
-    # Primer token debe estar en SAFE_PREFIXES
-    try:
-        first_token = shlex.split(normalized)[0]
+        args = shlex.split(command_str)
     except ValueError as exc:
-        print(f"[LucyDesktop] No pude parsear el comando: {exc}", file=sys.stderr)
-        return False
+        _log(f"Error al parsear el comando: {exc!r}")
+        return False, []
 
-    if first_token not in SAFE_PREFIXES:
-        print(
-            f"[LucyDesktop] Bloqueado: el comando inicial {first_token!r} "
-            "no está en SAFE_PREFIXES.",
-            file=sys.stderr,
-        )
-        return False
+    if not args:
+        _log("Sin tokens luego de parsear el comando.")
+        return False, []
 
-    return True
+    prog = args[0]
+    if prog not in ALLOWED_BINARIES:
+        _log(f"Programa no permitido: {prog!r}")
+        return False, []
+
+    # Caso especial: wmctrl -c "<title>"
+    if prog == "wmctrl":
+        if len(args) >= 3 and args[1] == "-c":
+            title = args[2]
+            safe_title = title.replace('"', "").strip()
+            if not safe_title:
+                _log("Título de ventana vacío/invalid para wmctrl -c.")
+                return False, []
+            if len(safe_title) > 100:
+                _log("Título de ventana demasiado largo para wmctrl -c.")
+                return False, []
+            # Reescribimos argumentos con el título saneado
+            args = ["wmctrl", "-c", safe_title]
+            _log(f"wmctrl -c permitido para ventana: {safe_title!r}")
+            return True, args
+        else:
+            _log("wmctrl sólo se permite como 'wmctrl -c <window_title>'.")
+            return False, []
+
+    # Otros comandos permitidos tal cual (xdg-open, code, nautilus)
+    return True, args
 
 
-def run_shell_command(command: str) -> int:
-    """Ejecuta un comando de shell si pasa los filtros."""
-    _log(f"[LucyDesktop] Pedido de ejecución: {command!r}")
-
-    if not is_safe_command(command):
-        print("[LucyDesktop] Comando rechazado por seguridad.", file=sys.stderr)
+def _run_allowed_command(args: List[str]) -> int:
+    """Ejecuta el comando ya validado y loguea resultado."""
+    if not args:
+        _log("No hay argumentos para ejecutar.")
         return 1
+
+    command_str = " ".join(shlex.quote(a) for a in args)
+    _log(f"Running allowed command: {command_str!r}")
 
     try:
-        _log(f"[LucyDesktop] Running allowed command: {command!r}")
-        completed = subprocess.run(command, shell=True, check=False, capture_output=True)
-        _log(f"[LucyDesktop] Command exit code: {completed.returncode}")
-        if completed.stderr:
-            _log(f"[LucyDesktop] stderr: {completed.stderr.decode(errors='ignore')!r}")
-        if completed.stdout:
-            _log(f"[LucyDesktop] stdout: {completed.stdout.decode(errors='ignore')!r}")
-        return completed.returncode
-    except KeyboardInterrupt:
-        print("\n[LucyDesktop] Interrumpido por el usuario.", file=sys.stderr)
-        return 130
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+        )
     except Exception as exc:  # noqa: BLE001
-        print(f"[LucyDesktop] Error al ejecutar el comando: {exc}", file=sys.stderr)
+        _log(f"Error ejecutando comando: {exc!r}")
         return 1
 
+    _log(f"Command exit code: {proc.returncode}")
+    if proc.stdout:
+        _log(f"stdout: {proc.stdout!r}")
+    if proc.stderr:
+        _log(f"stderr: {proc.stderr!r}")
 
-# ====================
-# 3. Loop interactivo
-# ====================
-
-def interactive_loop() -> int:
-    """Loop interactivo simple."""
-    print("Lucy Desktop Agent (modo interactivo).")
-    print("Comandos internos:")
-    print("  ls [RUTA]   → listar contenido de carpeta")
-    print("  read RUTA   → leer archivo de texto")
-    print("Comandos de escritorio (van al sistema si son seguros):")
-    print("  xdg-open URL, code ., nautilus ., etc.")
-    print("Escribí 'salir' para terminar.\n")
-
-    while True:
-        try:
-            line = input("lucy-desktop> ")
-        except EOFError:
-            print("\n[LucyDesktop] EOF recibido, saliendo.")
-            return 0
-        except KeyboardInterrupt:
-            print("\n[LucyDesktop] Ctrl+C, saliendo.")
-            return 130
-
-        line = line.strip()
-        if not line:
-            continue
-
-        _log(f"[LucyDesktop] Interactive command: {line!r}")
-
-        if line.lower() in {"salir", "exit", "quit"}:
-            print("[LucyDesktop] Chau 💜")
-            return 0
-
-        # 1) Intentar comandos internos (ls, read)
-        handled, rc = handle_internal(line)
-        if handled:
-            print(f"[LucyDesktop] Código de salida (interno): {rc}\n")
-            continue
-
-        # 2) Si no es interno, mandarlo al shell con filtros
-        rc = run_shell_command(line)
-        print(f"[LucyDesktop] Código de salida: {rc}\n")
+    return proc.returncode
 
 
-# ===========
-# 4. main()
-# ===========
+def main() -> int:
+    """Punto de entrada principal del Desktop Agent."""
+    _log(f"main() argv={sys.argv!r}")
 
-def main(argv: List[str] | None = None) -> int:
-    _log(f"[LucyDesktop] argv: {sys.argv!r}")
-    parser = argparse.ArgumentParser(
-        description="Lucy Desktop Agent – manos locales con filtros de seguridad.",
-    )
-    parser.add_argument(
-        "-c",
-        "--command",
-        help="Comando único a ejecutar; si se omite, entra en modo interactivo.",
-    )
-    args = parser.parse_args(argv)
+    if len(sys.argv) < 3 or sys.argv[1] != "-c":
+        _log("Uso: lucy_desktop_agent.py -c '<comando>'")
+        return 1
 
-    if args.command:
-        # Primero intentamos tratarlo como comando interno
-        handled, rc = handle_internal(args.command)
-        if handled:
-            return rc
-        return run_shell_command(args.command)
+    command_str = sys.argv[2]
+    _log(f"Pedido de ejecución: {command_str!r}")
 
-    return interactive_loop()
+    allowed, args = _parse_command(command_str)
+    if not allowed:
+        _log(f"Command rejected (not in allowlist): {command_str!r}")
+        return 1
+
+    return _run_allowed_command(args)
 
 
 if __name__ == "__main__":

@@ -16,9 +16,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import List, Optional
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote_plus
 
 from lucy_agents.desktop_bridge import run_desktop_command
+from lucy_web_agent import find_youtube_video_url
 
 
 # =========================
@@ -44,21 +45,33 @@ def _normalize(text: str) -> str:
     return t
 
 
+PLAYBACK_TAILS = (
+    " y reproducirlo",
+    " y que lo reproduzcas",
+    " y que lo pongas",
+    " y darle play",
+    " y darle play por favor",
+    " y reproducir",
+    " y reproducirlo por favor",
+    " y que lo reproduzcas por favor",
+    " y quiero verlo",
+    " y quiero ver ese video",
+    " y quiero ver el programa",
+)
+
+
 def _clean_query(q: str) -> str:
     """Limpia la query de muletillas y espacios."""
     q = q.strip()
     for tail in (" por favor", " porfa", " gracias"):
         if q.endswith(tail):
             q = q[: -len(tail)]
-    for tail in (
-        " y reproducirlo",
-        " y que lo reproduzcas",
-        " y que lo pongas",
-        " y darle play",
-        " y darle play por favor",
-    ):
-        if q.endswith(tail):
+    q_lower = q.lower()
+    for tail in PLAYBACK_TAILS:
+        if q_lower.endswith(tail):
             q = q[: -len(tail)]
+            q_lower = q.lower()
+            break
     q = q.strip(" ¿?¡!.,")
     q = re.sub(r"\s+", " ", q)
     # Cortar relleno típico después de la query (ej. 'y me abrís...')
@@ -73,6 +86,12 @@ def _clean_query(q: str) -> str:
 def _encode_query(q: str) -> str:
     """Codifica la query para URL usando solo la stdlib."""
     return quote_plus(_clean_query(q))
+
+
+def _build_google_search_url(query: str) -> str:
+    """Arma la URL de búsqueda en Google."""
+    encoded = quote_plus(_clean_query(query))
+    return f"https://www.google.com/search?q={encoded}"
 
 
 def _has_search_verb(t: str) -> bool:
@@ -116,6 +135,17 @@ def _extract_query_for_engine(t: str, engine: str) -> str:
     return ""
 
 
+def _extract_google_query(t: str) -> str:
+    """
+    Extrae la query pensada para Google justo después de 'busc...'
+    y antes de 'en google' si aparece.
+    """
+    m = re.search(r"busc[aá](?:r)?\s+(.+?)(?:\s+(?:en|por)\s+google\b|$)", t)
+    if not m:
+        return ""
+    return _clean_query(m.group(1))
+
+
 def _has_open_verb(t: str) -> bool:
     """Detecta verbos de abrir."""
     return bool(
@@ -147,10 +177,13 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
 
     # ---------- 2.1 Google ----------
 
-    google_query = _extract_query_for_engine(t, "google") if has_search or has_google else ""
+    google_query = ""
+    if has_google and "busc" in t:
+        google_query = _extract_google_query(t)
+    if not google_query and (has_search or has_google):
+        google_query = _extract_query_for_engine(t, "google")
     if google_query:
-        encoded = _encode_query(google_query)
-        url = f"https://www.google.com/search?q={encoded}"
+        url = _build_google_search_url(google_query)
         actions.append(
             PlannedAction(
                 tool="desktop",
@@ -200,7 +233,7 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
         if query:
             encoded = _encode_query(query)
             if LAST_SEARCH_ENGINE == "google":
-                url = f"https://www.google.com/search?q={encoded}"
+                url = _build_google_search_url(query)
                 desc = f"Buscar en Google (motor recordado): '{query}'"
             else:  # youtube
                 url = f"https://www.youtube.com/results?search_query={encoded}"
@@ -262,13 +295,29 @@ def _wants_playback(text: str) -> bool:
     """Heurística simple para pedidos de reproducción/play."""
     lowered = text.lower()
     playback_markers = (
+        "reproducilo",
+        "reproducirlo",
+        "reproducir",
         "reproduc",
         "ponelo",
         "ponerlo",
         "pone el programa",
         "poner el programa",
-        "darle play",
+        "pone play",
+        "poné play",
+        "poné el video",
+        "poné ese video",
         "dale play",
+        "darle play",
+        "quiero verlo",
+        "quiero ver ese video",
+        "quiero ver el programa",
+        "ver el programa",
+        "ver ese video",
+        "reproduce el programa",
+        "reproducí el programa",
+        "que lo reproduzcas",
+        "quiero ver ese",
     )
     return any(marker in lowered for marker in playback_markers)
 
@@ -281,6 +330,20 @@ def _plan_targets_youtube(plan: list[PlannedAction]) -> bool:
         if "youtube.com" in cmd or "youtu.be" in cmd or "youtube" in desc:
             return True
     return False
+
+
+def _extract_youtube_search_query_from_plan(actions: list[PlannedAction]) -> str | None:
+    """Recupera la query de búsqueda de YouTube desde el plan generado."""
+    for action in actions:
+        cmd = (action.command or "").lower()
+        marker = "https://www.youtube.com/results?search_query="
+        if marker in cmd:
+            raw = action.command.split("search_query=", 1)[1]
+            raw = raw.split("&", 1)[0]
+            query = unquote_plus(raw).strip()
+            if query:
+                return query
+    return None
 
 
 def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
@@ -302,6 +365,8 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     if not plan:
         return False
 
+    wants_play = _wants_playback(text)
+
     print("[LucyVoiceActions] Plan de escritorio generado:")
     for i, act in enumerate(plan, start=1):
         print(f"  {i}. [{act.tool}] {act.description} -> {act.command!r}")
@@ -319,18 +384,33 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
                 f"acción {act.command!r} ignorada."
             )
 
-    wants_play = _wants_playback(text)
     targets_yt = _plan_targets_youtube(plan)
 
     if wants_play and targets_yt:
-        spoken = (
-            "Te abrí la búsqueda en YouTube para ese programa, pero todavía no puedo "
-            "elegir el video ni darle play. Tenés que apretar vos en el que quieras."
+        search_query = _extract_youtube_search_query_from_plan(plan) or text.strip()
+        print(
+            f"[LucyVoiceActions] Playback intent detected for YouTube; "
+            f"using web agent with query '{search_query}'"
         )
-    else:
-        spoken = "Listo, ya lo abrí en tu escritorio."
+        video_url = find_youtube_video_url(search_query, channel_hint=None, strategy="latest")
+        if video_url:
+            print(f"[LucyVoiceActions] Web agent selected YouTube video URL: {video_url}")
+            cmd = f"xdg-open {video_url}"
+            rc = run_desktop_command(cmd)
+            print(f"[LucyVoiceActions] Resultado (desktop) {cmd!r}: {rc}")
+            spoken = "Te abrí la búsqueda y además un video en YouTube. Debería estar reproduciéndose en otra pestaña."
+            return True, spoken
+        else:
+            print(
+                f"[LucyVoiceActions] Web agent could not select a YouTube video for query: {search_query!r}"
+            )
+            spoken = (
+                "Te abrí la búsqueda en YouTube para ese programa, pero todavía no puedo "
+                "elegir el video ni darle play. Tenés que apretar vos en el que quieras."
+            )
+            return True, spoken
 
-    return True, spoken
+    return True
 
 
 if __name__ == "__main__":
