@@ -156,6 +156,21 @@ def _has_open_verb(t: str) -> bool:
     )
 
 
+def _should_defer_to_web_agent(text: str) -> bool:
+    """
+    Heurística: si es un pedido de YouTube + contenido específico (entrevista/programa)
+    + reproducir, dejamos que el LLM/web_agent lo maneje.
+    """
+    t = (text or "").lower()
+    if "youtube" not in t:
+        return False
+
+    has_specific = any(token in t for token in ("entrevista", "programa", "capitulo", "capítulo"))
+    wants_play = "reproduc" in t or "play" in t or "poner" in t or "poné" in t
+
+    return has_specific and wants_play
+
+
 # =========================
 # 2. Heurísticas de planning
 # =========================
@@ -360,6 +375,13 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     t = text.strip()
     if not t:
         return False
+
+    if _should_defer_to_web_agent(text):
+        print(
+            "[LucyVoiceActions] Pedido complejo de YouTube (entrevista/programa + reproducir); se delega al LLM/web_agent.",
+            flush=True,
+        )
+        return None
 
     plan = _plan_from_text(t)
     if not plan:

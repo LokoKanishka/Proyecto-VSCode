@@ -7,33 +7,6 @@ def _log(msg: str) -> None:
     print(f"[LucyWebAgent] {msg}", flush=True)
 
 
-def _choose_best_entry(
-    entries: List[Dict[str, Any]],
-    channel_hint: Optional[str],
-    strategy: str,
-) -> Optional[Dict[str, Any]]:
-    if not entries:
-        return None
-
-    if channel_hint:
-        hint = channel_hint.lower()
-        for entry in entries:
-            uploader = (entry.get("uploader") or "").lower()
-            channel = (entry.get("channel") or "").lower()
-            if hint in uploader or hint in channel:
-                return entry
-
-    if strategy == "latest":
-        dated_entries = [
-            e for e in entries if isinstance(e.get("upload_date"), str) and e["upload_date"].isdigit()
-        ]
-        if dated_entries:
-            dated_entries.sort(key=lambda e: e.get("upload_date"), reverse=True)
-            return dated_entries[0]
-
-    return entries[0]
-
-
 def find_youtube_video_url(
     query: str,
     channel_hint: Optional[str] = None,
@@ -61,7 +34,7 @@ def find_youtube_video_url(
             _log("Empty query provided to find_youtube_video_url.")
             return None
 
-        search_term = f"{cleaned_query} {channel_hint}".strip() if channel_hint else cleaned_query
+        search_term = cleaned_query
         cmd = [
             "yt-dlp",
             "--dump-single-json",
@@ -82,23 +55,38 @@ def find_youtube_video_url(
             return None
 
         data = json.loads(stdout)
-        entries = data.get("entries")
+        entries = data.get("entries") or []
+        if not entries and isinstance(data, dict) and "webpage_url" in data:
+            entries = [data]
+
+        if channel_hint:
+            ch = channel_hint.lower()
+            filtered = [
+                e for e in entries
+                if ch in (e.get("uploader") or "").lower()
+                or ch in (e.get("channel") or "").lower()
+            ]
+            if filtered:
+                entries = filtered
+
         if not entries:
-            _log("yt-dlp returned no entries.")
+            _log(f"[LucyWebAgent] Sin resultados de yt-dlp para query='{cleaned_query}', channel_hint='{channel_hint}'")
             return None
 
-        best = _choose_best_entry(entries, channel_hint, strategy)
-        if not best:
-            _log("No suitable video found after filtering entries.")
-            return None
+        candidate = None
+        if strategy == "latest":
+            candidate = entries[-1]
+        else:
+            candidate = entries[0]
 
-        url = best.get("webpage_url") or best.get("url")
-        if not url:
-            video_id = best.get("id")
-            url = f"https://www.youtube.com/watch?v={video_id}" if video_id else None
+        url = (
+            candidate.get("webpage_url")
+            or candidate.get("url")
+            or (f"https://www.youtube.com/watch?v={candidate['id']}" if candidate.get("id") else None)
+        )
 
-        title = best.get("title") or "(sin título)"
-        uploader = best.get("uploader") or best.get("channel") or "(sin canal)"
+        title = candidate.get("title") or "(sin título)"
+        uploader = candidate.get("uploader") or candidate.get("channel") or "(sin canal)"
         _log(f"Elegí video: titulo='{title}', canal='{uploader}', url='{url}'")
 
         return url
