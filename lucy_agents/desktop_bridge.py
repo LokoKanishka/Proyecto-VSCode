@@ -18,13 +18,14 @@ Uso desde consola:
 from __future__ import annotations
 
 import argparse
-import pathlib
 import subprocess
 import sys
 from typing import Optional
 
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
-DESKTOP_LAUNCHER = PROJECT_ROOT / "scripts" / "lucy_desktop_agent.sh"
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DESKTOP_AGENT = PROJECT_ROOT / "scripts" / "lucy_desktop_agent.py"
 
 
 def run_desktop_command(command: str) -> int:
@@ -35,28 +36,27 @@ def run_desktop_command(command: str) -> int:
       Desktop Agent.
     - Solo se encarga de localizar el launcher y llamarlo.
     """
+    print(f"[LucyDesktopBridge] run_desktop_command: {command!r}", flush=True)
+
     if not command.strip():
-        print("[LucyDesktopBridge] Comando vacío, nada que hacer.", file=sys.stderr)
+        print("[LucyDesktopBridge] Comando vacío, nada que hacer.", flush=True)
         return 0
 
-    if not DESKTOP_LAUNCHER.exists():
+    if not DESKTOP_AGENT.exists():
         print(
-            f"[LucyDesktopBridge] No encontré el launcher: {DESKTOP_LAUNCHER}",
-            file=sys.stderr,
+            f"[LucyDesktopBridge] No encontré el Desktop Agent: {DESKTOP_AGENT}",
+            flush=True,
         )
         return 1
 
     try:
-        completed = subprocess.run(
-            [str(DESKTOP_LAUNCHER), "-c", command],
-            check=False,
-        )
+        completed = subprocess.run([sys.executable, str(DESKTOP_AGENT), "-c", command])
         return completed.returncode
     except KeyboardInterrupt:
-        print("\n[LucyDesktopBridge] Interrumpido por el usuario.", file=sys.stderr)
+        print("\n[LucyDesktopBridge] Interrumpido por el usuario.", flush=True)
         return 130
     except Exception as exc:  # noqa: BLE001
-        print(f"[LucyDesktopBridge] Error al ejecutar el comando: {exc}", file=sys.stderr)
+        print(f"[LucyDesktopBridge] Error al ejecutar el comando: {exc}", flush=True)
         return 1
 
 

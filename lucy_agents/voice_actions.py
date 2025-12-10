@@ -367,21 +367,26 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
 
     wants_play = _wants_playback(text)
 
-    print("[LucyVoiceActions] Plan de escritorio generado:")
+    print("[LucyVoiceActions] plan de escritorio:", flush=True)
     for i, act in enumerate(plan, start=1):
-        print(f"  {i}. [{act.tool}] {act.description} -> {act.command!r}")
+        print(
+            f"[LucyVoiceActions]   {i}. [{act.tool}] {act.description} -> {act.command!r}",
+            flush=True,
+        )
 
     # Ejecutar en orden
     for act in plan:
         if act.tool == "desktop":
             rc = run_desktop_command(act.command)
             print(
-                f"[LucyVoiceActions] Resultado ({act.tool}) {act.command!r}: {rc}"
+                f"[LucyVoiceActions] Resultado ({act.tool}) {act.command!r}: {rc}",
+                flush=True,
             )
         else:
             print(
                 f"[LucyVoiceActions] Tool desconocida {act.tool!r}, "
-                f"acción {act.command!r} ignorada."
+                f"acción {act.command!r} ignorada.",
+                flush=True,
             )
 
     targets_yt = _plan_targets_youtube(plan)
@@ -389,20 +394,24 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     if wants_play and targets_yt:
         search_query = _extract_youtube_search_query_from_plan(plan) or text.strip()
         print(
-            f"[LucyVoiceActions] Playback intent detected for YouTube; "
-            f"using web agent with query '{search_query}'"
+            f"[LucyVoiceActions] Playback intent detected for YouTube; query={search_query!r}",
+            flush=True,
         )
         video_url = find_youtube_video_url(search_query, channel_hint=None, strategy="latest")
         if video_url:
-            print(f"[LucyVoiceActions] Web agent selected YouTube video URL: {video_url}")
+            print(
+                f"[LucyVoiceActions] Web agent selected YouTube video URL: {video_url}",
+                flush=True,
+            )
             cmd = f"xdg-open {video_url}"
             rc = run_desktop_command(cmd)
-            print(f"[LucyVoiceActions] Resultado (desktop) {cmd!r}: {rc}")
+            print(f"[LucyVoiceActions] Resultado (desktop) {cmd!r}: {rc}", flush=True)
             spoken = "Te abrí la búsqueda y además un video en YouTube. Debería estar reproduciéndose en otra pestaña."
             return True, spoken
         else:
             print(
-                f"[LucyVoiceActions] Web agent could not select a YouTube video for query: {search_query!r}"
+                f"[LucyVoiceActions] Web agent could not select a YouTube video for query: {search_query!r}",
+                flush=True,
             )
             spoken = (
                 "Te abrí la búsqueda en YouTube para ese programa, pero todavía no puedo "

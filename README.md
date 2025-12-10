@@ -35,6 +35,8 @@ El nodo modular integra:
 
 El pipeline Pipecat + wakeword ONNX vive ahora en `legacy/` y solo se conserva como referencia histórica.
 
+📦 Para detalles sobre módulos legacy, backups y código experimental que no forma parte de Lucy Voz v2, ver `docs/LUCY-MODULOS-LEGACY.md`.
+
 ---
 
 ## 2. Características principales (modo modular)
