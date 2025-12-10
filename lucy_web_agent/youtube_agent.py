@@ -12,6 +12,22 @@ def _log(msg: str) -> None:
 
 KEYWORD_BONUS = ("entrevista", "programa", "capítulo", "capitulo", "especial")
 COMMON_WORDS = {"entrevista", "programa", "video", "completo", "canal", "especial", "capitulo", "capítulo", "charla"}
+MISHEAR_REPLACEMENTS = {
+    "navaricio": "novaresio",
+    "navarrecio": "novaresio",
+    "navarricio": "novaresio",
+    "novaricio": "novaresio",
+    "navaricio": "novaresio",
+    "navarrecio": "novaresio",
+    "navarro": "navarro",
+    "roberto navarro": "navarro",
+    "delina": "dolina",
+    "donina": "dolina",
+    "adolino": "dolina",
+    "adolína": "dolina",
+}
+STRONG_PEOPLE = {"dolina", "novaresio", "navarro"}
+STRONG_WORDS = {"entrevista", "mano a mano", "programa", "charla"}
 
 
 def _normalize_token(t: str) -> str:
@@ -30,10 +46,19 @@ def _normalize_token(t: str) -> str:
     return norm
 
 
+def _fix_mishearings(text: str) -> str:
+    """Aplica reemplazos comunes de STT para nombres propios."""
+    fixed = text.lower()
+    for wrong, right in MISHEAR_REPLACEMENTS.items():
+        fixed = fixed.replace(wrong, right)
+    return fixed
+
+
 def _strong_query_tokens(query: str) -> list[str]:
     """Devuelve tokens relevantes (>=4 chars y no palabras comunes)."""
     tokens: list[str] = []
-    for raw in re.split(r"\s+", _normalize_token(query)):
+    normalized = _normalize_token(_fix_mishearings(query))
+    for raw in re.split(r"\s+", normalized):
         tok = raw.strip()
         if len(tok) >= 4 and tok not in COMMON_WORDS:
             tokens.append(tok)
@@ -46,8 +71,8 @@ def _tokenize(text: str) -> set[str]:
 
 def _score_candidate(entry: Dict[str, Any], strong_tokens: list[str]) -> int:
     """Calcula un puntaje heurístico para un video."""
-    title = entry.get("title") or ""
-    uploader = entry.get("uploader") or entry.get("channel") or ""
+    title = _fix_mishearings(entry.get("title") or "")
+    uploader = _fix_mishearings(entry.get("uploader") or entry.get("channel") or "")
 
     title_tokens = _tokenize(title)
     channel_tokens = _tokenize(uploader)
@@ -68,6 +93,14 @@ def _score_candidate(entry: Dict[str, Any], strong_tokens: list[str]) -> int:
 
     if len(strong_tokens) >= 2 and all(tok in title_tokens for tok in strong_tokens[:2]):
         score += 3
+
+    # Bonos específicos para combinaciones fuertes
+    if "dolina" in title_tokens and "novaresio" in title_tokens:
+        score += 4
+    if "dolina" in title_tokens and "navarro" in title_tokens:
+        score += 3
+    if "entrevista" in title_tokens and any(p in title_tokens for p in STRONG_PEOPLE):
+        score += 2
 
     return score
 

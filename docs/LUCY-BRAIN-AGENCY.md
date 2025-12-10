@@ -65,3 +65,19 @@ Visión rápida de cómo piensa y actúa Lucy desde `external/nodo-de-voz-modula
      }
      ```
 - Logs visibles: `[LucyVoice] get_llm_response() input/raw/final`, `[LucyWebAgent] ...`, `[LucyDesktop] ...`.
+
+## Entrevistas en YouTube con reproducción automática
+
+- Detección de pedidos complejos:
+  - Frases con YouTube (implícito u explícito) + contenido largo ("entrevista", "programa", "especial", "mano a mano", "charla", "capítulo") + verbo de reproducción ("poné", "reproducí", "dale play", etc.) se delegan al `web_agent`.
+  - Si el usuario pide solo abrir/buscar sin reproducir ("solo abrí la búsqueda", "no la reproduzcas"), se usa el plan de escritorio simple con `xdg-open`.
+- Elección de video en `youtube_agent`:
+  - Normaliza errores típicos del STT (ej. "navarrecio"/"navaricio" → "novaresio"; "delina"/"donina" → "dolina").
+  - Puntúa candidatos priorizando coincidencias de nombres (Dolina + Novaresio/Navarro), presencia de "entrevista" y múltiples tokens fuertes en el título/canal.
+  - Si no hay candidato claro, devuelve la URL de búsqueda de YouTube para que el usuario elija.
+- Logs clave:
+  - `[LucyVoiceActions] Pedido complejo de YouTube... se delega al LLM/web_agent.`
+  - `[LucyWebAgent] Running yt-dlp ...`
+  - `[LucyWebAgent] Puntajes candidatos: [...]`
+  - `[LucyWebAgent] No hay candidato claro, devolviendo search_url genérica: ...`
+  - `[LucyDesktop] Ejecutando comando: ['xdg-open', ...]`

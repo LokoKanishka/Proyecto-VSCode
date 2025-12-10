@@ -206,6 +206,30 @@ def _normalize_query_text(text: str) -> str:
     return " ".join(t.split())
 
 
+def is_complex_youtube_request(text: str) -> bool:
+    """
+    Devuelve True para pedidos del tipo 'entrevista/programa en YouTube y reproducilo/play'.
+    Requiere: palabra de contenido + verbo de reproducción. YouTube puede ser opcional.
+    """
+    t = (text or "").lower()
+
+    # Evitar que "no reproducir" dispare el manejo complejo
+    if any(neg in t for neg in ("no la reproduzcas", "no lo reproduzcas", "sin reproducir", "no reproducir", "solo abrí la búsqueda")):
+        return False
+
+    mention_youtube = "youtube" in t
+    content_words = ["entrevista", "programa", "especial", "mano a mano", "charla", "capítulo", "capitulo", "episodio"]
+    play_words = ["poné", "pone", "ponlo", "reproduce", "reproducí", "reproducirlo", "poner play", "dale play", "reproducilo", "reproducir"]
+
+    has_content = any(w in t for w in content_words)
+    has_play = any(w in t for w in play_words)
+
+    if has_content and has_play:
+        return True if mention_youtube or has_content else False
+
+    return False
+
+
 # =========================
 # 2. Heurísticas de planning
 # =========================
@@ -411,13 +435,16 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     if not t:
         return False
 
-    if is_complex_youtube_request(text):
+    lowered = t.lower()
+    if any(neg in lowered for neg in ("no la reproduzcas", "no lo reproduzcas", "sin reproducir", "solo abrí la búsqueda", "solo abre la busqueda", "solo abre la búsqueda")):
+        print("[LucyVoiceActions] Pedido de YouTube con 'no reproducir'; se usa plan de escritorio simple.", flush=True)
+    elif is_complex_youtube_request(text):
         print(
             "[LucyVoiceActions] Pedido complejo de YouTube (entrevista/programa + reproducir); se delega al LLM/web_agent.",
             flush=True,
         )
         return None
-    elif "youtube" in t.lower():
+    elif "youtube" in lowered:
         print(
             "[LucyVoiceActions] Pedido de YouTube simple o sin verbo de reproducción; se usa plan de escritorio.",
             flush=True,
