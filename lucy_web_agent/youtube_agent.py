@@ -10,24 +10,50 @@ def _log(msg: str) -> None:
     print(f"[LucyWebAgent] {msg}", flush=True)
 
 
-KEYWORD_BONUS = ("entrevista", "programa", "capítulo", "capitulo", "especial")
-COMMON_WORDS = {"entrevista", "programa", "video", "completo", "canal", "especial", "capitulo", "capítulo", "charla"}
-MISHEAR_REPLACEMENTS = {
-    "navaricio": "novaresio",
-    "navarrecio": "novaresio",
-    "navarricio": "novaresio",
-    "novaricio": "novaresio",
-    "navaricio": "novaresio",
-    "navarrecio": "novaresio",
-    "navarro": "navarro",
-    "roberto navarro": "navarro",
-    "delina": "dolina",
-    "donina": "dolina",
-    "adolino": "dolina",
-    "adolína": "dolina",
+KEYWORD_BONUS = ("entrevista", "programa", "capitulo", "capítulo", "especial", "mano a mano", "charla")
+STOPWORDS = {
+    "de",
+    "del",
+    "la",
+    "las",
+    "lo",
+    "los",
+    "un",
+    "una",
+    "en",
+    "y",
+    "con",
+    "para",
+    "por",
+    "que",
+    "el",
+    "al",
+    "a",
 }
-STRONG_PEOPLE = {"dolina", "novaresio", "navarro"}
-STRONG_WORDS = {"entrevista", "mano a mano", "programa", "charla"}
+# Palabras muy comunes que no aportan mucho a la búsqueda exacta.
+# Se usan para separar tokens "fuertes" de tokens genéricos.
+COMMON_WORDS = {
+    "el",
+    "la",
+    "los",
+    "las",
+    "de",
+    "del",
+    "y",
+    "en",
+    "con",
+    "un",
+    "una",
+    "programa",
+    "entrevista",
+    "completo",
+    "mano",
+    "manos",
+    "capitulo",
+    "capítulo",
+    "charla",
+    "especial",
+}
 
 
 def _normalize_token(t: str) -> str:
@@ -35,7 +61,7 @@ def _normalize_token(t: str) -> str:
     Normaliza un token para comparación.
     - minúsculas
     - quitar tildes
-    - quitar caracteres no alfabéticos
+    - quitar caracteres no alfabéticos al final
     - recortar espacios
     """
     if not t:
@@ -46,18 +72,15 @@ def _normalize_token(t: str) -> str:
     return norm
 
 
-def _fix_mishearings(text: str) -> str:
-    """Aplica reemplazos comunes de STT para nombres propios."""
-    fixed = text.lower()
-    for wrong, right in MISHEAR_REPLACEMENTS.items():
-        fixed = fixed.replace(wrong, right)
-    return fixed
+def _normalize_text(text: str) -> str:
+    """Normaliza texto completo quitando tildes y signos raros."""
+    return " ".join(_normalize_token(text).split())
 
 
 def _strong_query_tokens(query: str) -> list[str]:
     """Devuelve tokens relevantes (>=4 chars y no palabras comunes)."""
     tokens: list[str] = []
-    normalized = _normalize_token(_fix_mishearings(query))
+    normalized = _normalize_text(query)
     for raw in re.split(r"\s+", normalized):
         tok = raw.strip()
         if len(tok) >= 4 and tok not in COMMON_WORDS:
@@ -66,13 +89,18 @@ def _strong_query_tokens(query: str) -> list[str]:
 
 
 def _tokenize(text: str) -> set[str]:
-    return {tok for tok in re.split(r"\s+", _normalize_token(text)) if tok}
+    normalized = _normalize_text(text)
+    tokens = set()
+    for tok in re.split(r"\s+", normalized):
+        if tok and tok not in STOPWORDS:
+            tokens.add(tok)
+    return tokens
 
 
 def _score_candidate(entry: Dict[str, Any], strong_tokens: list[str]) -> int:
     """Calcula un puntaje heurístico para un video."""
-    title = _fix_mishearings(entry.get("title") or "")
-    uploader = _fix_mishearings(entry.get("uploader") or entry.get("channel") or "")
+    title = entry.get("title") or ""
+    uploader = entry.get("uploader") or entry.get("channel") or ""
 
     title_tokens = _tokenize(title)
     channel_tokens = _tokenize(uploader)
@@ -83,24 +111,7 @@ def _score_candidate(entry: Dict[str, Any], strong_tokens: list[str]) -> int:
     if not title_matches and not channel_matches:
         return -1  # descartar candidatos sin coincidencias fuertes
 
-    score = len(title_matches) * 2 + len(channel_matches) * 1
-
-    if "entrevista" in title_tokens:
-        score += 1
-
-    if len(title_matches) >= 2:
-        score += 2
-
-    if len(strong_tokens) >= 2 and all(tok in title_tokens for tok in strong_tokens[:2]):
-        score += 3
-
-    # Bonos específicos para combinaciones fuertes
-    if "dolina" in title_tokens and "novaresio" in title_tokens:
-        score += 4
-    if "dolina" in title_tokens and "navarro" in title_tokens:
-        score += 3
-    if "entrevista" in title_tokens and any(p in title_tokens for p in STRONG_PEOPLE):
-        score += 2
+    score = len(title_matches) * 4 + len(channel_matches) * 1
 
     return score
 
@@ -150,6 +161,7 @@ def find_youtube_video_url(
         if not cleaned_query:
             _log("Empty query provided to find_youtube_video_url.")
             return None
+        search_url = f"https://www.youtube.com/results?search_query={quote_plus(cleaned_query)}"
 
         search_term = cleaned_query
         cmd = [
@@ -181,41 +193,75 @@ def find_youtube_video_url(
             return None
 
         strong_tokens = _strong_query_tokens(cleaned_query)
-        if channel_hint:
-            strong_tokens.extend(_strong_query_tokens(channel_hint))
+        weak_tokens = [tok for tok in _tokenize(cleaned_query) if tok not in strong_tokens]
 
-        scored: list[tuple[Dict[str, Any], int]] = []
+        channel_bonus_tokens = _tokenize(channel_hint) if channel_hint else set()
+
+        scored: list[tuple[Dict[str, Any], int, int]] = []
         for e in entries:
-            score = _score_candidate(e, strong_tokens)
-            if score >= 0:
-                scored.append((e, score))
+            title = e.get("title") or ""
+            uploader = e.get("uploader") or e.get("channel") or ""
+            candidate_tokens = _tokenize(f"{title} {uploader}")
 
-        if not scored:
-            _log(f"[LucyWebAgent] Sin candidatos con tokens fuertes para query='{cleaned_query}'.")
+            name_matches = len([tok for tok in strong_tokens if tok in candidate_tokens])
+            weak_matches = len([tok for tok in weak_tokens if tok in candidate_tokens])
+
+            channel_bonus = 0
+            if channel_bonus_tokens and channel_bonus_tokens.issubset(_tokenize(uploader)):
+                channel_bonus += 2
+
+            score = name_matches * 4 + weak_matches * 1 + channel_bonus
+
+            scored.append((e, score, name_matches))
+
+        _log(f"[LucyWebAgent] Tokens fuertes (query): {strong_tokens}")
+        _log(f"[LucyWebAgent] Tokens débiles (query): {weak_tokens}")
+        _log(f"[LucyWebAgent] Puntajes candidatos: {[(e.get('title'), s, nm) for e, s, nm in scored]}")
+
+        # Selección por política
+        candidate = None
+        # Caso ideal: name_matches >= 2
+        strong_candidates = [(e, s, nm) for e, s, nm in scored if nm >= 2]
+        if strong_candidates:
+            strong_candidates.sort(key=lambda triple: (-triple[2], -triple[1]))
+            candidate = strong_candidates[0][0]
         else:
-            _log(f"[LucyWebAgent] Puntajes candidatos: {[(e.get('title'), s) for e, s in scored]}")
+            # Caso aceptable: name_matches == 1 y título con palabras de formato
+            format_words = {kw for kw in _tokenize(" ".join(KEYWORD_BONUS))}
+            acceptable = []
+            for e, s, nm in scored:
+                if nm == 1:
+                    title_tokens = _tokenize(e.get("title") or "")
+                    if title_tokens & format_words:
+                        acceptable.append((e, s, nm))
+            if acceptable:
+                acceptable.sort(key=lambda triple: (-triple[1],))
+                candidate = acceptable[0][0]
 
-        scored_sorted = sorted(scored, key=lambda pair: pair[1], reverse=True)
-
-        candidate = scored_sorted[0][0] if scored_sorted else None
-        best_score = scored_sorted[0][1] if scored_sorted else 0
-
-        if not candidate or best_score < 3:
-            search_url = f"https://www.youtube.com/results?search_query={quote_plus(cleaned_query)}"
-            _log(f"[LucyWebAgent] No hay candidato claro, devolviendo search_url genérico: {search_url}")
+        if not candidate:
+            _log(f"[LucyWebAgent] Sin candidato suficientemente claro, devolviendo search_url genérica: {search_url}")
             return search_url
+        video_url: str | None = None
+        if candidate.get("webpage_url"):
+            video_url = candidate.get("webpage_url")
+        elif candidate.get("url"):
+            raw = candidate.get("url")
+            if isinstance(raw, str) and raw.startswith(("http://", "https://")):
+                video_url = raw
+            elif isinstance(raw, str) and not raw.startswith("ytsearch"):
+                video_url = f"https://www.youtube.com/watch?v={raw}"
+        elif candidate.get("id"):
+            video_url = f"https://www.youtube.com/watch?v={candidate.get('id')}"
 
-        url = (
-            candidate.get("webpage_url")
-            or candidate.get("url")
-            or (f"https://www.youtube.com/watch?v={candidate['id']}" if candidate.get("id") else None)
-        )
+        if not video_url or (isinstance(video_url, str) and video_url.startswith("ytsearch")):
+            _log("[LucyWebAgent] No hay URL directa confiable; uso búsqueda genérica.")
+            return search_url
 
         title = candidate.get("title") or "(sin título)"
         uploader = candidate.get("uploader") or candidate.get("channel") or "(sin canal)"
-        _log(f"[LucyWebAgent] Elegí video: titulo='{title}', canal='{uploader}', url='{url}'")
+        _log(f"[LucyWebAgent] Elegí video: titulo='{title}', canal='{uploader}', url='{video_url}'")
 
-        return url
+        return video_url
 
     except Exception as exc:
         _log(f"Error while searching YouTube: {exc}")

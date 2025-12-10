@@ -214,12 +214,41 @@ def is_complex_youtube_request(text: str) -> bool:
     t = (text or "").lower()
 
     # Evitar que "no reproducir" dispare el manejo complejo
-    if any(neg in t for neg in ("no la reproduzcas", "no lo reproduzcas", "sin reproducir", "no reproducir", "solo abrí la búsqueda")):
+    if any(
+        neg in t
+        for neg in (
+            "no la reproduzcas",
+            "no lo reproduzcas",
+            "sin reproducir",
+            "no reproducir",
+            "solo abrí la búsqueda",
+            "solo abre la búsqueda",
+            "solo abre la busqueda",
+        )
+    ):
         return False
 
-    mention_youtube = "youtube" in t
+    mention_youtube = "youtube" in t or "video" in t
     content_words = ["entrevista", "programa", "especial", "mano a mano", "charla", "capítulo", "capitulo", "episodio"]
-    play_words = ["poné", "pone", "ponlo", "reproduce", "reproducí", "reproducirlo", "poner play", "dale play", "reproducilo", "reproducir"]
+    play_words = [
+        "poné",
+        "pone",
+        "ponlo",
+        "reproduce",
+        "reproducí",
+        "reproducirlo",
+        "reproducir",
+        "poner play",
+        "poné play",
+        "pone play",
+        "dale play",
+        "reproducilo",
+        "que se reproduzca",
+        "quiero verlo",
+        "quiero escucharlo",
+        "que la pongas",
+        "poneme",
+    ]
 
     has_content = any(w in t for w in content_words)
     has_play = any(w in t for w in play_words)
@@ -440,13 +469,13 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
         print("[LucyVoiceActions] Pedido de YouTube con 'no reproducir'; se usa plan de escritorio simple.", flush=True)
     elif is_complex_youtube_request(text):
         print(
-            "[LucyVoiceActions] Pedido complejo de YouTube (entrevista/programa + reproducir); se delega al LLM/web_agent.",
+            "[LucyVoiceActions] Pedido complejo de YouTube; se delega al LLM/web_agent.",
             flush=True,
         )
         return None
     elif "youtube" in lowered:
         print(
-            "[LucyVoiceActions] Pedido de YouTube simple o sin verbo de reproducción; se usa plan de escritorio.",
+            "[LucyVoiceActions] Pedido simple de YouTube; se usa plan de escritorio (xdg-open).",
             flush=True,
         )
 

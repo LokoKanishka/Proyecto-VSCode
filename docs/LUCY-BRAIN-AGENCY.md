@@ -72,9 +72,11 @@ Visión rápida de cómo piensa y actúa Lucy desde `external/nodo-de-voz-modula
   - Frases con YouTube (implícito u explícito) + contenido largo ("entrevista", "programa", "especial", "mano a mano", "charla", "capítulo") + verbo de reproducción ("poné", "reproducí", "dale play", etc.) se delegan al `web_agent`.
   - Si el usuario pide solo abrir/buscar sin reproducir ("solo abrí la búsqueda", "no la reproduzcas"), se usa el plan de escritorio simple con `xdg-open`.
 - Elección de video en `youtube_agent`:
-  - Normaliza errores típicos del STT (ej. "navarrecio"/"navaricio" → "novaresio"; "delina"/"donina" → "dolina").
-  - Puntúa candidatos priorizando coincidencias de nombres (Dolina + Novaresio/Navarro), presencia de "entrevista" y múltiples tokens fuertes en el título/canal.
-  - Si no hay candidato claro, devuelve la URL de búsqueda de YouTube para que el usuario elija.
+  - Normaliza y tokeniza quitando tildes y stopwords para comparar query, título y canal.
+  - Puntúa candidatos priorizando coincidencias de tokens fuertes (nombres/keywords) y usa bonus por matches múltiples; si no hay coincidencias suficientes, cae al fallback de abrir la búsqueda.
+- Criterio de decisión:
+  - Si los tokens fuertes aparecen varias veces en título/canal, abre el video directo.
+  - Si hay coincidencias débiles, solo abre búsqueda para que el usuario elija.
 - Logs clave:
   - `[LucyVoiceActions] Pedido complejo de YouTube... se delega al LLM/web_agent.`
   - `[LucyWebAgent] Running yt-dlp ...`
