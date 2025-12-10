@@ -32,3 +32,36 @@ Visión rápida de cómo piensa y actúa Lucy desde `external/nodo-de-voz-modula
 - Más intents previos en `voice_actions` para ahorrar llamadas al LLM.
 - Web agent con lectura de páginas, planeación en pasos y nuevas fuentes además de YouTube.
 - Mejoras de robustez en parsing de tool-calls y logs para trazabilidad completa.
+
+## Caso de uso: entrevistas de YouTube con reproducción automática
+
+- Ejemplo de pedido: "Quiero que busques una entrevista en YouTube de Alejandro Dolina con Luis Navarro y que la reproduzcas."
+- Flujo:
+  1. `voice_actions` detecta que es un pedido complejo de YouTube (entrevista/programa + reproducir) y no arma ningún plan de escritorio; delega al LLM.
+  2. El LLM genera un tool-call `web_agent`:
+     ```json
+     {
+       "name": "web_agent",
+       "arguments": {
+         "kind": "youtube_latest",
+         "query": "Alejandro Dolina Luis Navarro entrevista",
+         "channel_hint": "Alejandro Dolina"
+       }
+     }
+     ```
+  3. `lucy_web_agent.youtube_agent` usa `yt-dlp` para buscar videos y elige uno:
+     - Prioriza el canal sugerido por `channel_hint`, si coincide.
+     - Si no, prioriza títulos con palabras como "entrevista", "programa", "capítulo".
+     - Si ningún candidato es claro, devuelve una URL de búsqueda de YouTube con la query.
+  4. El Web Agent devuelve la URL del video y `desktop_agent` ejecuta `xdg-open <url>`.
+  5. El usuario luego puede pedir "Cerrá el navegador" o "cerrá YouTube" y el LLM puede usar:
+     ```json
+     {
+       "name": "desktop_agent",
+       "arguments": {
+         "action": "close_window",
+         "window_title": "YouTube"
+       }
+     }
+     ```
+- Logs visibles: `[LucyVoice] get_llm_response() input/raw/final`, `[LucyWebAgent] ...`, `[LucyDesktop] ...`.

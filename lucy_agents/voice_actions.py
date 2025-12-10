@@ -156,19 +156,54 @@ def _has_open_verb(t: str) -> bool:
     )
 
 
-def _should_defer_to_web_agent(text: str) -> bool:
+def is_complex_youtube_request(text: str) -> bool:
     """
-    Heurística: si es un pedido de YouTube + contenido específico (entrevista/programa)
-    + reproducir, dejamos que el LLM/web_agent lo maneje.
+    Devuelve True para pedidos del tipo:
+    - 'buscá/quiero la entrevista/programa/charla en YouTube y ponela/reproducila/play'
+    Requiere mencionar YouTube + palabra de contenido + verbo de reproducción.
     """
     t = (text or "").lower()
+
     if "youtube" not in t:
         return False
 
-    has_specific = any(token in t for token in ("entrevista", "programa", "capitulo", "capítulo"))
-    wants_play = "reproduc" in t or "play" in t or "poner" in t or "poné" in t
+    has_content = any(
+        w in t for w in ["entrevista", "programa", "charla", "capítulo", "capitulo", "especial", "video"]
+    )
+    if not has_content:
+        return False
 
-    return has_specific and wants_play
+    has_play = any(
+        w in t
+        for w in [
+            "reproduc",
+            "poné",
+            "pone",
+            "ponlo",
+            "play",
+            "ponerlo",
+            "pasá",
+            "pasa",
+        ]
+    )
+
+    return has_play
+
+
+def _normalize_query_text(text: str) -> str:
+    """Limpia muletillas comunes antes de armar la query de búsqueda."""
+    t = (text or "").lower()
+    fillers = [
+        "escuchame",
+        "escúchame",
+        "quiero que",
+        "quiero ",
+        "por favor",
+        "lucy",
+    ]
+    for f in fillers:
+        t = t.replace(f, " ")
+    return " ".join(t.split())
 
 
 # =========================
@@ -221,7 +256,7 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
 
     youtube_query = _extract_query_for_engine(t, "youtube") if has_search or has_youtube else ""
     if youtube_query:
-        encoded = _encode_query(youtube_query)
+        encoded = _encode_query(_normalize_query_text(youtube_query))
         url = f"https://www.youtube.com/results?search_query={encoded}"
         actions.append(
             PlannedAction(
@@ -376,12 +411,17 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     if not t:
         return False
 
-    if _should_defer_to_web_agent(text):
+    if is_complex_youtube_request(text):
         print(
             "[LucyVoiceActions] Pedido complejo de YouTube (entrevista/programa + reproducir); se delega al LLM/web_agent.",
             flush=True,
         )
         return None
+    elif "youtube" in t.lower():
+        print(
+            "[LucyVoiceActions] Pedido de YouTube simple o sin verbo de reproducción; se usa plan de escritorio.",
+            flush=True,
+        )
 
     plan = _plan_from_text(t)
     if not plan:
@@ -428,7 +468,10 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
             cmd = f"xdg-open {video_url}"
             rc = run_desktop_command(cmd)
             print(f"[LucyVoiceActions] Resultado (desktop) {cmd!r}: {rc}", flush=True)
-            spoken = "Te abrí la búsqueda y además un video en YouTube. Debería estar reproduciéndose en otra pestaña."
+            if isinstance(video_url, str) and video_url.startswith("https://www.youtube.com/results?search_query="):
+                spoken = "No encontré una entrevista exacta, pero te abrí la búsqueda en YouTube para que elijas."
+            else:
+                spoken = "Te abrí la búsqueda y además un video en YouTube. Debería estar reproduciéndose en otra pestaña."
             return True, spoken
         else:
             print(
