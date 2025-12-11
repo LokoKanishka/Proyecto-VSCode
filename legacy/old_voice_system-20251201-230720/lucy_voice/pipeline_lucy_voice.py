@@ -45,7 +45,10 @@ class LucyPipelineConfig:
     asr_model_size: str = "small"
     asr_samplerate: int = 16000
     tts_voice: str = "es_ES/m-ailabs_low"  # voz castellana Mimic3 (la que ya sabemos que se escucha)
+    # Modelo base actual en Ollama
     llm_model: str = "gpt-oss:20b"       # modelo pesado por defecto en Ollama
+    # Ejemplo de modelo fusionado con LoRA (a crear más adelante)
+    # llm_model: str = "gpt-oss-20b-multireasoner"
 
 
 class LucyVoicePipeline:
@@ -450,4 +453,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

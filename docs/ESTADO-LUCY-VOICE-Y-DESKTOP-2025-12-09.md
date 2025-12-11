@@ -377,3 +377,11 @@ lo ideal es que el nuevo asistente haga esto:
 Con esto queda el “handover” armado:
 el nuevo chat sólo necesita este informe + el link al repo para seguir exactamente desde este punto, sin adivinar qué hicimos antes ni qué esperás que haga Lucy.   https://github.com/LokoKanishka/Proyecto-VSCode.githttps://github.com/LokoKanishka/Proyecto-VSCode.git
 
+---
+
+## Integración planificada de LoRA para GPT-OSS 20B
+
+- Investigado y elegido el LoRA `YiwenX/gpt-oss-20b-multilingual-reasoner` (razonamiento multilingüe).
+- Se mantiene `gpt-oss:20b` limpio y se planea un modelo fusionado aparte (`gpt-oss-20b-multireasoner`).
+- Se añadió el script utilitario `tools/merge_gpt_oss_lora.py` para fusionar base + LoRA (no ejecutado aún).
+- Pendiente: correr la fusión y exponer el modelo fusionado como alternativa de `llm_model` en Lucy Voz.

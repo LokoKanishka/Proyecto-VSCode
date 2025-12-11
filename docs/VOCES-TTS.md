@@ -2,31 +2,13 @@
 
 ## Voces en Español (es_ES)
 
-Mimic3 tiene dos voces masculinas en español instaladas:
+Mimic3 incluye modelos multispeaker; el speaker se elige con el formato `idioma/modelo#speaker`.
 
-- `es_ES/m-ailabs_low` - Voz masculina (predeterminada anterior)
-- `es_ES/carlfm_low` - Voz masculina alternativa (actual)
-
-## Nota sobre Voces Femeninas
-
-Actualmente Mimic3 no tiene voces femeninas en español disponibles en los repositorios oficiales.
-
-### Opciones para voz femenina:
-
-1. **Usar voz femenina en inglés** (no recomendado para español):
-   - `en_US/ljspeech_low` - Voz femenina clara
-
-2. **Instalar voz custom**:
-   - Entrenar un modelo custom con Coqui TTS
-   - Usar otro motor TTS (pyttsx3, gTTS, etc.)
-
-3. **Esperar a que se publiquen más voces** en el repositorio de Mimic3
+- `es_ES/m-ailabs_low#karen_savage` - Voz femenina (predeterminada actual en Lucy Voz v2).
+- `es_ES/m-ailabs_low` - Voz masculina neutra del mismo paquete.
+- `es_ES/carlfm_low` - Voz masculina alternativa.
 
 ## Cambiar la Voz
 
-Para cambiar la voz, editar `lucy_voice/pipeline_lucy_voice.py`:
-
-```python
-class LucyPipelineConfig:
-    tts_voice: str = "es_ES/carlfm_low"  # Cambiar aquí
-```
+1. Ajustar `tts_voice` en `config.yaml` (raíz del repo) o en `external/nodo-de-voz-modular-de-lucy/config.yaml`.
+2. Ejecutar el nodo de voz modular normalmente (`scripts/lucy_voice_modular_node.sh`); el valor se pasa directo a Mimic3.

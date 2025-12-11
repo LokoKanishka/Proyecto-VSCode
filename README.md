@@ -28,8 +28,8 @@ La arquitectura actual se organiza así:
 El nodo modular integra:
 
 - **ASR:** Whisper (vía `openai-whisper`)
-- **LLM:** Ollama (p. ej. `gpt-oss:20b`)
-- **TTS:** Mimic3 (`es_ES/m-ailabs_low` u otra voz)
+- **LLM:** Ollama (`gpt-oss:20b` o el fusionado `gpt-oss-20b-multireasoner`)
+- **TTS:** Mimic3 (por defecto `es_ES/m-ailabs_low#karen_savage`, configurable)
 - **VAD:** `webrtcvad` para modo manos libres
 - **Comando de sueño:** "lucy dormi" / "lucy dormí" para terminar la sesión por voz
 
@@ -110,7 +110,7 @@ Crear entorno virtual e instalar dependencias:
 
    ```text
    🤖 Local Voice Assistant with Mimic3 TTS
-   Using Mimic3 voice: es_ES/m-ailabs_low
+   Using Mimic3 voice: es_ES/m-ailabs_low#karen_savage
    Emotion exaggeration: 0.5
    CFG weight: 0.5
    LLM model: gpt-oss:20b
@@ -152,6 +152,8 @@ voice_modular:
 ```
 
 > ⚠️ El resto de claves de `config.yaml` puede variar; revisá el archivo real en tu repo local.
+
+Para opciones de LoRA y modelo fusionado de GPT-OSS 20B, ver `docs/LUCY-LLM-GPT-OSS-LORA.md`.
 
 Documentación ampliada del nodo modular: ver `docs/VOICE_MODULAR.md`.
 

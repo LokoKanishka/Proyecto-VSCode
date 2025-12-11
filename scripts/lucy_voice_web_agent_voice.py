@@ -175,7 +175,7 @@ def find_mimic3_binary() -> Optional[str]:
     return None
 
 
-def speak_with_mimic3(text: str, voice: str = "es_ES/m-ailabs_low") -> None:
+def speak_with_mimic3(text: str, voice: str = "es_ES/m-ailabs_low#karen_savage") -> None:
     """Reproduce el texto usando mimic3 | aplay."""
     text = text.strip()
     if not text:

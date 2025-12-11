@@ -10,10 +10,12 @@ whisper_force_language: true
 
 # Ollama LLM
 ollama_model: "gpt-oss:20b"
+# Modelo fusionado opcional (LoRA multilingüe)
+ollama_model_fused: "gpt-oss-20b-multireasoner"
 ollama_host: "http://localhost:11434"
 
 # TTS
-tts_voice: "es_ES/m-ailabs_low"
+tts_voice: "es_ES/m-ailabs_low#karen_savage"
 
 # Audio / VAD
 sample_rate: 16000

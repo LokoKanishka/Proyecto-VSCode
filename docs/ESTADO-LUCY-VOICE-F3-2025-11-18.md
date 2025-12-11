@@ -25,7 +25,7 @@ En Fase 2 se había probado la voz `es_ES/carlfm_low`, pero en la práctica
 producía audios muy cortos o débiles.  
 En Fase 3 se consolida el siguiente camino:
 
-- Voz de Mimic 3: `es_ES/m-ailabs_low` (gallego en castellano, clara y estable).
+- Voz de Mimic 3: `es_ES/m-ailabs_low` (gallego en castellano, clara y estable en este snapshot; hoy el valor por defecto pasó a `es_ES/m-ailabs_low#karen_savage`, mismo modelo multispeaker con speaker femenino).
 - Método interno: `_speak_with_tts(text: str)` en `pipeline_lucy_voice.py`.
 - Flujo:
   1. Ejecuta `mimic3 --voice es_ES/m-ailabs_low --stdout`.

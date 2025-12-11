@@ -55,7 +55,7 @@ La lista de comandos de cierre debería coordinarse con `config.yaml` bajo la cl
 
 * Modelo Whisper: `base` (puede cambiarse a `small`, `medium`, etc.)
 * Modelo LLM (Ollama): `gpt-oss:20b`
-* Voz Mimic3: `es_ES/m-ailabs_low`
+* Voz Mimic3: `es_ES/m-ailabs_low#karen_savage` (configurable a cualquier voz Mimic3)
 * `Emotion exaggeration`: `0.5`
 * `CFG weight`: `0.5`
 * Sample rate: `16000` Hz
@@ -120,4 +120,3 @@ El nodo modular de voz retoma la idea general del asistente:
 * herramientas del sistema,
 
 pero con una arquitectura más simple y fácil de mantener, evitando la complejidad del grafo Pipecat y el entrenamiento de wake words ONNX.
-
