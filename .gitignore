@@ -41,3 +41,4 @@ lucy_voice/data/wakeword/
 # Backups locales
 backups/
 docs/backup/
+models/
