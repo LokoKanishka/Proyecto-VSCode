@@ -1,3 +1,4 @@
+No modificar nada dentro de external/nodo-de-voz-modular-de-lucy/ en esta tarea.
 # Instrucciones para agentes y herramientas en VS Code
 
 Este archivo define cómo deben trabajar los agentes (por ejemplo, Continue u otros)
