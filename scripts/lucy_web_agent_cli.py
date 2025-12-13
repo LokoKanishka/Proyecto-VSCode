@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-CLI para el Lucy Web Agent (DDGS + Ollama local).
+CLI para el Lucy Web Agent (SearXNG local + fallback DDGS + Ollama).
 
 Ejemplo de uso:
 
@@ -23,7 +23,7 @@ from lucy_agents.web_agent import run_web_research, DEFAULT_OLLAMA_MODEL_ID  # n
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Lucy Web Agent (DDGS + modelo local de Ollama)."
+        description="Lucy Web Agent (SearXNG local + fallback DDGS + modelo local de Ollama)."
     )
     parser.add_argument(
         "task",
@@ -64,7 +64,7 @@ def main() -> None:
         "╭──────────────── Lucy Web Agent ────────────────╮"
     )
     print(f"│  Modelo: {model_label:<33}│")
-    print(f"│  Resultados DDGS: {args.max_results:<23}│")
+    print(f"│  Top K web: {args.max_results:<27}│")
     print("╰────────────────────────────────────────────────╯\n")
 
     print("Tarea:", task)

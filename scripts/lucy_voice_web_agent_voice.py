@@ -4,7 +4,7 @@ Lucy Voice Web Agent (loop manos libres v5)
 
 - STT: Whisper local
 - Chat LLM: Ollama (gpt-oss:20b por defecto)
-- Web Agent: lucy_agents.web_agent.run_web_research (DDGS + Ollama)
+- Web Agent: lucy_agents.web_agent.run_web_research (SearXNG local + fallback DDGS + Ollama)
 - TTS: Mimic3 + aplay
 
 Reglas:
@@ -228,7 +228,7 @@ def main() -> None:
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print("STT: Whisper (modelo local)")
     print(f"Chat LLM: Ollama ({CHAT_MODEL_ID})")
-    print("Web Agent: lucy_agents.web_agent (DDGS + Ollama)")
+    print("Web Agent: lucy_agents.web_agent (SearXNG local + fallback DDGS + Ollama)")
     print("TTS: Mimic3 + aplay\n")
     print("Instrucciones:")
     print("  - Presioná Enter una sola vez para empezar a hablar.")
