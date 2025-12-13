@@ -172,6 +172,22 @@ def searx_search(
             )
             resp.raise_for_status()
             payload = resp.json()
+            # INFOBOX_FALLBACK: si engines externos bloquean/captcha y 'results' viene vacío,
+            # usamos infoboxes (wikidata/wikipedia) como resultados mínimos.
+            if not payload.get('results'):
+                iboxes = payload.get('infoboxes') or []
+                fb = []
+                for ib in iboxes:
+                    content = (ib.get('content') or '').strip()
+                    for u in (ib.get('urls') or []):
+                        url = (u.get('url') or '').strip()
+                        if not url:
+                            continue
+                        title = (u.get('title') or ib.get('infobox') or 'infobox').strip()
+                        fb.append({'title': title, 'url': url, 'content': content, 'engine': 'infobox'})
+                if fb:
+                    payload['results'] = fb
+
             for item in payload.get("results", []):
                 collected.append(
                     SearchResult(
