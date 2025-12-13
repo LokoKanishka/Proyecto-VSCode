@@ -166,9 +166,9 @@ def searx_search(
         follow_redirects=True,
     ) as client:
         for q in queries:
-            resp = client.get(
+            resp = client.post(
                 f"{base}/search",
-                params={"q": q, "format": "json", "language": lang, "safesearch": safesearch},
+                data={"q": q, "format": "json", "language": lang, "safesearch": safesearch},
             )
             resp.raise_for_status()
             payload = resp.json()
