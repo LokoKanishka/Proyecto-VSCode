@@ -35,3 +35,15 @@ docker compose -f infra/searxng/docker-compose.yml logs -f
   `docker-compose.yml`.
 - Todo corre en local y sin APIs pagas. Si SearXNG no está levantado, el web agent
   hace fallback automático al backend anterior (DuckDuckGo / ddgs).
+
+## API JSON (importante)
+
+En esta imagen de SearXNG, `server.method` está en **"POST"**. Por eso, un **GET** a `/search?...` suele devolver **403**.
+
+Probá la API JSON así (POST form-url-encoded):
+
+    curl -sS -i --max-time 10 \
+      -X POST \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      --data "q=numero aureo&format=json&language=es-AR&safesearch=1" \
+      "http://127.0.0.1:8080/search" | head -n 20
