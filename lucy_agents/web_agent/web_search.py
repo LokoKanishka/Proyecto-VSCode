@@ -1,0 +1,277 @@
+from __future__ import annotations
+
+import re
+import time
+from dataclasses import dataclass, field
+from typing import Callable, Iterable, List, Optional
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
+
+import httpx
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import trafilatura
+
+
+@dataclass
+class SearchResult:
+    title: str
+    url: str
+    snippet: str
+    source: str = "searxng"
+    score: float = 0.0
+
+
+@dataclass
+class FetchedPage:
+    url: str
+    title: str
+    text: str
+    elapsed_s: float = 0.0
+
+
+RELIABLE_DOMAINS = [
+    "wikipedia.org",
+    "argentina.gob.ar",
+    "gob.ar",
+    "gob.mx",
+    "gob.es",
+    "un.org",
+    "who.int",
+    "cdc.gov",
+    "nasa.gov",
+    "europa.eu",
+    "edu.ar",
+    ".edu",
+    ".ac.",
+]
+
+
+def normalize_query(text: str) -> str:
+    """
+    Limpia activaciones y muletillas comunes, conservando el español.
+    """
+    if not text:
+        return ""
+
+    lowered = text.strip()
+    lowered = re.sub(r"(?i)\\b(lucy|oye lucy|ok lucy|hey lucy)\\b", " ", lowered)
+
+    fillers = [
+        "eh",
+        "este",
+        "emm",
+        "mmm",
+        "osea",
+        "digamos",
+        "tipo",
+        "bueno",
+        "che",
+        "a ver",
+    ]
+    for f in fillers:
+        lowered = re.sub(rf"(?i)\\b{re.escape(f)}\\b", " ", lowered)
+
+    # Colapsar repeticiones ("qué es es" -> "qué es")
+    lowered = re.sub(r"(?i)\\b(\\w+)(\\s+\\1\\b)+", r"\\1", lowered)
+
+    lowered = re.sub(r"\\s+", " ", lowered)
+    return lowered.strip()
+
+
+def build_queries(q: str) -> List[str]:
+    """
+    Genera hasta 3 variantes: base, enfoque AR, y versión más corta.
+    """
+    if not q:
+        return []
+
+    queries = [q]
+    if "argentina" not in q.lower():
+        queries.append(f"{q} argentina")
+
+    tokens = q.split()
+    if len(tokens) > 5:
+        shortened = " ".join(tokens[:5])
+        if shortened not in queries:
+            queries.append(shortened)
+
+    return queries[:3]
+
+
+def canonicalize_url(url: str) -> str:
+    if not url:
+        return ""
+    parsed = urlsplit(url)
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    filtered = [(k, v) for k, v in query if not k.lower().startswith("utm_")]
+    new_query = "&".join(f"{k}={v}" for k, v in filtered)
+    cleaned = parsed._replace(query=new_query, fragment="")
+    normalized = urlunsplit(cleaned)
+    if normalized.endswith("/"):
+        normalized = normalized[:-1]
+    return normalized
+
+
+def dedupe_results(results: Iterable[SearchResult]) -> List[SearchResult]:
+    seen = set()
+    deduped: List[SearchResult] = []
+    for r in results:
+        url = canonicalize_url(r.url)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        deduped.append(SearchResult(**{**r.__dict__, "url": url}))
+    return deduped
+
+
+def _reliability_bonus(url: str) -> float:
+    url_lower = url.lower()
+    for dom in RELIABLE_DOMAINS:
+        if dom in url_lower:
+            return 2.5
+    return 0.0
+
+
+def rank_results(results: List[SearchResult], query: str) -> List[SearchResult]:
+    terms = [t.lower() for t in query.split() if len(t) > 2]
+    ranked: List[SearchResult] = []
+    for idx, r in enumerate(results):
+        haystack = f"{r.title} {r.snippet}".lower()
+        term_score = sum(1.0 for t in terms if t in haystack)
+        position_bonus = 1.0 / (1 + idx)
+        score = term_score + position_bonus + _reliability_bonus(r.url)
+        ranked.append(SearchResult(**{**r.__dict__, "score": score}))
+    ranked.sort(key=lambda r: r.score, reverse=True)
+    return ranked
+
+
+def searx_search(
+    queries: Iterable[str],
+    base_url: str,
+    lang: str = "es-AR",
+    safesearch: int = 1,
+    timeout_s: float = 12.0,
+) -> List[SearchResult]:
+    """
+    Consulta SearXNG (JSON API) y devuelve resultados combinados de todas las variantes.
+    """
+    base = base_url.rstrip("/")
+    collected: List[SearchResult] = []
+
+    with httpx.Client(
+        timeout=timeout_s,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Lucy-Web-Agent/1.0 (+local)",
+        },
+        follow_redirects=True,
+    ) as client:
+        for q in queries:
+            resp = client.get(
+                f"{base}/search",
+                params={"q": q, "format": "json", "language": lang, "safesearch": safesearch},
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            for item in payload.get("results", []):
+                collected.append(
+                    SearchResult(
+                        title=(item.get("title") or "").strip(),
+                        url=(item.get("url") or "").strip(),
+                        snippet=(item.get("content") or item.get("snippet") or "").strip(),
+                        source="searxng",
+                    )
+                )
+    return collected
+
+
+@retry(
+    retry=retry_if_exception_type(httpx.HTTPError),
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
+)
+def _fetch_url(url: str, timeout_s: float) -> httpx.Response:
+    with httpx.Client(
+        timeout=timeout_s,
+        headers={"User-Agent": "Lucy-Web-Agent/1.0 (+local)"},
+        follow_redirects=True,
+    ) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+        return resp
+
+
+def fetch_and_extract(url: str, timeout_s: float = 12.0, max_chars: int = 6000) -> Optional[FetchedPage]:
+    """
+    Descarga una página y extrae texto en modo reader (trafilatura).
+    """
+    start = time.time()
+    try:
+        resp = _fetch_url(url, timeout_s=timeout_s)
+    except Exception:
+        return None
+
+    text = trafilatura.extract(resp.text, url=url, include_comments=False, include_links=False)
+    if not text:
+        return None
+
+    text = text.strip()
+    if len(text) > max_chars:
+        text = text[:max_chars] + "..."
+
+    elapsed_s = time.time() - start
+    title = ""
+    return FetchedPage(url=url, title=title, text=text, elapsed_s=elapsed_s)
+
+
+def web_answer(
+    question: str,
+    search_fn: Callable[[str, int], List[SearchResult]],
+    provider: str = "searxng",
+    searxng_url: str = "http://127.0.0.1:8080",
+    lang: str = "es-AR",
+    safesearch: int = 1,
+    top_k: int = 5,
+    fetch_top_n: int = 3,
+    timeout_s: float = 12.0,
+) -> dict:
+    """
+    Pipeline completo: normaliza, genera queries, busca, deduplica, rankea,
+    baja y extrae top páginas, y retorna un payload estructurado.
+    """
+    norm = normalize_query(question)
+    queries = build_queries(norm)
+    if not queries:
+        queries = [question]
+
+    results: List[SearchResult] = []
+    used_provider = provider
+    try:
+        if provider.lower() == "searxng":
+            results = searx_search(queries, base_url=searxng_url, lang=lang, safesearch=safesearch, timeout_s=timeout_s)
+    except Exception:
+        results = []
+
+    if not results:
+        used_provider = "ddgs"
+        # Fallback al backend previo.
+        primary = queries[0] if queries else norm
+        results = search_fn(primary, max_results=top_k)
+
+    results = dedupe_results(results)
+    results = rank_results(results, norm or question)[:top_k]
+
+    fetched: List[FetchedPage] = []
+    for r in results[:fetch_top_n]:
+        page = fetch_and_extract(r.url, timeout_s=timeout_s)
+        if page:
+            fetched.append(page)
+
+    sources = [{"title": r.title or r.url, "url": r.url, "source": r.source} for r in results]
+
+    return {
+        "query": norm or question,
+        "used_provider": used_provider,
+        "results": results,
+        "fetched": fetched,
+        "sources": sources,
+    }
