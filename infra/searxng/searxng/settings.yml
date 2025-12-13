@@ -1997,6 +1997,7 @@ engines:
   #   timeout: 15.0
 
   - name: startpage
+    disabled: true
     engine: startpage
     shortcut: sp
     startpage_categ: web
