@@ -58,6 +58,8 @@ LISTEN_SECONDS = 5
 
 CHAT_MODEL_ID = os.environ.get("LUCY_OLLAMA_MODEL", WEB_DEFAULT_MODEL)
 
+WEB_MODEL_ID = os.environ.get("LUCY_WEB_AGENT_OLLAMA_MODEL", WEB_DEFAULT_MODEL)
+
 SYSTEM_PROMPT = (
     "Sos Lucy, un asistente local en la máquina de Diego. "
     "Hablás en español rioplatense, con tono cuidado y directo. "
@@ -302,7 +304,7 @@ def main() -> None:
                 try:
                     answer = run_web_research(
                         task=task,
-                        model_id=CHAT_MODEL_ID,
+                        model_id=(None if (os.getenv("LUCY_WEB_NO_LLM","").strip().lower() in ("1","true","yes","on")) else WEB_MODEL_ID),
                         max_results=8,
                         verbosity=1,
                     )
