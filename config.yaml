@@ -36,6 +36,16 @@ wakeword_cooldown: 4.0
 # wakeword_model_paths: ["lucy_voice/data/wakeword/modelos/hola_lucy.onnx"]  # Custom model (disabled due to false positives)
 wakeword_model_paths: [] # Empty list uses defaults (alexa, hey_jarvis, etc)
 
+# Búsqueda web
+web_search:
+  provider: "searxng"
+  searxng_url: "http://127.0.0.1:8080"
+  language: "es-AR"
+  safesearch: 1
+  top_k: 5
+  fetch_top_n: 3
+  timeout_s: 12
+
 # --- Voz modular de Lucy (v2) ---
 
 voice_modular:

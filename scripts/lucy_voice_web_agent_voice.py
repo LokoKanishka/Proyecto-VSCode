@@ -4,7 +4,7 @@ Lucy Voice Web Agent (loop manos libres v5)
 
 - STT: Whisper local
 - Chat LLM: Ollama (gpt-oss:20b por defecto)
-- Web Agent: lucy_agents.web_agent.run_web_research (DDGS + Ollama)
+- Web Agent: lucy_agents.web_agent.run_web_research (SearXNG local + fallback DDGS + Ollama)
 - TTS: Mimic3 + aplay
 
 Reglas:
@@ -57,6 +57,8 @@ SAMPLE_RATE = 16000
 LISTEN_SECONDS = 5
 
 CHAT_MODEL_ID = os.environ.get("LUCY_OLLAMA_MODEL", WEB_DEFAULT_MODEL)
+
+WEB_MODEL_ID = os.environ.get("LUCY_WEB_AGENT_OLLAMA_MODEL", WEB_DEFAULT_MODEL)
 
 SYSTEM_PROMPT = (
     "Sos Lucy, un asistente local en la máquina de Diego. "
@@ -228,7 +230,7 @@ def main() -> None:
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print("STT: Whisper (modelo local)")
     print(f"Chat LLM: Ollama ({CHAT_MODEL_ID})")
-    print("Web Agent: lucy_agents.web_agent (DDGS + Ollama)")
+    print("Web Agent: lucy_agents.web_agent (SearXNG local + fallback DDGS + Ollama)")
     print("TTS: Mimic3 + aplay\n")
     print("Instrucciones:")
     print("  - Presioná Enter una sola vez para empezar a hablar.")
@@ -302,7 +304,7 @@ def main() -> None:
                 try:
                     answer = run_web_research(
                         task=task,
-                        model_id=CHAT_MODEL_ID,
+                        model_id=(None if (os.getenv("LUCY_WEB_NO_LLM","").strip().lower() in ("1","true","yes","on")) else WEB_MODEL_ID),
                         max_results=8,
                         verbosity=1,
                     )

@@ -1,0 +1,7 @@
+# Dependencias principales para los agentes de Lucy (web + voz simple)
+ddgs
+httpx
+ollama
+PyYAML
+tenacity
+trafilatura
