@@ -104,7 +104,11 @@ def run_web_research(
 
     task: consigna en español, tal como la formularía la persona usuaria.
     """
-    model = model_id or DEFAULT_OLLAMA_MODEL_ID
+    no_llm = os.getenv('LUCY_WEB_NO_LLM','').strip().lower() in ('1','true','yes','on')
+    if no_llm:
+        model = None
+    else:
+        model = model_id or DEFAULT_OLLAMA_MODEL_ID
     cfg = {**DEFAULT_WEB_SEARCH_CONFIG, **load_web_search_config()}
 
     norm_task = normalize_query(task)
@@ -128,6 +132,33 @@ def run_web_research(
     results = payload["results"]
     fetched = payload["fetched"]
     used_provider = payload["used_provider"]
+
+    # NO_LLM_SHORTCIRCUIT
+    if no_llm:
+        out = []
+        out.append("[Lucy web-agent] (NO_LLM) devolviendo resultados sin Ollama")
+        out.append("[Lucy web-agent] Proveedor: %s | resultados brutos: %d | fetch descargados: %d" % (used_provider, len(results), len(fetched)))
+        out.append("")
+        out.append("Resultados:")
+        for k, r in enumerate(results[:max_results], 1):
+            title = (getattr(r, 'title', '') or '').strip()
+            url = (getattr(r, 'url', '') or '').strip()
+            if title:
+                out.append("%d. %s | %s" % (k, title, url))
+            else:
+                out.append("%d. %s" % (k, url))
+        if fetched:
+            out.append("")
+            out.append("Extractos:")
+            for k, pg in enumerate(fetched, 1):
+                url = (getattr(pg, 'url', '') or '').strip()
+                text = (getattr(pg, 'text', '') or getattr(pg, 'content', '') or '').strip()
+                if text:
+                    text = ' '.join(text.split())
+                    out.append("[%d] %s" % (k, url))
+                    out.append(text[:800])
+                    out.append("")
+        return "\n".join(out).rstrip()
 
     if verbosity:
         print(f"[Lucy web-agent] Usando modelo Ollama: {model}")
