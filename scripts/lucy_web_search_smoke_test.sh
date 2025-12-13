@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+# Auto-activar venv web si existe (para que el smoke sea portable)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -f "$PROJECT_DIR/.venv-web/bin/activate" ]; then
+  # shellcheck disable=SC1090
+  source "$PROJECT_DIR/.venv-web/bin/activate"
+fi
+
+
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
