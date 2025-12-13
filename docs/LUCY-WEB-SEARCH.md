@@ -58,3 +58,15 @@ web_search:
 
 Instalalas en tu entorno (por ejemplo: `pip install -r requirements.txt` luego de
 crear el virtualenv).
+
+## API JSON (importante)
+
+En esta imagen de SearXNG, `server.method` está en **"POST"**. Por eso, un **GET** a `/search?...` suele devolver **403**.
+
+Probá la API JSON así (POST form-url-encoded):
+
+    curl -sS -i --max-time 10 \
+      -X POST \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      --data "q=numero aureo&format=json&language=es-AR&safesearch=1" \
+      "http://127.0.0.1:8080/search" | head -n 20
