@@ -70,3 +70,16 @@ Probá la API JSON así (POST form-url-encoded):
       -H "Content-Type: application/x-www-form-urlencoded" \
       --data "q=numero aureo&format=json&language=es-AR&safesearch=1" \
       "http://127.0.0.1:8080/search" | head -n 20
+
+## Variables de entorno (Web Agent)
+
+- `LUCY_WEB_NO_LLM=1`
+  - **Desactiva Ollama** en el Web Agent y devuelve *resultados + extractos* directo (ideal para debugging o cuando no querés gastar LLM).
+- `LUCY_WEB_AGENT_OLLAMA_MODEL`
+  - Modelo para **resumir** (cuando NO_LLM no está activo). Default: `gpt-oss:20b` (viene de `DEFAULT_OLLAMA_MODEL_ID`).
+- `LUCY_OLLAMA_MODEL`
+  - Modelo del **chat de voz** (scripts de voz), independiente del modelo del Web Agent.
+
+Notas:
+- En `infra/searxng/searxng/settings.yml`, `startpage` está en `disabled: true` porque cae en CAPTCHA/suspensión y te rompe el engine.
+- Si SearXNG devuelve `results: []` pero trae `infoboxes`, el agente ahora usa un **fallback** para no caer a DDGS por CAPTCHA.
