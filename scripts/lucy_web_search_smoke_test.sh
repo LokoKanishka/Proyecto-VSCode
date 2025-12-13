@@ -1,35 +1,59 @@
 #!/usr/bin/env bash
-
-# Auto-activar venv web si existe (para que el smoke sea portable)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-if [ -f "$PROJECT_DIR/.venv-web/bin/activate" ]; then
-  # shellcheck disable=SC1090
-  source "$PROJECT_DIR/.venv-web/bin/activate"
-fi
-
-
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILE="$PROJECT_ROOT/infra/searxng/docker-compose.yml"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-if command -v docker >/dev/null 2>&1; then
-  echo "[Smoke] Intentando levantar SearXNG local (si ya está corriendo, se reutiliza)..."
-  docker compose -f "$COMPOSE_FILE" up -d || echo "[Smoke] No se pudo levantar SearXNG, seguimos con fallback."
-else
-  echo "[Smoke] Docker no está disponible. Se usará el backend de fallback."
+PY="$PROJECT_DIR/.venv-web/bin/python3"
+if [ ! -x "$PY" ]; then
+  echo "[Smoke] ERROR: no encuentro $PY (falta .venv-web)" >&2
+  exit 2
 fi
 
-echo "[Smoke] Ejecutando consulta de prueba (\"qué es el número áureo\")..."
-python3 - << 'PY'
-from lucy_agents.web_agent.agent import run_web_research
+COMPOSE_FILE="$PROJECT_DIR/infra/searxng/docker-compose.yml"
+docker compose -f "$COMPOSE_FILE" up -d >/dev/null
 
-answer = run_web_research(
-    task="qué es el número áureo",
-    max_results=5,
-    verbosity=1,
+echo "[Smoke] CURL POST /search (primeras 12 líneas):"
+timeout 12s curl -sS -i -X POST \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data "q=numero aureo&format=json&language=es-AR&safesearch=1" \
+  "http://127.0.0.1:8080/search" | sed -n '1,12p'
+echo
+
+echo "[Smoke] web_answer() (searxng, sin fetch, sin Ollama):"
+timeout 30s "$PY" - <<'PY'
+from lucy_agents.web_agent.web_search import web_answer
+
+def fallback(_q, _max):
+    return []  # si searxng anda, no se usa
+
+payload = web_answer(
+    question="numero aureo",
+    search_fn=fallback,
+    provider="searxng",
+    searxng_url="http://127.0.0.1:8080",
+    lang="es-AR",
+    safesearch=1,
+    top_k=5,
+    fetch_top_n=0,
+    timeout_s=12,
 )
-print("\n--- Respuesta ---\n")
-print(answer)
+
+used = payload.get("used_provider")
+res = payload.get("results") or payload.get("results_list") or []
+
+print("used_provider=", used)
+print("results_len=", len(res))
+
+if used != "searxng":
+    raise SystemExit("ERROR: used_provider != searxng")
+if len(res) == 0:
+    raise SystemExit("ERROR: 0 resultados")
+
+for r in res[:5]:
+    title = getattr(r, "title", None) or (r.get("title") if isinstance(r, dict) else "")
+    url = getattr(r, "url", None) or (r.get("url") if isinstance(r, dict) else "")
+    print("-", str(title)[:90], "|", url)
 PY
+
+echo "[Smoke] OK"
