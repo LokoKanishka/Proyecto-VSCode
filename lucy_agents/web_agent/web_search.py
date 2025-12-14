@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import re
 import time
@@ -168,7 +169,7 @@ def searx_search(
         for q in queries:
             resp = client.post(
                 f"{base}/search",
-                data={"q": q, "format": "json", "language": lang, "safesearch": safesearch},
+                data={"q": q, "format": "json", "language": lang, "safesearch": safesearch, "engines": os.getenv("LUCY_SEARXNG_ENGINES", "wikipedia,wikidata")},
             )
             resp.raise_for_status()
             payload = resp.json()
@@ -183,7 +184,7 @@ def searx_search(
                 if base_lang and base_lang != lang:
                     r2 = client.post(
                         base + '/search',
-                        data={'q': q, 'format': 'json', 'language': base_lang, 'safesearch': safesearch},
+                        data={'q': q, 'format': 'json', 'language': base_lang, 'safesearch': safesearch, 'engines': os.getenv("LUCY_SEARXNG_ENGINES", "wikipedia,wikidata")},
                     )
                     r2.raise_for_status()
                     p2 = r2.json()
@@ -193,7 +194,7 @@ def searx_search(
                 if not payload.get('results'):
                     r3 = client.post(
                         base + '/search',
-                        data={'q': q, 'format': 'json', 'safesearch': safesearch},
+                        data={'q': q, 'format': 'json', 'safesearch': safesearch, 'engines': os.getenv("LUCY_SEARXNG_ENGINES", "wikipedia,wikidata")},
                     )
                     r3.raise_for_status()
                     p3 = r3.json()
