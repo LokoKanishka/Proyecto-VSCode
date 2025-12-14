@@ -172,6 +172,34 @@ def searx_search(
             )
             resp.raise_for_status()
             payload = resp.json()
+
+            # LANG_FALLBACK: algunos engines se ponen en CAPTCHA/vacío según región (p.ej. es-AR).
+            # Reintentamos con idioma base ('es') y luego sin language antes de usar fallbacks.
+            if not payload.get('results'):
+                base_lang = ''
+                if lang:
+                    base_lang = (lang.split('-')[0] if '-' in lang else lang).strip()
+                # 1) Retry con idioma base (ej: 'es') si venía 'es-AR'
+                if base_lang and base_lang != lang:
+                    r2 = client.post(
+                        base + '/search',
+                        data={'q': q, 'format': 'json', 'language': base_lang, 'safesearch': safesearch},
+                    )
+                    r2.raise_for_status()
+                    p2 = r2.json()
+                    if p2.get('results') or p2.get('infoboxes'):
+                        payload = p2
+                # 2) Retry sin language
+                if not payload.get('results'):
+                    r3 = client.post(
+                        base + '/search',
+                        data={'q': q, 'format': 'json', 'safesearch': safesearch},
+                    )
+                    r3.raise_for_status()
+                    p3 = r3.json()
+                    if p3.get('results') or p3.get('infoboxes'):
+                        payload = p3
+
             # INFOBOX_FALLBACK: si engines externos bloquean/captcha y 'results' viene vacío,
             # usamos infoboxes (wikidata/wikipedia) como resultados mínimos.
             if not payload.get('results'):
