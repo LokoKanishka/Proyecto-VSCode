@@ -42,3 +42,12 @@ lucy_voice/data/wakeword/
 backups/
 docs/backup/
 models/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Editor/backup noise
+*.bak*
+*.swp
+*~
