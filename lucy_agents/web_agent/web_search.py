@@ -80,19 +80,60 @@ def normalize_query(text: str) -> str:
 
 def build_queries(q: str) -> List[str]:
     """
-    Genera hasta 3 variantes: base, enfoque AR, y versión más corta.
+    Genera variantes para mejorar recall en SearXNG sin desviar el sentido.
+
+    - Base (tal cual).
+    - Si NO es una pregunta definicional, agrega variante '... argentina' (útil para temas locales).
+    - Para preguntas definicionales, agrega una keyword que ayude a engines tipo wikipedia/wikidata:
+        * si detecta 'número áureo/numero aureo' -> usa 'proporcion aurea' (desambigua contra "golden number"/calendario)
+        * si no -> usa versión sin prefijo de pregunta + ASCII sin tildes.
     """
     if not q:
         return []
 
-    queries = [q]
-    if "argentina" not in q.lower():
-        queries.append(f"{q} argentina")
+    q_raw = q.strip()
+    qlow = q_raw.lower()
 
-    tokens = q.split()
-    if len(tokens) > 5:
+    is_def = bool(re.match(
+        r"(?i)^\s*¿?\s*(que|qué)\s+(es|son|significa)\b|^\s*(definici[oó]n|concepto)\s+de\b",
+        q_raw
+    ))
+
+    queries = [q_raw]
+
+    if (not is_def) and ("argentina" not in qlow):
+        queries.append(f"{q_raw} argentina")
+
+    # Variante keyword: saca prefijos típicos de pregunta y artículos iniciales.
+    kw = q_raw.lstrip("¿").strip()
+    kw = re.sub(r"(?i)^(que|qué)\s+(es|son)\s+", "", kw).strip()
+    kw = re.sub(r"(?i)^(que|qué)\s+significa\s+", "", kw).strip()
+    kw = re.sub(r"(?i)^definici[oó]n\s+de\s+", "", kw).strip()
+    kw = re.sub(r"(?i)^concepto\s+de\s+", "", kw).strip()
+    kw = re.sub(r"(?i)^(el|la|los|las|un|una)\s+", "", kw).strip()
+
+    # Desambiguación: "numero aureo" pega mucho en "golden number (time)".
+    if is_def and (("número áureo" in qlow) or ("numero aureo" in qlow) or (kw.lower() in ("número áureo","numero aureo","numero áureo"))):
+        kw_ascii = "proporcion aurea"
+    else:
+        import unicodedata
+        kw_ascii = "".join(
+            c for c in unicodedata.normalize("NFKD", kw)
+            if not unicodedata.combining(c)
+        )
+        kw_ascii = re.sub(r"\s+", " ", kw_ascii).strip()
+
+    lower_set = {x.lower() for x in queries}
+    if kw_ascii and kw_ascii.lower() not in lower_set:
+        queries.append(kw_ascii)
+    elif kw and kw.lower() not in lower_set and len(queries) < 3:
+        queries.append(kw)
+
+    # Si todavía no llegamos a 3 y es largo, agregamos una versión corta.
+    tokens = q_raw.split()
+    if len(queries) < 3 and len(tokens) > 5:
         shortened = " ".join(tokens[:5])
-        if shortened not in queries:
+        if shortened.lower() not in {x.lower() for x in queries}:
             queries.append(shortened)
 
     return queries[:3]
