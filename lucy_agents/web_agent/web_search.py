@@ -94,15 +94,28 @@ def build_queries(q: str) -> List[str]:
     q_raw = q.strip()
     qlow = q_raw.lower()
 
+    is_phi = (("número áureo" in qlow) or ("numero aureo" in qlow))
+
     is_def = bool(re.match(
         r"(?i)^\s*¿?\s*(que|qué)\s+(es|son|significa)\b|^\s*(definici[oó]n|concepto)\s+de\b",
         q_raw
     ))
 
-    queries = [q_raw]
+    # ANTI_PHI_SHORT_QUERY_BLOCK
+    # Caso ultra-corto: "numero/número áureo" suele desambiguarse mejor como "proporcion aurea".
+    if is_phi and (not is_def) and re.fullmatch(r"(?i)\s*(n[uú]mero\s+áureo|numero\s+aureo|numero\s+áureo)\s*", q_raw):
+        queries = ["proporcion aurea"]
+    else:
+        queries = [q_raw]
 
-    if (not is_def) and ("argentina" not in qlow):
+    if (not is_def) and (not is_phi) and ("argentina" not in qlow):
         queries.append(f"{q_raw} argentina")
+
+    # Desambiguación: "numero/número áureo" puede caer en "golden number (time)".
+    # Agregamos una variante canónica para empujar a golden ratio / proporción áurea.
+    if is_phi:
+        if "proporcion aurea" not in {x.lower() for x in queries}:
+            queries.append("proporcion aurea")
 
     # Variante keyword: saca prefijos típicos de pregunta y artículos iniciales.
     kw = q_raw.lstrip("¿").strip()
@@ -111,6 +124,11 @@ def build_queries(q: str) -> List[str]:
     kw = re.sub(r"(?i)^definici[oó]n\s+de\s+", "", kw).strip()
     kw = re.sub(r"(?i)^concepto\s+de\s+", "", kw).strip()
     kw = re.sub(r"(?i)^(el|la|los|las|un|una)\s+", "", kw).strip()
+
+    # ANTI_PHI_SHORT_QUERY_GUARD
+    # Si es exactamente "numero/número áureo", no reinyectamos ese texto como keyword (evita calendario/time).
+    if is_phi and (not is_def) and re.fullmatch(r"(?i)\s*(n[uú]mero\s+áureo|numero\s+aureo|numero\s+áureo)\s*", q_raw):
+        kw = ""
 
     # Desambiguación: "numero aureo" pega mucho en "golden number (time)".
     if is_def and (("número áureo" in qlow) or ("numero aureo" in qlow) or (kw.lower() in ("número áureo","numero aureo","numero áureo"))):
