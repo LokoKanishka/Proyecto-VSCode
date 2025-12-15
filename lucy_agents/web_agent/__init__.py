@@ -1,12 +1,25 @@
 """
-Paquete Lucy Web Agent.
+Web agent package.
 
-Provee:
-- DEFAULT_OLLAMA_MODEL_ID: modelo por defecto para Ollama.
-- run_web_research(task, model_id=None, max_results=8, verbosity=0): función principal.
-  Usa SearXNG local con fallback a DuckDuckGo (ddgs), fetch + extract y cita URLs.
+Mantener imports livianos: dependencias opcionales (p.ej. ddgs) se cargan
+solo cuando se acceden explícitamente los símbolos públicos.
 """
 
-from .agent import DEFAULT_OLLAMA_MODEL_ID, run_web_research
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 __all__ = ["DEFAULT_OLLAMA_MODEL_ID", "run_web_research"]
+
+if TYPE_CHECKING:
+    from .agent import DEFAULT_OLLAMA_MODEL_ID, run_web_research  # noqa: F401
+
+
+def __getattr__(name: str) -> Any:
+    if name == "DEFAULT_OLLAMA_MODEL_ID":
+        from .agent import DEFAULT_OLLAMA_MODEL_ID
+        return DEFAULT_OLLAMA_MODEL_ID
+    if name == "run_web_research":
+        from .agent import run_web_research
+        return run_web_research
+    raise AttributeError(name)
