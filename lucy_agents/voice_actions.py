@@ -85,11 +85,14 @@ def _fix_common_stt_aliases(q: str) -> str:
 
     fixed = re.sub(r"\bn[uú]mero\s+(?:de\s+)?agorio\b", "número áureo", fixed, flags=re.I)
 
+    fixed = re.sub(r"\bn[uú]mero\s+audio\b", "número áureo", fixed, flags=re.I)
+
     return fixed
 def _clean_query(q: str) -> str:
     """Limpia la query de muletillas y espacios."""
     q = q.strip()
     q = re.sub(r"^(?:vos\s+)+", "", q, flags=re.I)
+    q = re.sub(r"^(?:en\s+)?la\s+red\s+", "", q, flags=re.I)
     q = _fix_common_stt_aliases(q)
     for tail in (" por favor", " porfa", " gracias"):
         if q.endswith(tail):
