@@ -88,6 +88,7 @@ def _fix_common_stt_aliases(q: str) -> str:
 def _clean_query(q: str) -> str:
     """Limpia la query de muletillas y espacios."""
     q = q.strip()
+    q = re.sub(r"^(?:vos\s+)+", "", q, flags=re.I)
     q = _fix_common_stt_aliases(q)
     for tail in (" por favor", " porfa", " gracias"):
         if q.endswith(tail):
@@ -101,7 +102,7 @@ def _clean_query(q: str) -> str:
     q = q.strip(" ¿?¡!.,")
     q = re.sub(r"\s+", " ", q)
     # Cortar relleno típico después de la query (ej. 'y me abrís...')
-    for pat in (r"\s+y\s+me\s+", r"\s+y\s+que\s+"):
+    for pat in (r"\s+y\s+me\s+", r"\s+y\s+que\s+", r"\s+y\s+(?:contame|contarme|explicame|explicarme|decime|decirme)\b"):
         parts = re.split(pat, q, maxsplit=1)
         if len(parts) > 1:
             q = parts[0].strip()
