@@ -61,9 +61,34 @@ PLAYBACK_TAILS = (
 )
 
 
+def _fix_common_stt_aliases(q: str) -> str:
+    """Normaliza errores típicos del STT en nombres propios/consultas."""
+    if not q:
+        return q
+
+    fixed = q
+
+    # Variantes típicas de D&D que el STT arruina
+    patterns = [
+        r"\bred\s+dungeons?\s*(?:&|and)\s*brawns\b",
+        r"\bred\s+dungeons?\s+and\s+brawns\b",
+        r"\bred\s+and\s+dragons\b",
+        r"\bdantions?\s*(?:&|and)\s+dragons\b",
+        r"\bcalabozos\s+y\s+dragones\b",
+        r"\bdungeons\s+and\s+dragons\b",
+        r"\bd\s*&\s*d\b",
+        r"\bdnd\b",
+    ]
+
+    for pat in patterns:
+        fixed = re.sub(pat, "dungeons & dragons", fixed, flags=re.I)
+
+    return fixed
+
 def _clean_query(q: str) -> str:
     """Limpia la query de muletillas y espacios."""
     q = q.strip()
+    q = _fix_common_stt_aliases(q)
     for tail in (" por favor", " porfa", " gracias"):
         if q.endswith(tail):
             q = q[: -len(tail)]
