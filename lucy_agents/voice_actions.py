@@ -83,8 +83,9 @@ def _fix_common_stt_aliases(q: str) -> str:
     for pat in patterns:
         fixed = re.sub(pat, "dungeons & dragons", fixed, flags=re.I)
 
-    return fixed
+    fixed = re.sub(r"\bn[uú]mero\s+(?:de\s+)?agorio\b", "número áureo", fixed, flags=re.I)
 
+    return fixed
 def _clean_query(q: str) -> str:
     """Limpia la query de muletillas y espacios."""
     q = q.strip()
@@ -135,7 +136,7 @@ def _has_web_hint(t: str) -> bool:
 def _extract_web_query(t: str) -> str:
     # Caso A: "buscá en la red X"
     m = re.search(
-        r"busc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\s+(?:en|por)\s+(?:la\s+red|internet|la\s+web|web|searxng|searx)\s+(.+)",
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(?:en|por)\s+(?:la\s+red|internet|la\s+web|web|searxng|searx)\s+(.+)",
         t,
     )
     if m:
@@ -143,7 +144,7 @@ def _extract_web_query(t: str) -> str:
 
     # Caso B: "buscá X en la red"
     m = re.search(
-        r"busc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+(?:la\s+red|internet|la\s+web|web|searxng|searx)\b|$)",
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+(?:la\s+red|internet|la\s+web|web|searxng|searx)\b|$)",
         t,
     )
     if not m:
@@ -156,7 +157,7 @@ def _has_search_verb(t: str) -> bool:
     'buscar', 'busca', 'buscá', 'podés buscar', etc.
     """
     return bool(
-        re.search(r"\bbusc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\b", t)
+        re.search(r"\b(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\b", t)
         or "podes buscar" in t
         or "podés buscar" in t
         or "puedes buscar" in t
@@ -173,7 +174,7 @@ def _extract_query_after_buscar(t: str) -> str:
       'podés buscar escucho ofertas en youtube'
       'ahora busca escucho ofertas de blender'
     """
-    m = re.search(r"busc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\s+(.+)", t)
+    m = re.search(r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(.+)", t)
     if not m:
         return ""
     return _clean_query(m.group(1))
@@ -187,10 +188,10 @@ def _extract_query_for_engine(t: str, engine: str) -> str:
       - 'abrí youtube y buscá X'
     """
     patterns = [
-        rf"{engine}[^\n]*?busc[aá](?:r)?\s+(.+)",                     # ...youtube... buscá X
-        rf"busc[aá](?:r)?\s+(?:en|por)\s+{engine}\s+(.+)",           # buscá en youtube X
-        rf"busc[aá](?:r)?\s+(.+?)\s+(?:en|por)\s+{engine}",           # buscá X en youtube
-        rf"ahora[^\n]*?busc[aá](?:r)?\s+(.+?)\s+(?:en|por)\s+{engine}",  # ahora buscá X en youtube
+        rf"{engine}[^\n]*?(?:busc[aá](?:r)?|busqu(?:e|es|en))\s+(.+)",                     # ...youtube... buscá X
+        rf"(?:busc[aá](?:r)?|busqu(?:e|es|en))\s+(?:en|por)\s+{engine}\s+(.+)",           # buscá en youtube X
+        rf"(?:busc[aá](?:r)?|busqu(?:e|es|en))\s+(.+?)\s+(?:en|por)\s+{engine}",           # buscá X en youtube
+        rf"ahora[^\n]*?(?:busc[aá](?:r)?|busqu(?:e|es|en))\s+(.+?)\s+(?:en|por)\s+{engine}",  # ahora buscá X en youtube
     ]
     for pat in patterns:
         m = re.search(pat, t)
@@ -204,7 +205,7 @@ def _extract_google_query(t: str) -> str:
     Extrae la query pensada para Google justo después de 'busc...'
     y antes de 'en google' si aparece.
     """
-    m = re.search(r"busc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+google\b|$)", t)
+    m = re.search(r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+google\b|$)", t)
     if not m:
         return ""
     return _clean_query(m.group(1))
