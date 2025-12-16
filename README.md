@@ -129,6 +129,14 @@ cd ~/Lucy_Workspace/Proyecto-VSCode
 
 El flujo es el mismo que con el acceso directo.
 
+### 5.3. Auditoría de trazabilidad (silenciamientos de salida)
+
+```bash
+./scripts/audit_trazabilidad.sh
+```
+
+Genera `docs/AUDIT_TRAZABILIDAD.md` y `reports/audit_trazabilidad.json`.
+
 ---
 
 ## 6. Configuración

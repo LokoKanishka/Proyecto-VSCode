@@ -11,7 +11,13 @@ if [ ! -x "$PY" ]; then
 fi
 
 COMPOSE_FILE="$PROJECT_DIR/infra/searxng/docker-compose.yml"
-docker compose -f "$COMPOSE_FILE" up -d >/dev/null
+echo "[QuickCheck] levantando searxng (docker compose up -d)..."
+if ! docker compose -f "$COMPOSE_FILE" up -d; then
+  echo "[QuickCheck] ERROR: docker compose up falló" >&2
+  docker compose -f "$COMPOSE_FILE" ps >&2 || true
+  docker compose -f "$COMPOSE_FILE" logs --tail=120 >&2 || true
+  exit 1
+fi
 
 echo "[QuickCheck] CURL POST /search (24 líneas):"
 timeout 12s curl -sS -i -X POST \

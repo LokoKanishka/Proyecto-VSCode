@@ -9,7 +9,13 @@ if [ ! -x "$PY" ]; then
   exit 2
 fi
 
-docker compose -f "$PROJECT_DIR/infra/searxng/docker-compose.yml" up -d >/dev/null
+echo "[SmokeNoLLM] levantando searxng (docker compose up -d)..."
+if ! docker compose -f "$PROJECT_DIR/infra/searxng/docker-compose.yml" up -d; then
+  echo "[SmokeNoLLM] ERROR: docker compose up falló" >&2
+  docker compose -f "$PROJECT_DIR/infra/searxng/docker-compose.yml" ps >&2 || true
+  docker compose -f "$PROJECT_DIR/infra/searxng/docker-compose.yml" logs --tail=120 >&2 || true
+  exit 1
+fi
 
 export LUCY_WEB_NO_LLM=1
 

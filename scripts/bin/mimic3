@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Wrapper de mimic3 para trazabilidad SIN tocar external/.
+# - stdout queda exclusivamente para el WAV (NO imprimir nada ahí).
+# - stderr se duplica a:
+#     a) stderr normal (para que el caller lo capture)
+#     b) un log en archivo (para tener trazas aunque nadie imprima stderr)
+
+LOG_DIR="${LUCY_LOG_DIR:-$HOME/.cache/lucy/logs}"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/mimic3.log"
+
+WRAPPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 1) Si el usuario fuerza un binario real, usarlo.
+REAL_MIMIC3="${LUCY_REAL_MIMIC3:-}"
+
+# 2) Si no, buscar en PATH evitando recursión (quitando el dir del wrapper).
+if [[ -z "${REAL_MIMIC3}" ]]; then
+  SANITIZED_PATH="$(echo "$PATH" | tr ':' '\n' | grep -v "^$WRAPPER_DIR\$" | paste -sd ':' -)"
+  REAL_MIMIC3="$(PATH="$SANITIZED_PATH" command -v mimic3 || true)"
+fi
+
+# 3) Si sigue sin aparecer, caer a venvs del repo (caso típico: mimic3 en .venv-lucy-voz).
+if [[ -z "${REAL_MIMIC3}" ]]; then
+  PROJECT_ROOT="$(cd "$WRAPPER_DIR/../.." && pwd)" # scripts/bin -> repo root
+  for cand in "$PROJECT_ROOT/.venv-lucy-voz/bin/mimic3" "$PROJECT_ROOT"/.venv*/bin/mimic3; do
+    if [[ -x "$cand" && "$cand" != "$0" ]]; then
+      REAL_MIMIC3="$cand"
+      break
+    fi
+  done
+fi
+
+if [[ -z "${REAL_MIMIC3}" ]]; then
+  echo "[mimic3-wrapper] ERROR: no encuentro mimic3 real (ni en PATH ni en venvs del repo)" >&2
+  echo "$(date -Is) ERROR no_real_mimic3 args=$*" >> "$LOG_FILE"
+  exit 127
+fi
+
+TMP_IN="$(mktemp)"
+TMP_ERR="$(mktemp)"
+cleanup() { rm -f "$TMP_IN" "$TMP_ERR"; }
+trap cleanup EXIT
+
+# Capturar stdin (texto) para poder loguear un preview SIN perderlo.
+cat >"$TMP_IN"
+
+TS="$(date -Is)"
+PID="$$"
+ARGS="$*"
+PREVIEW="$(head -c 300 "$TMP_IN" | tr '\n' ' ' | tr '\r' ' ')"
+
+# Ejecutar mimic3 real: stdout queda intacto (WAV), stderr se guarda en tmp.
+set +e
+"$REAL_MIMIC3" "$@" <"$TMP_IN" 2>"$TMP_ERR"
+RC="$?"
+set -e
+
+# Volcar stderr al log + reenviarlo a stderr (para que el caller lo capture).
+ERR_TXT="$(cat "$TMP_ERR")"
+# Filtrar warnings ruidosos conocidos (sin ocultar errores reales)
+ERR_TXT="$(printf "%s" "$ERR_TXT" | sed '/pkg_resources is deprecated as an API/d' | sed '/The pkg_resources package is slated for removal/d' | sed '/^  import pkg_resources$/d')"
+if [[ -n "${ERR_TXT}" ]]; then
+  printf "%s pid=%s rc=%s real=%q args=%q preview=%q stderr=%q\n" "$TS" "$PID" "$RC" "$REAL_MIMIC3" "$ARGS" "$PREVIEW" "$ERR_TXT" >>"$LOG_FILE"
+  printf "%s\n" "$ERR_TXT" >&2
+else
+  printf "%s pid=%s rc=%s real=%q args=%q preview=%q\n" "$TS" "$PID" "$RC" "$REAL_MIMIC3" "$ARGS" "$PREVIEW" >>"$LOG_FILE"
+fi
+
+exit "$RC"

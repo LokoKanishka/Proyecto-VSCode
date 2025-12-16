@@ -13,6 +13,7 @@ para agregar tool "web", etc.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from typing import List, Optional
@@ -34,7 +35,7 @@ class PlannedAction:
 
 
 # Motor recordado para búsquedas posteriores ("ahora busca X")
-LAST_SEARCH_ENGINE: Optional[str] = None  # "google" | "youtube" | None
+LAST_SEARCH_ENGINE: Optional[str] = None  # "google" | "youtube" | "searxng" | None
 
 
 def _normalize(text: str) -> str:
@@ -94,12 +95,49 @@ def _build_google_search_url(query: str) -> str:
     return f"https://www.google.com/search?q={encoded}"
 
 
+def _build_searxng_search_url(query: str) -> str:
+    """Arma la URL de búsqueda en SearXNG local."""
+    base = (os.environ.get("LUCY_SEARXNG_URL") or "http://127.0.0.1:8080").rstrip("/")
+    encoded = quote_plus(_clean_query(query))
+    return f"{base}/search?q={encoded}&language=es-AR&safesearch=1"
+
+
+def _has_web_hint(t: str) -> bool:
+    return any(x in t for x in ("en la red", "en internet", "en la web", "internet", "la web", "searx", "searxng"))
+
+
+def _extract_web_query(t: str) -> str:
+    # Caso A: "buscá en la red X"
+    m = re.search(
+        r"busc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\s+(?:en|por)\s+(?:la\s+red|internet|la\s+web|web|searxng|searx)\s+(.+)",
+        t,
+    )
+    if m:
+        return _clean_query(m.group(1))
+
+    # Caso B: "buscá X en la red"
+    m = re.search(
+        r"busc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+(?:la\s+red|internet|la\s+web|web|searxng|searx)\b|$)",
+        t,
+    )
+    if not m:
+        return ""
+    return _clean_query(m.group(1))
+
 def _has_search_verb(t: str) -> bool:
     """
     Detecta variantes simples de 'buscar':
     'buscar', 'busca', 'buscá', 'podés buscar', etc.
     """
-    return bool(re.search(r"\bbusc[aá](?:r)?\b", t) or "podes buscar" in t or "podés buscar" in t or "puedes buscar" in t)
+    return bool(
+        re.search(r"\bbusc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\b", t)
+        or "podes buscar" in t
+        or "podés buscar" in t
+        or "puedes buscar" in t
+        or "buscame" in t
+        or "buscame" in t
+        or "buscáme" in t
+    )
 
 
 def _extract_query_after_buscar(t: str) -> str:
@@ -109,7 +147,7 @@ def _extract_query_after_buscar(t: str) -> str:
       'podés buscar escucho ofertas en youtube'
       'ahora busca escucho ofertas de blender'
     """
-    m = re.search(r"busc[aá](?:r)?\s+(.+)", t)
+    m = re.search(r"busc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\s+(.+)", t)
     if not m:
         return ""
     return _clean_query(m.group(1))
@@ -140,7 +178,7 @@ def _extract_google_query(t: str) -> str:
     Extrae la query pensada para Google justo después de 'busc...'
     y antes de 'en google' si aparece.
     """
-    m = re.search(r"busc[aá](?:r)?\s+(.+?)(?:\s+(?:en|por)\s+google\b|$)", t)
+    m = re.search(r"busc[aá](?:r)?(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+google\b|$)", t)
     if not m:
         return ""
     return _clean_query(m.group(1))
@@ -277,6 +315,7 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
     has_search = _has_search_verb(t)
     has_google = "google" in t
     has_youtube = "youtube" in t
+    has_web = _has_web_hint(t)
 
     # ---------- 2.1 Google ----------
 
@@ -329,6 +368,27 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
         )
         LAST_SEARCH_ENGINE = "youtube"
 
+    # ---------- 2.2.5 Web (SearXNG local) ----------
+
+    searx_query = ""
+    if has_search and not has_google and not has_youtube:
+        # Si explícitamente dice web/red/internet, forzamos SearXNG aunque haya motor recordado.
+        if has_web or not LAST_SEARCH_ENGINE:
+            searx_query = _extract_web_query(t) or _extract_query_after_buscar(t)
+
+    if searx_query:
+        url = _build_searxng_search_url(searx_query)
+        actions.append(
+            PlannedAction(
+                tool="desktop",
+                command=f"xdg-open {url}",
+                description=f"Abrir SearXNG y buscar '{searx_query}'",
+            )
+        )
+        LAST_SEARCH_ENGINE = "searxng"
+        # Evitar que el bloque 2.3 agregue otra búsqueda duplicada
+        has_search = False
+
     # ---------- 2.3 Buscar usando el último motor recordado ----------
 
     if has_search and not has_google and not has_youtube and LAST_SEARCH_ENGINE:
@@ -338,6 +398,9 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
             if LAST_SEARCH_ENGINE == "google":
                 url = _build_google_search_url(query)
                 desc = f"Buscar en Google (motor recordado): '{query}'"
+            elif LAST_SEARCH_ENGINE == "searxng":
+                url = _build_searxng_search_url(query)
+                desc = f"Buscar en la web (SearXNG, motor recordado): '{query}'"
             else:  # youtube
                 url = f"https://www.youtube.com/results?search_query={encoded}"
                 desc = f"Buscar en YouTube (motor recordado): '{query}'"
@@ -508,6 +571,10 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
             )
 
     targets_yt = _plan_targets_youtube(plan)
+    targets_web = any("/search?q=" in (act.command or "") for act in plan)
+
+    if targets_web and not targets_yt and not wants_play:
+        return True, "Te abrí la búsqueda en la web."
 
     if wants_play and targets_yt:
         search_query = _extract_youtube_search_query_from_plan(plan) or text.strip()
