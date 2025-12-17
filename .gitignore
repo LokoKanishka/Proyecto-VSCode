@@ -53,3 +53,4 @@ __pycache__/
 *~
 /scripts/bin/*.bak_*
 /reports/audit_trazabilidad.json
+/reports/voice_smoke_*.txt
