@@ -1,9 +1,9 @@
 # Auditoría de trazabilidad (Lucy)
 
-- Fecha: 2025-12-16 21:06:52
+- Fecha: 2025-12-16 22:05:19
 - Roots: scripts, lucy_agents, external/nodo-de-voz-modular-de-lucy
 - Archivos escaneados: **31**
-- Hallazgos: **ALTA=0**, **MEDIA=1**, **BAJA=10**
+- Hallazgos: **ALTA=0**, **MEDIA=0**, **BAJA=10**
 
 ## Hallazgos críticos (ALTA)
 
@@ -11,8 +11,7 @@ _No se detectaron silenciamientos evidentes a nivel heurístico._
 
 ## Hallazgos a revisar (MEDIA)
 
-- `external/nodo-de-voz-modular-de-lucy/tts.py:64` **python:subprocess.run** — Salida capturada (PIPE/capture_output): revisá que se imprima o se escriba a logs.
-  - `proc = subprocess.run(`
+_Nada para revisar en media según heurística._
 
 ## Hallazgos informativos (BAJA)
 

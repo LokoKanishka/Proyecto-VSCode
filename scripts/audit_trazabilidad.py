@@ -172,6 +172,11 @@ def scan_python(path: Path, text: str) -> List[Finding]:
                 or is_true_const(capture_output_node)
             )
 
+
+            # Allowlist: Mimic3 TTS WAV capture (stdout=PIPE es intencional en este módulo)
+            if captured and "external/nodo-de-voz-modular-de-lucy/tts.py" in str(path).replace("\\", "/"):
+                continue
+
             if silent:
                 risk = "ALTA"
                 detail = (
