@@ -16,15 +16,95 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import json
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
-from urllib.parse import quote_plus, unquote_plus
+from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
 
 from lucy_agents.desktop_bridge import run_desktop_command
 from lucy_web_agent import find_youtube_video_url
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _env_bool(name: str, default: bool = True) -> bool:
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    vv = v.strip().lower()
+    if vv in {"1", "true", "yes", "y", "on"}:
+        return True
+    if vv in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _repo_root() -> Path:
+    return PROJECT_ROOT
+
+
+def _searxng_spoken_summary(query: str, top: int = 3) -> str | None:
+    query = (query or "").strip()
+    if not query:
+        return None
+
+    script = _repo_root() / "scripts" / "searxng_query.py"
+    if not script.exists():
+        return None
+
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix="lucy_searxng_", suffix=".json", delete=False) as f:
+            tmp_path = f.name
+
+        p = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                query,
+                "--top",
+                str(top),
+                "--json-out",
+                tmp_path,
+            ],
+            timeout=8,
+            text=True,
+            capture_output=True,
+        )
+        if p.returncode != 0:
+            return None
+
+        raw = Path(tmp_path).read_text(encoding="utf-8", errors="replace")
+        data = json.loads(raw)
+        results = data.get("results") or []
+
+        titles: list[str] = []
+        for item in results:
+            title = (item.get("title") or "").strip()
+            title = title.replace("\n", " ")
+            title = re.sub(r"\s+", " ", title).strip()
+            if title:
+                titles.append(title)
+            if len(titles) >= max(0, int(top)):
+                break
+
+        if not titles:
+            return None
+
+        parts = [f"{i}) {t}." for i, t in enumerate(titles, start=1)]
+        return "Encontré: " + " ".join(parts)
+    except Exception:  # noqa: BLE001
+        return None
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 # =========================
@@ -547,6 +627,35 @@ def _extract_youtube_search_query_from_plan(actions: list[PlannedAction]) -> str
     return None
 
 
+def _extract_searxng_query_from_plan(actions: list[PlannedAction]) -> str | None:
+    base = (os.environ.get("LUCY_SEARXNG_URL") or "http://127.0.0.1:8080").rstrip("/")
+    base_netloc = urlparse(base).netloc
+    if not base_netloc:
+        return None
+
+    for action in actions:
+        cmd = action.command or ""
+        try:
+            argv = shlex.split(cmd)
+        except ValueError:
+            continue
+        if len(argv) < 2:
+            continue
+        if argv[0] != "xdg-open":
+            continue
+        url = argv[1]
+        parsed = urlparse(url)
+        if parsed.netloc != base_netloc:
+            continue
+        if not parsed.path.startswith("/search"):
+            continue
+        q = (parse_qs(parsed.query).get("q") or [""])[0].strip()
+        if q:
+            return q
+
+    return None
+
+
 def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     """
     Intenta manejar una intención de escritorio a partir de texto.
@@ -607,9 +716,15 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
 
     targets_yt = _plan_targets_youtube(plan)
     targets_web = any("/search?q=" in (act.command or "") for act in plan)
+    searx_query_from_plan = _extract_searxng_query_from_plan(plan)
 
     if targets_web and not targets_yt and not wants_play:
-        return True, "Te abrí la búsqueda en la web."
+        spoken = "Te abrí la búsqueda en la web."
+        if searx_query_from_plan and _env_bool("LUCY_SEARXNG_SUMMARY", default=True):
+            summary = _searxng_spoken_summary(searx_query_from_plan, top=3)
+            if summary:
+                spoken = f"{summary} Te abrí la búsqueda en la web."
+        return True, spoken
 
     if wants_play and targets_yt:
         search_query = _extract_youtube_search_query_from_plan(plan) or text.strip()
