@@ -68,7 +68,7 @@ def _insert_guard_before_stt_log(source: str) -> str:
 
 
 def main() -> int:
-    app_path = Path(os.environ.get("LUCY_VOICE_APP_PATH", "app.py"))
+    app_path = Path(os.environ.get("LUCY_VOICE_APP_PATH", "app.py")).expanduser().resolve()
     if not app_path.is_file():
         print(f"[{MARKER}] ERROR: no existe {app_path}", file=sys.stderr)
         return 2
@@ -81,6 +81,17 @@ def main() -> int:
         except Exception as exc:
             print(f"[{MARKER}] WARN: no se pudo aplicar el filtro ({exc}); ejecutando sin filtro.", file=sys.stderr)
             source = app_path.read_text(encoding="utf-8", errors="replace")
+
+    # Simular `python app.py`: asegurar que el directorio de app.py esté en sys.path
+    # (necesario para imports locales tipo `from tts import ...`).
+    app_dir = app_path.parent
+    if str(app_dir) not in sys.path:
+        sys.path.insert(0, str(app_dir))
+
+    # app.py usa paths relativos (por ejemplo config.yaml). Alinear cwd con app.py
+    # solo si no estamos ya parados ahí.
+    if Path.cwd().resolve() != app_dir:
+        os.chdir(app_dir)
 
     code = compile(source, str(app_path), "exec")
     glb = {"__name__": "__main__", "__file__": str(app_path), "__package__": None}
