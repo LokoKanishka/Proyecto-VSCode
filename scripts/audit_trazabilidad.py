@@ -172,16 +172,33 @@ def scan_python(path: Path, text: str) -> List[Finding]:
                 or is_true_const(capture_output_node)
             )
 
+            norm_path = str(path).replace("\\", "/")
 
             # Allowlist: Mimic3 TTS WAV capture (stdout=PIPE es intencional en este módulo)
-            if captured and "external/nodo-de-voz-modular-de-lucy/tts.py" in str(path).replace("\\", "/"):
+            if captured and "external/nodo-de-voz-modular-de-lucy/tts.py" in norm_path:
                 continue
+
+            # Allowlist (downgrade): wrapper SearXNG JSON helper.
+            # En voice_actions se captura stdout/stderr de searxng_query.py para evitar ruido,
+            # pero la trazabilidad de la búsqueda queda en el JSON (--json-out) y el "spoken" final.
+            allowlisted_capture = False
+            if captured and norm_path.endswith("lucy_agents/voice_actions.py"):
+                lo = max(0, lineno - 1 - 40)
+                hi = min(len(lines), lineno - 1 + 40)
+                if any("searxng_query.py" in lines[i] for i in range(lo, hi)):
+                    allowlisted_capture = True
 
             if silent:
                 risk = "ALTA"
                 detail = (
                     "Salida redirigida a DEVNULL/devnull: se pierden logs "
                     "(ideal: loguear stdout/stderr)."
+                )
+            elif captured and allowlisted_capture:
+                risk = "BAJA"
+                detail = (
+                    "Salida capturada (PIPE/capture_output) allowlisted: wrapper SearXNG "
+                    "usa JSON (--json-out) para trazabilidad y evita ruido en stdout/stderr."
                 )
             elif captured:
                 risk = "MEDIA"
