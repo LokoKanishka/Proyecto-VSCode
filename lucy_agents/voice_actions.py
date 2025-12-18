@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional
 from urllib.parse import quote_plus, unquote_plus
 
 from lucy_agents.desktop_bridge import run_desktop_command
 from lucy_web_agent import find_youtube_video_url
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 # =========================
@@ -463,7 +467,8 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
             actions.append(
                 PlannedAction(
                     tool="desktop",
-                    command="code .",
+                    # LUCY_INTENT_OPEN_VSCODE: abrir VS Code en el repo (no depende del cwd)
+                    command=f"code {shlex.quote(str(PROJECT_ROOT))}",
                     description="Abrir el proyecto de Lucy en VS Code",
                 )
             )
