@@ -1,8 +1,8 @@
 # Auditoría de trazabilidad (Lucy)
 
-- Fecha: 2025-12-18 00:41:40
+- Fecha: 2025-12-18 01:18:55
 - Roots: scripts, lucy_agents, external/nodo-de-voz-modular-de-lucy
-- Archivos escaneados: **33**
+- Archivos escaneados: **34**
 - Hallazgos: **ALTA=0**, **MEDIA=0**, **BAJA=10**
 
 ## Hallazgos críticos (ALTA)
