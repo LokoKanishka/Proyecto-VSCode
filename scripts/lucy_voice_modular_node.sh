@@ -47,8 +47,15 @@ cd "${NODE_DIR}"
 echo "[Lucy modular] Lanzando nodo de voz modular (app.py) con CUDA_VISIBLE_DEVICES=\"\"..."
 if [[ "${LUCY_STT_JUNK_FILTER:-1}" == "1" ]]; then
     echo "[Lucy modular] STT junk filter: ON (LUCY_STT_JUNK_FILTER=1)"
-    CUDA_VISIBLE_DEVICES="" python "${PROJECT_ROOT}/scripts/lucy_voice_modular_node_filtered.py" "$@"
+    RUN_CMD=(env CUDA_VISIBLE_DEVICES="" python "${PROJECT_ROOT}/scripts/lucy_voice_modular_node_filtered.py" "$@")
 else
     echo "[Lucy modular] STT junk filter: OFF (LUCY_STT_JUNK_FILTER=0)"
-    CUDA_VISIBLE_DEVICES="" python app.py "$@"
+    RUN_CMD=(env CUDA_VISIBLE_DEVICES="" python app.py "$@")
+fi
+
+AUTOSTART="${LUCY_VOICE_AUTOSTART:-1}"
+if [ "$AUTOSTART" = "0" ]; then
+    "${RUN_CMD[@]}"
+else
+    printf '\n' | "${RUN_CMD[@]}"
 fi
