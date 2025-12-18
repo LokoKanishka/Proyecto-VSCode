@@ -372,7 +372,20 @@ def write_markdown(md_path: Path, roots: List[str], files_scanned: int, findings
         "2) Repetir en el resto.\n"
     )
 
-    md_path.write_text("".join(lines), encoding="utf-8")
+    new_text = "".join(lines)
+
+    def strip_date_line(text: str) -> str:
+        return re.sub(r"^\s*-\s*Fecha:\s*.*\n", "", text, flags=re.M)
+
+    try:
+        old_text = md_path.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        old_text = None
+
+    if old_text is not None and strip_date_line(old_text) == strip_date_line(new_text):
+        return
+
+    md_path.write_text(new_text, encoding="utf-8")
 
 
 def main() -> int:
