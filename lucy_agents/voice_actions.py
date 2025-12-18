@@ -177,6 +177,7 @@ def _clean_query(q: str) -> str:
     q = q.strip()
     q = re.sub(r"^(?:vos\s+)+", "", q, flags=re.I)
     q = re.sub(r"^(?:en\s+)?la\s+red\s+", "", q, flags=re.I)
+    q = re.sub(r"^(?:en\s+)?el\s+red\s+", "", q, flags=re.I)
     q = _fix_common_stt_aliases(q)
     for tail in (" por favor", " porfa", " gracias"):
         if q.endswith(tail):
@@ -190,7 +191,11 @@ def _clean_query(q: str) -> str:
     q = q.strip(" ¿?¡!.,")
     q = re.sub(r"\s+", " ", q)
     # Cortar relleno típico después de la query (ej. 'y me abrís...')
-    for pat in (r"\s+y\s+me\s+", r"\s+y\s+que\s+", r"\s+y\s+(?:contame|contarme|explicame|explicarme|decime|decirme)\b"):
+    for pat in (
+        r"\s+y\s+me\s+",
+        r"\s+y\s+que\s+",
+        r"\s+y\s+(?:contame|contarme|contamento|explicame|explicarme|decime|decirme)\b",
+    ):
         parts = re.split(pat, q, maxsplit=1)
         if len(parts) > 1:
             q = parts[0].strip()
@@ -217,13 +222,20 @@ def _build_searxng_search_url(query: str) -> str:
 
 
 def _has_web_hint(t: str) -> bool:
-    return any(x in t for x in ("en la red", "en internet", "en la web", "internet", "la web", "searx", "searxng"))
+    # Tolerante a STT: "el red" suele salir en vez de "la red".
+    return bool(
+        re.search(
+            r"\b(?:en\s+la\s+red|la\s+red|en\s+el\s+red|el\s+red|en\s+internet|internet|en\s+la\s+web|la\s+web|web|searx|searxng)\b",
+            t,
+            flags=re.I,
+        )
+    )
 
 
 def _extract_web_query(t: str) -> str:
     # Caso A: "buscá en la red X"
     m = re.search(
-        r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(?:en|por)\s+(?:la\s+red|internet|la\s+web|web|searxng|searx)\s+(.+)",
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|bokk?a)(?:me|melo|mela|nos|lo|la)?\s+(?:en|por)?\s*(?:la\s+red|el\s+red|internet|la\s+web|web|searxng|searx)\s+(.+)",
         t,
     )
     if m:
@@ -231,7 +243,7 @@ def _extract_web_query(t: str) -> str:
 
     # Caso B: "buscá X en la red"
     m = re.search(
-        r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+(?:la\s+red|internet|la\s+web|web|searxng|searx)\b|$)",
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|bokk?a)(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)?\s*(?:la\s+red|el\s+red|internet|la\s+web|web|searxng|searx)\b|$)",
         t,
     )
     if not m:
@@ -245,6 +257,7 @@ def _has_search_verb(t: str) -> bool:
     """
     return bool(
         re.search(r"\b(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\b", t)
+        or re.search(r"\bbokk?a\b", t)
         or "podes buscar" in t
         or "podés buscar" in t
         or "puedes buscar" in t
@@ -261,7 +274,10 @@ def _extract_query_after_buscar(t: str) -> str:
       'podés buscar escucho ofertas en youtube'
       'ahora busca escucho ofertas de blender'
     """
-    m = re.search(r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(.+)", t)
+    m = re.search(
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|bokk?a)(?:me|melo|mela|nos|lo|la)?\s+(.+)",
+        t,
+    )
     if not m:
         return ""
     return _clean_query(m.group(1))
