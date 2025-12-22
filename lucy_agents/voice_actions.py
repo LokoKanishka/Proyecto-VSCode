@@ -232,6 +232,47 @@ def _has_web_hint(t: str) -> bool:
     )
 
 
+
+def _postprocess_extracted_query(t: str, q: str) -> str:
+    """
+    Post-procesa queries extraídas para evitar casos típicos de STT truncado:
+    - 'buscá en la red' => no debe quedar query='en'
+    - elimina engine-hints al inicio ('en la red', 'en la web', 'internet', etc.)
+    - recorta coletillas tipo 'y contame brevemente'
+    """
+    q = (q or "").strip()
+    if not q:
+        return ""
+
+    # Si el usuario pidió web/red y la "query" quedó en una preposición por STT truncado, descartamos.
+    if _has_web_hint(t) and q in ("en", "por"):
+        return ""
+
+    # Strip engine-hints al inicio si se colaron en la query.
+    q = re.sub(
+        r"^(?:en|por)\s*(?:la\s+red|el\s+red|internet|la\s+web|web|searxng|searx)\b\s*",
+        "",
+        q,
+        flags=re.IGNORECASE,
+    ).strip()
+    q = re.sub(
+        r"^(?:la\s+red|el\s+red|internet|la\s+web|web|searxng|searx)\b\s*",
+        "",
+        q,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # Recortar coletillas de resumen si quedaron pegadas.
+    q = re.sub(r"\b(y\s+)?contame\b.*$", "", q, flags=re.IGNORECASE).strip()
+    q = re.sub(r"\b(y\s+)?brevemente\b.*$", "", q, flags=re.IGNORECASE).strip()
+    q = re.sub(r"\b(y\s+)?resum\w*\b.*$", "", q, flags=re.IGNORECASE).strip()
+
+    # Si sigue quedando algo vacío o un token inútil, descartamos.
+    if not q or q.lower() in ("en", "por"):
+        return ""
+    return q
+
+
 def _extract_web_query(t: str) -> str:
     # Caso A: "buscá en la red X"
     m = re.search(
@@ -239,7 +280,9 @@ def _extract_web_query(t: str) -> str:
         t,
     )
     if m:
-        return _clean_query(m.group(1))
+        q = _clean_query(m.group(1))
+        q = _postprocess_extracted_query(t, q)
+        return q
 
     # Caso B: "buscá X en la red"
     m = re.search(
@@ -248,7 +291,9 @@ def _extract_web_query(t: str) -> str:
     )
     if not m:
         return ""
-    return _clean_query(m.group(1))
+    q = _clean_query(m.group(1))
+    q = _postprocess_extracted_query(t, q)
+    return q
 
 def _has_search_verb(t: str) -> bool:
     """
@@ -280,29 +325,54 @@ def _extract_query_after_buscar(t: str) -> str:
     )
     if not m:
         return ""
-    return _clean_query(m.group(1))
+    q = _clean_query(m.group(1))
+    q = _postprocess_extracted_query(t, q)
+    return q
 
 
 def _extract_query_for_engine(t: str, engine: str) -> str:
     """
-    Busca patrones explícitos para un motor concreto (google/youtube).
-    Ejemplos:
-      - 'buscá X en youtube'
-      - 'abrí youtube y buscá X'
+    Extrae una query para un motor específico desde texto NORMALIZADO.
+    Mantiene heurística simple y determinista.
     """
-    patterns = [
-        rf"{engine}[^\n]*?(?:busc[aá](?:r)?|busqu(?:e|es|en))\s+(.+)",                     # ...youtube... buscá X
-        rf"(?:busc[aá](?:r)?|busqu(?:e|es|en))\s+(?:en|por)\s+{engine}\s+(.+)",           # buscá en youtube X
-        rf"(?:busc[aá](?:r)?|busqu(?:e|es|en))\s+(.+?)\s+(?:en|por)\s+{engine}",           # buscá X en youtube
-        rf"ahora[^\n]*?(?:busc[aá](?:r)?|busqu(?:e|es|en))\s+(.+?)\s+(?:en|por)\s+{engine}",  # ahora buscá X en youtube
-    ]
-    for pat in patterns:
-        m = re.search(pat, t)
-        if m:
-            return _clean_query(m.group(1))
+    engine = (engine or "").strip().lower()
+    if engine in ("searx", "searxng", "web", "internet"):
+        engine_pat = r"(?:searxng|searx|web|internet|la\s+web|la\s+red|el\s+red)"
+    elif engine == "google":
+        engine_pat = r"(?:google)"
+    elif engine == "youtube":
+        engine_pat = r"(?:youtube|you\s*tube)"
+    else:
+        return ""
+
+    # 1) "buscá X en youtube"
+    m = re.search(
+        rf"(?:busc[aá](?:r)?|busqu(?:e|es|en)|bokk?a)(?:me|melo|mela|nos|lo|la)?\s+(.+?)\s+(?:en|por)?\s*{engine_pat}\b",
+        t,
+    )
+    if m:
+        q = _clean_query(m.group(1))
+        return _postprocess_extracted_query(t, q)
+
+    # 2) "en youtube buscá X"
+    m = re.search(
+        rf"(?:^|\s)(?:en|por)?\s*{engine_pat}\b.*?(?:busc[aá](?:r)?|busqu(?:e|es|en)|bokk?a)(?:me|melo|mela|nos|lo|la)?\s+(.+)$",
+        t,
+    )
+    if m:
+        q = _clean_query(m.group(1))
+        return _postprocess_extracted_query(t, q)
+
+    # 3) "abrí youtube y buscá X"
+    m = re.search(
+        rf"(?:abr[ií]|abre|abrir)\s+{engine_pat}\b.*?(?:y\s+)?(?:busc[aá](?:r)?|busqu(?:e|es|en)|bokk?a)(?:me|melo|mela|nos|lo|la)?\s+(.+)$",
+        t,
+    )
+    if m:
+        q = _clean_query(m.group(1))
+        return _postprocess_extracted_query(t, q)
+
     return ""
-
-
 def _extract_google_query(t: str) -> str:
     """
     Extrae la query pensada para Google justo después de 'busc...'
@@ -311,7 +381,9 @@ def _extract_google_query(t: str) -> str:
     m = re.search(r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+google\b|$)", t)
     if not m:
         return ""
-    return _clean_query(m.group(1))
+    q = _clean_query(m.group(1))
+    q = _postprocess_extracted_query(t, q)
+    return q
 
 
 def _has_open_verb(t: str) -> bool:
@@ -431,6 +503,29 @@ def is_complex_youtube_request(text: str) -> bool:
 # 2. Heurísticas de planning
 # =========================
 
+
+def _augment_searxng_query_for_summary(q: str) -> str:
+    """
+    Si el usuario pide 'contame/resumen/brevemente', desambiguamos la búsqueda.
+    Mantiene 100% heurístico, offline y determinista.
+    """
+    q = (q or "").strip()
+    if not q:
+        return q
+
+    # Si ya trae contexto, no tocamos.
+    lowered = q.lower()
+    if any(w in lowered for w in ("radio", "podcast", "programa", "episodio", "capitulo", "capítulo", "streaming")):
+        return q
+
+    # Entrecomillamos si no viene entre comillas (mejora precisión para nombres).
+    if '"' not in q:
+        q = f'"{q}"'
+
+    # Agregamos contexto suave (sin OR raro) para mejorar relevancia.
+    return f"{q} programa radio podcast"
+
+
 def _plan_from_text(text: str) -> List[PlannedAction]:
     """
     Dado un texto en castellano, devuelve una lista de acciones
@@ -507,6 +602,8 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
             searx_query = _extract_web_query(t) or _extract_query_after_buscar(t)
 
     if searx_query:
+        if ('contame' in t) or ('breve' in t) or ('resum' in t):
+            searx_query = _augment_searxng_query_for_summary(searx_query)
         url = _build_searxng_search_url(searx_query)
         actions.append(
             PlannedAction(
@@ -545,29 +642,27 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
 
     # ---------- 2.4 Abrir proyecto de Lucy en VS Code ----------
 
-    if (
-        "abrí" in t
-        or "abre" in t
-        or "abrir" in t
-        or "abri " in t
-        or "vscode" in t
+    # Antes: esto se disparaba por "abrí" + "lucy" (y "lucy" está en TODO).
+    # Ahora: solo abre VS Code si pedís el proyecto o mencionás VS Code / code explícitamente.
+    wants_vscode = (
+        "vscode" in t
         or "visual studio code" in t
-    ):
-        if (
-            "proyecto" in t
-            or "lucy" in t
-            or "código" in t
-            or "codigo" in t
-            or "code" in t
-        ):
-            actions.append(
-                PlannedAction(
-                    tool="desktop",
-                    # LUCY_INTENT_OPEN_VSCODE: abrir VS Code en el repo (no depende del cwd)
-                    command=f"code {shlex.quote(str(PROJECT_ROOT))}",
-                    description="Abrir el proyecto de Lucy en VS Code",
-                )
+        or "vs code" in t
+        or re.search(r"\bvs\s*code\b", t)
+        or re.search(r"\bcode\b", t)
+    )
+    wants_project = ("proyecto" in t and "lucy" in t)
+    wants_open = bool(re.search(r"\b(abri|abrí|abre|abrir)\b", t))
+
+    if wants_open and (wants_vscode or wants_project):
+        actions.append(
+            PlannedAction(
+                tool="desktop",
+                # LUCY_INTENT_OPEN_VSCODE: abrir VS Code en el repo (no depende del cwd)
+                command=f"code {shlex.quote(str(PROJECT_ROOT))}",
+                description="Abrir el proyecto de Lucy en VS Code",
             )
+        )
 
     # ---------- 2.5 Mostrar / leer README ----------
 
