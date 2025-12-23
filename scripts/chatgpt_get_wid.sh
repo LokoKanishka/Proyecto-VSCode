@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export DISPLAY="${DISPLAY:-:0}"
 
-# si XAUTHORITY no está y ~/.Xauthority no existe, probamos rutas típicas (sin romper si no están)
-if [ -z "${XAUTHORITY:-}" ] && [ ! -f "$HOME/.Xauthority" ]; then
-  for cand in "/run/user/$UID/gdm/Xauthority" "/run/user/$UID/.Xauthority"; do
-    if [ -f "$cand" ]; then export XAUTHORITY="$cand"; break; fi
-  done
+export DISPLAY="${DISPLAY:-:0}"
+if [ -z "${XAUTHORITY:-}" ] && [ -f "$HOME/.Xauthority" ]; then
+  export XAUTHORITY="$HOME/.Xauthority"
 fi
 
 # 1) override explícito
@@ -15,35 +12,34 @@ if [ -n "${CHATGPT_WID_HEX:-}" ]; then
   exit 0
 fi
 
-# 2) si la ventana activa parece ser el tab que queremos, usarla
-ACTIVE_DEC="$(xdotool getactivewindow 2>/dev/null || true)"
-if [ -n "${ACTIVE_DEC:-}" ]; then
-  NAME="$(xdotool getwindowname "$ACTIVE_DEC" 2>/dev/null || true)"
-  if echo "$NAME" | grep -qi "google chrome" && echo "$NAME" | grep -qiE "LUCY_REQ_|ChatGPT"; then
-    printf '0x%08x\n' "$ACTIVE_DEC"
-    exit 0
-  fi
+# Helper: buscar en wmctrl por regex (título) y devolver WID
+_find_by_title() {
+  local pat="$1"
+  wmctrl -l | awk -v pat="$pat" 'BEGIN{IGNORECASE=1} $0 ~ pat {print $1; exit}'
+}
+
+# 2) Prioridad: ventana cuyo título sea LUCY_REQ_... - Google Chrome
+WID="$(_find_by_title "LUCY_REQ_[0-9]+_[0-9]+.*- Google Chrome$")"
+if [ -n "${WID:-}" ]; then
+  echo "$WID"
+  exit 0
 fi
 
-# 3) preferir tabs que creamos nosotros
-WID="$(wmctrl -l | awk 'BEGIN{IGNORECASE=1} /LUCY_REQ_/ && /- Google Chrome$/ {print $1; exit}')"
-# 4) fallback “ChatGPT”
-if [ -z "${WID:-}" ]; then
-  WID="$(wmctrl -l | awk 'BEGIN{IGNORECASE=1} /ChatGPT/ && /- Google Chrome$/ {print $1; exit}')"
-fi
-# 5) fallback “chatgpt” (minúsculas)
-if [ -z "${WID:-}" ]; then
-  WID="$(wmctrl -l | awk 'BEGIN{IGNORECASE=1} /chatgpt/ && /- Google Chrome$/ {print $1; exit}')"
-fi
-# 6) último fallback: primer Chrome que NO sea el tab de VSCode
-if [ -z "${WID:-}" ]; then
-  WID="$(wmctrl -l | awk 'BEGIN{IGNORECASE=1} /- Google Chrome$/ && $0 !~ /V\.S\.Code|Visual Studio Code/ {print $1; exit}')"
+# 3) Ventana que diga ChatGPT - Google Chrome
+WID="$(_find_by_title "ChatGPT.*- Google Chrome$")"
+if [ -n "${WID:-}" ]; then
+  echo "$WID"
+  exit 0
 fi
 
-if [ -z "${WID:-}" ]; then
-  echo "ERROR: no encontré ninguna ventana de Chrome usable." >&2
-  wmctrl -l | awk 'BEGIN{IGNORECASE=1} /- Google Chrome$/ {print "CAND:",$0}' >&2 || true
-  exit 2
+# 4) Cualquier ventana con "chatgpt" en el título (por si no termina con - Google Chrome)
+WID="$(_find_by_title "chatgpt")"
+if [ -n "${WID:-}" ]; then
+  echo "$WID"
+  exit 0
 fi
 
-echo "$WID"
+echo "ERROR: no pude detectar la ventana de ChatGPT en Chrome." >&2
+echo "CAND (chrome):" >&2
+wmctrl -l | awk 'BEGIN{IGNORECASE=1} /- Google Chrome$/ {print " -", $0}' >&2 || true
+exit 2
