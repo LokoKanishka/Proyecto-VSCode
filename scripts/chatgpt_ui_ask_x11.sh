@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Ensure X11 env (non-interactive safe)
+export DISPLAY="${DISPLAY:-:0}"
+if [ -z "${XAUTHORITY:-}" ]; then
+  if [ -f "$HOME/.Xauthority" ]; then
+    export XAUTHORITY="$HOME/.Xauthority"
+  elif [ -f "/run/user/$UID/gdm/Xauthority" ]; then
+    export XAUTHORITY="/run/user/$UID/gdm/Xauthority"
+  else
+    cand="$(ls -1 /run/user/$UID/.mutter-Xwaylandauth.* 2>/dev/null | head -n 1 || true)"
+    [ -n "$cand" ] && export XAUTHORITY="$cand"
+  fi
+fi
+
 export DISPLAY="${DISPLAY:-:0}"
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
