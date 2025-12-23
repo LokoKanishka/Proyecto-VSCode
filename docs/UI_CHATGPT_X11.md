@@ -71,3 +71,19 @@ Chequeo rápido:
 ```bash
 ./scripts/check_ui_deps.sh
 ```
+
+## Doctor (diagnóstico rápido)
+
+Si algo se rompe (DISPLAY/XAUTHORITY, WID, copy/paste), corré:
+
+```bash
+./scripts/chatgpt_ui_doctor.sh
+````
+
+Esto valida:
+
+* deps (xdotool/wmctrl/xclip)
+* DISPLAY/XAUTHORITY
+* detección de ventana (WID)
+* smoke ask (OK)
+  
