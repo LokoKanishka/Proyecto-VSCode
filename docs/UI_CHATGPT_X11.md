@@ -57,3 +57,17 @@ CHATGPT_WID_HEX="$WID" ./scripts/chatgpt_ui_ask_x11.sh "Respondé exactamente co
 
 * “abre/cierra chats”:
   Estaba clickeando en la sidebar. Estos scripts clickean a la derecha (70% ancho) para evitarlo.
+
+## Dependencias
+
+Para que funcione la UI por X11 (focus/paste/copy), necesitás:
+
+- xdotool
+- wmctrl
+- xclip
+
+Chequeo rápido:
+
+```bash
+./scripts/check_ui_deps.sh
+```
