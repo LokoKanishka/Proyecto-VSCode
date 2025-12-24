@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export DISPLAY="${DISPLAY:-:0}"
-if [ -z "${XAUTHORITY:-}" ] && [ -f "$HOME/.Xauthority" ]; then
-  export XAUTHORITY="$HOME/.Xauthority"
+DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [ -r "$DIR/x11_env.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$DIR/x11_env.sh"
 fi
 
 # 1) override explícito

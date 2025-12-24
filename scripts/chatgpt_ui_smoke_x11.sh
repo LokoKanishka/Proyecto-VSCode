@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 env -i HOME="$HOME" USER="$USER" PATH="$PATH" bash -c "
 set -euo pipefail
 cd '$ROOT' || exit 1
+. ./scripts/x11_env.sh
 
 WID=\"\$(./scripts/chatgpt_get_wid.sh)\"
 echo \"DETECTED_WID=\$WID\" 1>&2

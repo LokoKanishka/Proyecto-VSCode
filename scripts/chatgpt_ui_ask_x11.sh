@@ -1,53 +1,67 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure X11 env (non-interactive safe)
-export DISPLAY="${DISPLAY:-:0}"
-if [ -z "${XAUTHORITY:-}" ]; then
-  if [ -f "$HOME/.Xauthority" ]; then
-    export XAUTHORITY="$HOME/.Xauthority"
-  elif [ -f "/run/user/$UID/gdm/Xauthority" ]; then
-    export XAUTHORITY="/run/user/$UID/gdm/Xauthority"
-  else
-    cand="$(ls -1 /run/user/$UID/.mutter-Xwaylandauth.* 2>/dev/null | head -n 1 || true)"
-    [ -n "$cand" ] && export XAUTHORITY="$cand"
-  fi
+DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [ -r "$DIR/x11_env.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$DIR/x11_env.sh"
 fi
 
+# Auto-detect ChatGPT window id if not provided
+if [ -z "${CHATGPT_WID_HEX:-}" ] && [ -x "$DIR/chatgpt_get_wid.sh" ]; then
+  CHATGPT_WID_HEX="$("$DIR/chatgpt_get_wid.sh" || true)"
+  export CHATGPT_WID_HEX
+fi
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUESTION="${1:-}"
-[ -n "$QUESTION" ] || { echo "USO: $0 \"pregunta\"" >&2; exit 2; }
+if [ -z "${QUESTION}" ]; then
+  echo "USO: CHATGPT_WID_HEX=0x... $0 \"pregunta\"" >&2
+  exit 2
+fi
 
-WID_HEX="${CHATGPT_WID_HEX:-$("$DIR/chatgpt_get_wid.sh")}"
-WID_DEC=$((WID_HEX))
+CHATGPT_WID_HEX="${CHATGPT_WID_HEX:-}"
+if [ -z "${CHATGPT_WID_HEX}" ]; then
+  echo "ERROR: seteá CHATGPT_WID_HEX (ej: 0x01e00017)" >&2
+  exit 2
+fi
 
-TOKEN="$(date +%s)_${RANDOM}"
-REQ_LABEL="LUCY_REQ_${TOKEN}"
-ANS_LABEL="LUCY_ANSWER_${TOKEN}"
+TOKEN="$(date +%s)_$RANDOM"
+ACTIVE_WID="$(xdotool getactivewindow 2>/dev/null || true)"
 
-PROMPT="${REQ_LABEL}: ${QUESTION}
+PROMPT="LUCY_REQ_${TOKEN}: ${QUESTION}
 
-Respondé SOLO con UNA línea que empiece exactamente así:
-${ANS_LABEL}: <tu respuesta en una sola línea>"
+Respondé SOLO con UNA línea.
+Debe empezar EXACTAMENTE con: LUCY_ANSWER_${TOKEN}: (dos puntos y un espacio)
+y en ESA MISMA LÍNEA, después de eso, poné tu respuesta."
 
-# 1) pegar prompt
-CHATGPT_WID_HEX="$WID_HEX" "$DIR/chatgpt_focus_paste.sh" "$PROMPT" >/dev/null
+# Pegar prompt
+CHATGPT_WID_HEX="$CHATGPT_WID_HEX" ./scripts/chatgpt_focus_paste.sh "$PROMPT" >/dev/null
 
-# 2) enviar
-xdotool key --window "$WID_DEC" Return
+# Enviar
+CHATGPT_WID_DEC=$((CHATGPT_WID_HEX))
+xdotool key --window "$CHATGPT_WID_DEC" Return
 
-# 3) esperar respuesta real (no placeholder)
-deadline=$((SECONDS+60))
+# Volver el foco a la ventana original (para que Ctrl-C funcione en la terminal)
+if [ -n "${ACTIVE_WID:-}" ]; then
+  xdotool windowactivate "$ACTIVE_WID" >/dev/null 2>&1 || true
+fi
+
+# Esperar respuesta
+ASK_TIMEOUT="${ASK_TIMEOUT:-75}"
+deadline=$((SECONDS+ASK_TIMEOUT))
 while [ $SECONDS -lt $deadline ]; do
-  txt="$(CHATGPT_WID_HEX="$WID_HEX" "$DIR/chatgpt_copy_chat_text.sh" 2>/dev/null || true)"
-  ans="$(printf '%s\n' "$txt" | python3 "$DIR/chatgpt_extract_answer.py" "$ANS_LABEL" 2>/dev/null || true)"
-  if [ -n "${ans:-}" ]; then
-    echo "$ans"
+  ACTIVE_LOOP_WID="$(xdotool getactivewindow 2>/dev/null || true)"
+  text="$(CHATGPT_WID_HEX="$CHATGPT_WID_HEX" ./scripts/chatgpt_copy_chat_text.sh 2>/dev/null || true)"
+  if [ -n "${ACTIVE_LOOP_WID:-}" ]; then
+    xdotool windowactivate "$ACTIVE_LOOP_WID" >/dev/null 2>&1 || true
+  fi
+  line="$(printf '%s\n' "$text" | grep -E "^LUCY_ANSWER_${TOKEN}:" | tail -n 1 || true)"
+  if [ -n "$line" ]; then
+    echo "$line"
     exit 0
   fi
-  sleep 1
+  sleep 2
 done
 
-echo "ERROR: timeout esperando ${ANS_LABEL}:" >&2
+echo "ERROR: timeout esperando LUCY_ANSWER_${TOKEN}:" >&2
 exit 1
