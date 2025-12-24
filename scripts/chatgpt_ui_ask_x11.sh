@@ -14,7 +14,6 @@ if [ -z "${XAUTHORITY:-}" ]; then
   fi
 fi
 
-export DISPLAY="${DISPLAY:-:0}"
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUESTION="${1:-}"
