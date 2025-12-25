@@ -43,6 +43,16 @@ def _env_bool(name: str, default: bool = True) -> bool:
     return default
 
 
+def _env_int(name: str, default: int) -> int:
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    try:
+        return int(v.strip())
+    except ValueError:
+        return default
+
+
 def _repo_root() -> Path:
     return PROJECT_ROOT
 
@@ -105,6 +115,66 @@ def _searxng_spoken_summary(query: str, top: int = 3) -> str | None:
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+
+def _extract_chatgpt_answer(raw: str) -> str | None:
+    matches: list[str] = []
+    for line in (raw or "").splitlines():
+        m = re.match(r"^\s*LUCY_ANSWER_[0-9_]+:\s*(.+)\s*$", line)
+        if not m:
+            continue
+        val = (m.group(1) or "").strip()
+        if val:
+            matches.append(val)
+    return matches[-1] if matches else None
+
+
+def _ask_chatgpt_ui(question: str) -> tuple[bool, str]:
+    ask_script = _repo_root() / "scripts" / "chatgpt_ui_ask_x11.sh"
+    runner = _repo_root() / "scripts" / "x11_host_exec.sh"
+
+    if not ask_script.exists():
+        return True, "No encontré el script de UI para ChatGPT."
+
+    ask_timeout = _env_int("LUCY_CHATGPT_ASK_TIMEOUT", 75)
+    if ask_timeout <= 0:
+        ask_timeout = 75
+
+    env = os.environ.copy()
+    # Compatibilidad: algunos scripts miran ASK_TIMEOUT, otros CHATGPT_TIMEOUT_SEC
+    env["ASK_TIMEOUT"] = str(ask_timeout)
+    env["CHATGPT_TIMEOUT_SEC"] = str(ask_timeout)
+
+    # Permite fijar WID desde config si lo necesitás
+    wid = env.get("LUCY_CHATGPT_WID_HEX")
+    if wid and not env.get("CHATGPT_WID_HEX"):
+        env["CHATGPT_WID_HEX"] = wid
+
+    cmd = [str(ask_script), question]
+    if runner.exists():
+        cmd = [str(runner), str(ask_script), question]
+
+    try:
+        completed = subprocess.run(
+            cmd,
+            text=True,
+            capture_output=True,
+            env=env,
+            timeout=ask_timeout + 20,
+        )
+    except subprocess.TimeoutExpired:
+        return True, "Timeout esperando respuesta de ChatGPT."
+    except Exception as exc:  # noqa: BLE001
+        return True, f"No pude ejecutar ChatGPT UI ({exc})."
+
+    answer = _extract_chatgpt_answer(completed.stdout)
+    if answer:
+        return True, answer
+
+    stderr = (completed.stderr or "").strip()
+    if stderr:
+        print(f"[LucyVoiceActions] ChatGPT UI stderr: {stderr}", flush=True)
+    return True, "No pude leer la respuesta de ChatGPT."
 
 
 # =========================
@@ -231,6 +301,76 @@ def _has_web_hint(t: str) -> bool:
         )
     )
 
+
+def _has_chatgpt_hint(t: str) -> bool:
+    return bool(re.search(r"\bchat\s*gpt\b", t, flags=re.I))
+
+
+def _postprocess_chatgpt_query(q: str) -> str:
+    q = _clean_query(q)
+    if not q:
+        return ""
+    q = re.sub(r"\s+y\s+dame\b.*$", "", q, flags=re.IGNORECASE).strip()
+    q = re.sub(r"\s+y\s+respond(?:e|é|eme|eme)\b.*$", "", q, flags=re.IGNORECASE).strip()
+    q = re.sub(r"\s+y\s+decime\b.*$", "", q, flags=re.IGNORECASE).strip()
+    return q.strip()
+
+
+def _extract_chatgpt_query(text: str) -> str:
+    if not text or not _has_chatgpt_hint(text):
+        return ""
+
+    # Permitir separadores típicos después del verbo: "preguntá: ...", "buscá, ...", etc.
+    sep = r"(?:\s*[:\-–—,]?\s*)"
+
+    patterns = [
+        # "abrí chatgpt y buscá/preguntá X"
+        r"(?:abr[ií]|abre|abrir)\s+chat\s*gpt\b.*?(?:y\s+)?"
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
+        r"(?:me|melo|mela|nos|lo|la)?" + sep + r"(.+)$",
+
+        # "buscá/preguntá X en chatgpt"
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
+        r"(?:me|melo|mela|nos|lo|la)?" + sep + r"(.+?)\s+(?:en\s+)?chat\s*gpt\b",
+
+        # "en chatgpt buscá/preguntá X"
+        r"(?:en\s+)?chat\s*gpt\b.*?"
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
+        r"(?:me|melo|mela|nos|lo|la)?" + sep + r"(.+)$",
+
+        # "preguntale a chatgpt X" / "preguntá a chatgpt: X"
+        r"(?:pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
+        r"(?:le|me)?" + sep + r"(?:a\s+)?chat\s*gpt\b" + sep + r"(.+)$",
+    ]
+
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if not m:
+            continue
+        q = _postprocess_chatgpt_query(m.group(1))
+        if q:
+            return q
+    return ""
+
+    patterns = [
+        # "abrí chatgpt y buscá X"
+        r"(?:abr[ií]|abre|abrir)\s+chat\s*gpt\b.*?(?:y\s+)?(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)(?:me|melo|mela|nos|lo|la)?\s+(.+)$",
+        # "buscá X en chatgpt"
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)(?:me|melo|mela|nos|lo|la)?\s+(.+?)\s+(?:en\s+)?chat\s*gpt\b",
+        # "en chatgpt buscá X"
+        r"(?:en\s+)?chat\s*gpt\b.*?(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)(?:me|melo|mela|nos|lo|la)?\s+(.+)$",
+        # "preguntale a chatgpt X"
+        r"(?:pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)(?:le|me)?\s+(?:a\s+)?chat\s*gpt\b\s+(.+)$",
+    ]
+
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if not m:
+            continue
+        q = _postprocess_chatgpt_query(m.group(1))
+        if q:
+            return q
+    return ""
 
 
 def _postprocess_extracted_query(t: str, q: str) -> str:
@@ -783,6 +923,14 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
         return False
 
     lowered = t.lower()
+    chatgpt_query = _extract_chatgpt_query(t)
+    if chatgpt_query:
+        print(
+            f"[LucyVoiceActions] Pedido ChatGPT UI detectado; query={chatgpt_query!r}",
+            flush=True,
+        )
+        return _ask_chatgpt_ui(chatgpt_query)
+
     if any(neg in lowered for neg in ("no la reproduzcas", "no lo reproduzcas", "sin reproducir", "solo abrí la búsqueda", "solo abre la busqueda", "solo abre la búsqueda")):
         print("[LucyVoiceActions] Pedido de YouTube con 'no reproducir'; se usa plan de escritorio simple.", flush=True)
     elif is_complex_youtube_request(text):
