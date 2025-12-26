@@ -368,26 +368,9 @@ def _extract_chatgpt_query(text: str) -> str:
         # "preguntale a chatgpt X" / "preguntá a chatgpt: X"
         r"(?:pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
         r"(?:le|me)?" + sep + r"(?:a\s+)?chat\s*gpt\b" + sep + r"(.+)$",
-    ]
 
-    for pat in patterns:
-        m = re.search(pat, text, flags=re.IGNORECASE)
-        if not m:
-            continue
-        q = _postprocess_chatgpt_query(m.group(1))
-        if q:
-            return q
-    return ""
-
-    patterns = [
-        # "abrí chatgpt y buscá X"
-        r"(?:abr[ií]|abre|abrir)\s+chat\s*gpt\b.*?(?:y\s+)?(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)(?:me|melo|mela|nos|lo|la)?\s+(.+)$",
-        # "buscá X en chatgpt"
-        r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)(?:me|melo|mela|nos|lo|la)?\s+(.+?)\s+(?:en\s+)?chat\s*gpt\b",
-        # "en chatgpt buscá X"
-        r"(?:en\s+)?chat\s*gpt\b.*?(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)(?:me|melo|mela|nos|lo|la)?\s+(.+)$",
-        # "preguntale a chatgpt X"
-        r"(?:pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)(?:le|me)?\s+(?:a\s+)?chat\s*gpt\b\s+(.+)$",
+        # Fallback voz: "chatgpt, X" / "chat gpt X" (sin verbo)
+        r"(?:^|\b)chat\s*gpt\b" + sep + r"(.+)$",
     ]
 
     for pat in patterns:
