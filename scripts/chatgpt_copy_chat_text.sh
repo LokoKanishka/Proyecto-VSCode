@@ -7,13 +7,32 @@ if [ -r "$DIR/x11_env.sh" ]; then
   . "$DIR/x11_env.sh"
 fi
 
+# Permitir override explícito
 CHATGPT_WID_HEX="${CHATGPT_WID_HEX:-}"
-if [ -z "${CHATGPT_WID_HEX}" ]; then
-  CHATGPT_WID_HEX="$(wmctrl -l | awk 'BEGIN{IGNORECASE=1} /- Google Chrome$/ {print $1; exit}')"
+if [ -z "${CHATGPT_WID_HEX}" ] && [ -n "${LUCY_CHATGPT_WID_HEX:-}" ]; then
+  CHATGPT_WID_HEX="$LUCY_CHATGPT_WID_HEX"
 fi
-[ -n "${CHATGPT_WID_HEX}" ] || { echo "ERROR: no encontré Chrome"; exit 1; }
+
+# Si no vino seteado, usar el selector "seguro" (ventana puente WM_CLASS chatgpt.com.*)
+if [ -z "${CHATGPT_WID_HEX}" ] && [ -x "$DIR/chatgpt_get_wid.sh" ]; then
+  CHATGPT_WID_HEX="$("$DIR/chatgpt_get_wid.sh" 2>/dev/null || true)"
+fi
+
+[ -n "${CHATGPT_WID_HEX}" ] || {
+  echo "ERROR: no encontré la ventana PUENTE (WM_CLASS chatgpt.com.*). Abrí la ventana ChatGPT puente o seteá CHATGPT_WID_HEX." >&2
+  exit 1
+}
 
 CHATGPT_WID_DEC=$((CHATGPT_WID_HEX))
+# Sanity check: asegurate de que es la ventana puente (chatgpt.com o lucy-chatgpt-bridge)
+BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
+WMCLASS_LINE="$(xprop -id "$CHATGPT_WID_DEC" WM_CLASS 2>/dev/null || true)"
+echo "$WMCLASS_LINE" | grep -qi 'chatgpt\.com' || echo "$WMCLASS_LINE" | grep -Fqi "$BRIDGE_CLASS" || {
+  echo "ERROR: WID no parece ventana puente (WM_CLASS != chatgpt.com ni $BRIDGE_CLASS). WID=$CHATGPT_WID_HEX" >&2
+  echo "WM_CLASS=$WMCLASS_LINE" >&2
+  exit 2
+}
+
 
 xdotool windowactivate --sync "$CHATGPT_WID_DEC" >/dev/null 2>&1 || wmctrl -ia "$CHATGPT_WID_HEX" || true
 sleep 0.20

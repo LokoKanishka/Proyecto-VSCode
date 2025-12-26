@@ -11,7 +11,25 @@ if [[ -n "${CHATGPT_WID_HEX:-}" ]]; then
   exit 0
 fi
 
-# ÚNICA fuente “segura”: ventana puente (Chrome --app) detectada por WM_CLASS "chatgpt.com.*"
+# Fuente preferida: ventana puente dedicada por WM_CLASS (lucy-chatgpt-bridge.*)
+BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
+wid="$(
+  wmctrl -lx 2>/dev/null | awk -v bc="$BRIDGE_CLASS" '
+    BEGIN {
+      bc=tolower(bc);
+      gsub(/[][(){}.^$|*+?\\-]/,"\\\\&",bc); # escape regex
+    }
+    {
+      cls=tolower($3);
+      if (cls ~ ("^" bc "\\\\.")) { print $1; exit }
+    }'
+)"
+if [[ -n "${wid:-}" ]]; then
+  echo "$wid"
+  exit 0
+fi
+
+# Fallback: ventana puente por sitio (WM_CLASS chatgpt.com.*)
 wid="$(
   wmctrl -lx 2>/dev/null | awk '
     {
