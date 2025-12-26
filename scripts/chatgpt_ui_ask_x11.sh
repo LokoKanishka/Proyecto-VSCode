@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 if [ -r "$DIR/x11_env.sh" ]; then
   # shellcheck source=/dev/null
@@ -44,7 +47,7 @@ Debe empezar EXACTAMENTE con: LUCY_ANSWER_${TOKEN}: (dos puntos y un espacio)
 y en ESA MISMA LÍNEA, después de eso, poné tu respuesta."
 
 # Pegar prompt
-CHATGPT_WID_HEX="$CHATGPT_WID_HEX" ./scripts/chatgpt_focus_paste.sh "$PROMPT" >/dev/null
+CHATGPT_WID_HEX="$CHATGPT_WID_HEX" ${REPO_ROOT}/scripts/chatgpt_focus_paste.sh "$PROMPT" >/dev/null
 
 # Enviar
 CHATGPT_WID_DEC=$((CHATGPT_WID_HEX))
@@ -60,7 +63,7 @@ ASK_TIMEOUT="${ASK_TIMEOUT:-75}"
 deadline=$((SECONDS+ASK_TIMEOUT))
 while [ $SECONDS -lt $deadline ]; do
   ACTIVE_LOOP_WID="$(xdotool getactivewindow 2>/dev/null || true)"
-  text="$(CHATGPT_WID_HEX="$CHATGPT_WID_HEX" ./scripts/chatgpt_copy_chat_text.sh 2>/dev/null || true)"
+  text="$(CHATGPT_WID_HEX="$CHATGPT_WID_HEX" ${REPO_ROOT}/scripts/chatgpt_copy_chat_text.sh 2>/dev/null || true)"
   if [ -n "${ACTIVE_LOOP_WID:-}" ]; then
     xdotool windowactivate "$ACTIVE_LOOP_WID" >/dev/null 2>&1 || true
   fi
