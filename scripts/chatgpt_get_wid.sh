@@ -3,58 +3,47 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-# Consistencia X11
+# Consistencia X11 (DISPLAY, etc.) si el repo lo provee
 if [[ -f "$SCRIPT_DIR/x11_env.sh" ]]; then
   # shellcheck disable=SC1091
   source "$SCRIPT_DIR/x11_env.sh"
 fi
 
-# Override manual (útil para tests o para fijarlo desde voz)
+# Overrides explícitos (útiles para tests)
+if [[ -n "${LUCY_CHATGPT_WID_HEX:-}" ]]; then
+  echo "$LUCY_CHATGPT_WID_HEX"; exit 0
+fi
 if [[ -n "${CHATGPT_WID_HEX:-}" ]]; then
-  echo "$CHATGPT_WID_HEX"
-  exit 0
+  echo "$CHATGPT_WID_HEX"; exit 0
 fi
 
-mapfile -t LINES < <(wmctrl -l 2>/dev/null || true)
-if [[ ${#LINES[@]} -eq 0 ]]; then
-  echo "chatgpt_get_wid: wmctrl no devolvió ventanas (¿X11 disponible?)" >&2
-  exit 1
+# Preferencia #1 (la que queremos SIEMPRE):
+# ventana puente en modo app => WM_CLASS "chatgpt.com.Google-chrome"
+wid="$(
+  wmctrl -lx 2>/dev/null | awk '
+    {
+      cls=tolower($3);
+      if (cls ~ /^chatgpt\.com\./) { print $1; exit }
+    }'
+)"
+if [[ -n "${wid:-}" ]]; then
+  echo "$wid"; exit 0
 fi
 
-get_title() {
-  # wmctrl: WID DESKTOP HOST TITLE...
-  awk '{$1=$2=$3=""; sub(/^ +/,""); print}'
-}
+# Preferencia #2: si NO hay puente, mejor fallar antes que pegar en V.S.Code
+# (igual dejamos un intento “seguro”: título con chatgpt pero NO V.S.Code)
+wid="$(
+  wmctrl -l 2>/dev/null | awk '
+    {
+      line=tolower($0);
+      if (line ~ /chatgpt/ && line !~ /v\.s\.code/) { print $1; exit }
+    }'
+)"
+if [[ -n "${wid:-}" ]]; then
+  echo "$wid"; exit 0
+fi
 
-# 1) Preferencia absoluta: el chat puente “limpio”
-for line in "${LINES[@]}"; do
-  wid="$(awk '{print $1}' <<<"$line")"
-  title="$(get_title <<<"$line")"
-  if [[ "$title" == "ChatGPT - Google Chrome" ]]; then
-    echo "$wid"
-    exit 0
-  fi
-done
-
-# 2) ChatGPT en Chrome pero excluyendo el perfil “V.S.Code”
-for line in "${LINES[@]}"; do
-  wid="$(awk '{print $1}' <<<"$line")"
-  title="$(get_title <<<"$line")"
-  if [[ "$title" == *ChatGPT* && "$title" == *"Google Chrome"* && "$title" != *"V.S.Code"* ]]; then
-    echo "$wid"
-    exit 0
-  fi
-done
-
-# 3) Fallback: cualquier ChatGPT
-for line in "${LINES[@]}"; do
-  wid="$(awk '{print $1}' <<<"$line")"
-  title="$(get_title <<<"$line")"
-  if [[ "$title" == *ChatGPT* ]]; then
-    echo "$wid"
-    exit 0
-  fi
-done
-
-echo "chatgpt_get_wid: no encontré ninguna ventana de ChatGPT" >&2
+echo "ERROR: no encontré ventana ChatGPT puente (WM_CLASS chatgpt.com.*)." >&2
+echo "Ventanas ChatGPT vistas (wmctrl -l):" >&2
+wmctrl -l 2>/dev/null | grep -i chatgpt >&2 || true
 exit 1
