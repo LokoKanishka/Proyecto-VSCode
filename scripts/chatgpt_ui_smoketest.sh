@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [ -r "$DIR/x11_env.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$DIR/x11_env.sh"
+fi
+if [ -x "$DIR/x11_require_access.sh" ]; then
+  "$DIR/x11_require_access.sh"
+fi
+
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 

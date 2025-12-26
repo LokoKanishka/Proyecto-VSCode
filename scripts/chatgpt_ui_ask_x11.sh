@@ -7,6 +7,11 @@ if [ -r "$DIR/x11_env.sh" ]; then
   . "$DIR/x11_env.sh"
 fi
 
+# Require X11 access (avoid sandbox).
+if [ -x "$DIR/x11_require_access.sh" ]; then
+  "$DIR/x11_require_access.sh"
+fi
+
 # Auto-detect/ensure ChatGPT window id if not provided (VENTANA PUENTE)
 if [ -z "${CHATGPT_WID_HEX:-}" ]; then
   if [ -x "$DIR/chatgpt_bridge_ensure.sh" ]; then
