@@ -7,9 +7,13 @@ if [ -r "$DIR/x11_env.sh" ]; then
   . "$DIR/x11_env.sh"
 fi
 
-# Auto-detect ChatGPT window id if not provided
-if [ -z "${CHATGPT_WID_HEX:-}" ] && [ -x "$DIR/chatgpt_get_wid.sh" ]; then
-  CHATGPT_WID_HEX="$("$DIR/chatgpt_get_wid.sh" || true)"
+# Auto-detect/ensure ChatGPT window id if not provided (VENTANA PUENTE)
+if [ -z "${CHATGPT_WID_HEX:-}" ]; then
+  if [ -x "$DIR/chatgpt_bridge_ensure.sh" ]; then
+    CHATGPT_WID_HEX="$("$DIR/chatgpt_bridge_ensure.sh")"
+  elif [ -x "$DIR/chatgpt_get_wid.sh" ]; then
+    CHATGPT_WID_HEX="$("$DIR/chatgpt_get_wid.sh" || true)"
+  fi
   export CHATGPT_WID_HEX
 fi
 
