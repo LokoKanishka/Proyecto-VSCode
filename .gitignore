@@ -58,3 +58,4 @@ __pycache__/
 # Lucy local logs
 logs/
 /scripts/_attic/
+diagnostics/
