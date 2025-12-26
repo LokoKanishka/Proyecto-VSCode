@@ -347,27 +347,31 @@ def _extract_chatgpt_query(text: str) -> str:
     if not text or not _has_chatgpt_hint(text):
         return ""
 
-    # Permitir separadores típicos después del verbo: "preguntá: ...", "buscá, ...", etc.
+    # Separadores típicos: ":", "-", ","
     sep = r"(?:\s*[:\-–—,]?\s*)"
 
     patterns = [
+        # Caso crítico 1: "preguntale/consultale a chatgpt: X"
+        r"(?:pregunt[aá]le|preguntale|consult[aá]le|consultale|averigu[aá]le|averigual[eé])"
+        + sep + r"(?:a\s+)?chat\s*gpt\b" + sep + r"(.+)$",
+
+        # Caso crítico 2: "buscá/preguntá/consultá en chatgpt X"
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
+        + sep + r"(?:en\s+)?chat\s*gpt\b" + sep + r"(.+)$",
+
         # "abrí chatgpt y buscá/preguntá X"
         r"(?:abr[ií]|abre|abrir)\s+chat\s*gpt\b.*?(?:y\s+)?"
         r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
-        r"(?:me|melo|mela|nos|lo|la)?" + sep + r"(.+)$",
+        r"(?:me|melo|mela|nos|lo|la|le)?" + sep + r"(.+)$",
 
         # "buscá/preguntá X en chatgpt"
         r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
-        r"(?:me|melo|mela|nos|lo|la)?" + sep + r"(.+?)\s+(?:en\s+)?chat\s*gpt\b",
+        r"(?:me|melo|mela|nos|lo|la|le)?" + sep + r"(.+?)\s+(?:en\s+)?chat\s*gpt\b",
 
         # "en chatgpt buscá/preguntá X"
         r"(?:en\s+)?chat\s*gpt\b.*?"
         r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
-        r"(?:me|melo|mela|nos|lo|la)?" + sep + r"(.+)$",
-
-        # "preguntale a chatgpt X" / "preguntá a chatgpt: X"
-        r"(?:pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
-        r"(?:le|me)?" + sep + r"(?:a\s+)?chat\s*gpt\b" + sep + r"(.+)$",
+        r"(?:me|melo|mela|nos|lo|la|le)?" + sep + r"(.+)$",
 
         # Fallback voz: "chatgpt, X" / "chat gpt X" (sin verbo)
         r"(?:^|\b)chat\s*gpt\b" + sep + r"(.+)$",
@@ -378,6 +382,9 @@ def _extract_chatgpt_query(text: str) -> str:
         if not m:
             continue
         q = _postprocess_chatgpt_query(m.group(1))
+        # Guardrail: si quedó basura mínima, seguimos probando patrones
+        if (q or "").strip().lower() in ("en", "a", "le", "le a"):
+            continue
         if q:
             return q
     return ""
