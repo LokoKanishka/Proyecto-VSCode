@@ -150,6 +150,33 @@ def _ask_chatgpt_ui(question: str) -> tuple[bool, str]:
     if wid and not env.get("CHATGPT_WID_HEX"):
         env["CHATGPT_WID_HEX"] = wid
 
+    # Auto: si no hay WID explícito, lo resolvemos con el selector seguro (solo ventana PUENTE).
+    if not env.get("CHATGPT_WID_HEX"):
+        get_wid = _repo_root() / "scripts" / "chatgpt_get_wid.sh"
+        if get_wid.exists():
+            get_cmd = [str(get_wid)]
+            if runner.exists():
+                get_cmd = [str(runner), str(get_wid)]
+            try:
+                gw = subprocess.run(
+                    get_cmd,
+                    text=True,
+                    capture_output=True,
+                    env=env,
+                    timeout=10,
+                )
+                if gw.returncode == 0:
+                    w = (gw.stdout or "").strip().splitlines()[-1].strip() if (gw.stdout or "").strip() else ""
+                    if w:
+                        env["CHATGPT_WID_HEX"] = w
+                else:
+                    err = (gw.stderr or gw.stdout or "").strip()
+                    if err:
+                        print(f"[LucyVoiceActions] chatgpt_get_wid.sh falló: {err}", flush=True)
+                    return True, "No encontré la ventana puente de ChatGPT (chatgpt.com.*). Abrila y reintentá."
+            except Exception as exc:  # noqa: BLE001
+                return True, f"No pude resolver el WID de ChatGPT ({exc})."
+
     cmd = [str(ask_script), question]
     if runner.exists():
         cmd = [str(runner), str(ask_script), question]
