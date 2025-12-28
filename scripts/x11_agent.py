@@ -6,17 +6,16 @@ import socket
 import subprocess
 import threading
 from pathlib import Path
+from typing import Optional, Tuple
 
 
-def _resolve_sock_path() -> Path:
-    # 1) override explícito
+def _resolve_unix_sock_path() -> Path:
     env = os.environ.get("X11_AGENT_SOCK", "").strip()
     if env:
         sp = Path(env).expanduser()
         sp.parent.mkdir(parents=True, exist_ok=True)
         return sp
 
-    # 2) default clásico (~/.cache/lucy) si se puede escribir
     cache_dir = Path.home() / ".cache" / "lucy"
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -24,26 +23,22 @@ def _resolve_sock_path() -> Path:
     except Exception:
         pass
 
-    # 3) fallback: workspace (diagnostics)
     repo_root = Path(__file__).resolve().parents[1]
     diag = repo_root / "diagnostics"
     diag.mkdir(parents=True, exist_ok=True)
     return diag / "x11_agent.sock"
 
 
-SOCK = _resolve_sock_path()
-
-# limpiar socket viejo si existe
-try:
-    if SOCK.exists():
-        SOCK.unlink()
-except FileNotFoundError:
-    pass
-
-srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-srv.bind(str(SOCK))
-os.chmod(str(SOCK), 0o600)
-srv.listen(20)
+def _parse_tcp(s: str) -> Optional[Tuple[str, int]]:
+    s = (s or "").strip()
+    if not s or ":" not in s:
+        return None
+    host, port_s = s.rsplit(":", 1)
+    host = host.strip() or "127.0.0.1"
+    try:
+        return (host, int(port_s.strip()))
+    except Exception:
+        return None
 
 
 def _handle(conn: socket.socket) -> None:
@@ -79,10 +74,54 @@ def _handle(conn: socket.socket) -> None:
             conn.shutdown(socket.SHUT_RDWR)
         except Exception:
             pass
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
-print(f"x11_agent: listening on {SOCK}", flush=True)
-while True:
-    c, _ = srv.accept()
-    threading.Thread(target=_handle, args=(c,), daemon=True).start()
+def _serve_unix(path: Path) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    srv.bind(str(path))
+    os.chmod(str(path), 0o600)
+    srv.listen(50)
+
+    print(f"x11_agent: unix listening on {path}", flush=True)
+    while True:
+        c, _ = srv.accept()
+        threading.Thread(target=_handle, args=(c,), daemon=True).start()
+
+
+def _serve_tcp(host: str, port: int) -> None:
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind((host, port))
+    srv.listen(50)
+
+    print(f"x11_agent: tcp listening on {host}:{port}", flush=True)
+    while True:
+        c, _ = srv.accept()
+        threading.Thread(target=_handle, args=(c,), daemon=True).start()
+
+
+def main() -> None:
+    tcp = _parse_tcp(os.environ.get("X11_AGENT_TCP", ""))
+    unix_path = _resolve_unix_sock_path()
+
+    if tcp:
+        threading.Thread(target=_serve_tcp, args=tcp, daemon=True).start()
+
+    _serve_unix(unix_path)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+WRAP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="$(cd "$WRAP_DIR/.." && pwd)"
+exec "$SCRIPTS_DIR/x11_run.sh" "wmctrl" "$@"

@@ -44,3 +44,14 @@ if [ -z "${XAUTHORITY:-}" ] || [ ! -r "${XAUTHORITY:-}" ]; then
     fi
   fi
 fi
+# --- Lucy: X11 wrappers (file agent) ---
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${THIS_DIR}/.." && pwd)"
+export X11_FILE_IPC_DIR="${X11_FILE_IPC_DIR:-${REPO_ROOT}/diagnostics/x11_file_ipc}"
+if [ -d "${THIS_DIR}/x11_wrap" ]; then
+  case ":$PATH:" in
+    *":${THIS_DIR}/x11_wrap:"*) : ;;
+    *) export PATH="${THIS_DIR}/x11_wrap:$PATH" ;;
+  esac
+fi
+# --- /Lucy: X11 wrappers (file agent) ---

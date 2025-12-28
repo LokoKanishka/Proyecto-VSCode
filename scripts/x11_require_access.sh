@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# If file-agent IPC is available, allow without direct X11 socket access.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CALL="$REPO_ROOT/scripts/x11_file_call.sh"
+IPC_DIR="${X11_FILE_IPC_DIR:-$REPO_ROOT/diagnostics/x11_file_ipc}"
+if [[ -x "$CALL" && -d "$IPC_DIR/inbox" && -d "$IPC_DIR/outbox" ]]; then
+  exit 0
+fi
+
 # Requires real access to the X11 socket; sandboxed shells often get EPERM.
 disp="${DISPLAY:-}"
 if [[ -z "$disp" ]]; then

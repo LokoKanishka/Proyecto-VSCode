@@ -32,10 +32,18 @@ if [ -z "${QUESTION}" ]; then
 fi
 
 CHATGPT_WID_HEX="${CHATGPT_WID_HEX:-}"
-if [ -z "${CHATGPT_WID_HEX}" ]; then
-  echo "ERROR: seteá CHATGPT_WID_HEX (ej: 0x01e00017)" >&2
+# --- AUTO WID (bridge) ---
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
+$ROOT/scripts/chatgpt_bridge_ensure.sh >/dev/null 2>&1 || true
+if [[ -z "${CHATGPT_WID_HEX:-}" ]]; then
+  CHATGPT_WID_HEX="$("$GET_WID" 2>/dev/null || true)"
+fi
+if [[ -z "${CHATGPT_WID_HEX:-}" ]]; then
+  echo "ERROR: no pude determinar CHATGPT_WID_HEX automáticamente" 1>&2
   exit 2
 fi
+# --- /AUTO WID (bridge) ---
 
 TOKEN="$(date +%s)_$RANDOM"
 ACTIVE_WID="$(xdotool getactivewindow 2>/dev/null || true)"

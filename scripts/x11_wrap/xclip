@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Shim: implementa lo necesario para nuestros scripts usando xsel (más confiable)
+# Soporta:
+#   xclip -selection clipboard            (write desde stdin)
+#   xclip -selection clipboard -o         (read)
+#   xclip -selection clipboard -out       (read)
+
+# mapeo básico a xsel:
+#   write clipboard: xsel --clipboard --input
+#   read  clipboard: xsel --clipboard --output
+
+sel="clipboard"
+mode="write" # write o read
+for a in "$@"; do
+  case "$a" in
+    -selection) shift; sel="${1:-clipboard}" ;;
+    clipboard|primary|secondary) sel="$a" ;;
+    -o|-out|--out) mode="read" ;;
+  esac
+done
+
+case "$sel" in
+  clipboard) XSEL_SEL="--clipboard" ;;
+  primary)   XSEL_SEL="--primary" ;;
+  secondary) XSEL_SEL="--secondary" ;;
+  *)         XSEL_SEL="--clipboard" ;;
+esac
+
+if [[ "$mode" == "read" ]]; then
+  exec xsel $XSEL_SEL --output
+else
+  exec xsel $XSEL_SEL --input
+fi

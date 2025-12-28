@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
+IPC_DIR="${X11_FILE_IPC_DIR:-$ROOT/diagnostics/x11_file_ipc}"
+PAYDIR="$IPC_DIR/payloads"
+mkdir -p "$PAYDIR"
+
+if [[ ! -x "$HOST_EXEC" ]]; then
+  echo "ERROR: no encuentro ejecutable: $HOST_EXEC" >&2
+  exit 2
+fi
+
+# Decide READ/WRITE por flags (prioridad), y fallback por TTY.
+mode="auto"
+for a in "$@"; do
+  case "$a" in
+    -o|--output|-out|--out) mode="read" ;;
+    -i|--input)             mode="write" ;;
+  esac
+done
+if [[ "$mode" == "auto" ]]; then
+  if [ -t 0 ]; then mode="read"; else mode="write"; fi
+fi
+
+run_host() {
+  local cmd="$1"
+  "$HOST_EXEC" "$cmd"
+}
+
+id="$(date +%s)_$$"
+script="$PAYDIR/xsel_cmd_${id}.sh"
+payload="$PAYDIR/xsel_in_${id}.dat"
+
+cleanup() { rm -f "$script" "$payload" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+write_host_script_read() {
+  local s="$1"; shift
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'set -euo pipefail'
+    echo 'XSEL_BIN="/usr/bin/xsel"; [ -x "$XSEL_BIN" ] || XSEL_BIN="/bin/xsel"'
+    echo 'if [ ! -x "$XSEL_BIN" ]; then echo "ERROR: no xsel bin on host" >&2; exit 127; fi'
+    printf 'exec "$XSEL_BIN"'
+    for a in "$@"; do printf ' %q' "$a"; done
+    echo
+  } > "$s"
+  chmod +x "$s"
+}
+
+write_host_script_write() {
+  local s="$1" pay="$2"; shift 2
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'set -euo pipefail'
+    echo 'XSEL_BIN="/usr/bin/xsel"; [ -x "$XSEL_BIN" ] || XSEL_BIN="/bin/xsel"'
+    echo 'if [ ! -x "$XSEL_BIN" ]; then echo "ERROR: no xsel bin on host" >&2; exit 127; fi'
+    printf 'cat %q | "$XSEL_BIN"' "$pay"
+    for a in "$@"; do printf ' %q' "$a"; done
+    echo
+    printf 'rm -f %q || true\n' "$pay"
+  } > "$s"
+  chmod +x "$s"
+}
+
+if [[ "$mode" == "read" ]]; then
+  write_host_script_read "$script" "$@"
+  run_host "bash $(printf '%q' "$script")"
+else
+  cat >"$payload"
+  write_host_script_write "$script" "$payload" "$@"
+  run_host "bash $(printf '%q' "$script")" >/dev/null
+fi
