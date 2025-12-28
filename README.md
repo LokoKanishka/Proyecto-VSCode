@@ -206,3 +206,23 @@ Todo ese código se movió a `legacy/` para que no interfiera con el flujo actua
 * y posible base para experimentos futuros.
 
 Para más detalle histórico, ver `docs/LEGACY_VOICE_PIPELINE.md`.
+
+## X11 Bridge (file-IPC) - Quick map
+**Objective:** automate UI (Chrome/ChatGPT) from sandbox using a host agent via file-IPC.
+
+### Where each piece runs
+
+**Host (GNOME Terminal / real X11 session):**
+- `scripts/x11_file_agent.py` (daemon): runs X11 commands on host reading `diagnostics/x11_file_ipc/{inbox,outbox}`
+
+**Sandbox / Lucy processes:**
+- `scripts/x11_file_call.sh` -> bridges commands to the host (file-IPC)
+- `scripts/x11_host_exec.sh` -> executes host commands via file-agent
+- `scripts/x11_wrap/*` (`xsel`, `xclip`, `xdotool`) -> wrappers so clipboard/xdotool work from sandbox
+- `scripts/chatgpt_bridge_ensure.sh` / `scripts/chatgpt_get_wid.sh` -> ensure ChatGPT bridge window and get WID
+- `scripts/chatgpt_copy_chat_text.sh` -> copy chat (sanitizes control chars)
+- `scripts/chatgpt_ui_send_x11.sh` / `scripts/chatgpt_ui_ask_x11.sh` -> send prompt and wait for answer
+
+### Smoke tests
+
+See: `docs/X11_SMOKE.md`
