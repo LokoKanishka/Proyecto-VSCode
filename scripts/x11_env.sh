@@ -55,3 +55,12 @@ if [ -d "${THIS_DIR}/x11_wrap" ]; then
   esac
 fi
 # --- /Lucy: X11 wrappers (file agent) ---
+
+# --- LUCY_XAUTH_PREFER_BEGIN ---
+# Preferir un XAUTHORITY "exportado" desde la sesión real (evita fallos por /run/user/1000/gdm/Xauthority)
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+PREF_AUTH="$ROOT/diagnostics/x11_auth/lucy.Xauthority"
+if [[ -f "$PREF_AUTH" ]]; then
+  export XAUTHORITY="$PREF_AUTH"
+fi
+# --- LUCY_XAUTH_PREFER_END ---

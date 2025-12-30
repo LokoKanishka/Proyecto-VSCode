@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+## LUCY_PATCH: honor X11_FORCE_LOCAL
+# Si el agent pidió ejecución local, no re-entrar por FILE-IPC aunque exista el dir.
+if [[ "${X11_FORCE_LOCAL:-0}" = "1" ]]; then
+  export X11_FILE_IPC_DIR=""
+fi
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
