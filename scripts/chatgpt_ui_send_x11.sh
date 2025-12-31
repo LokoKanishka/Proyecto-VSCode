@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+# --- A3.12 fallback: resolver WID vía selector estable ---
+# Si no está seteado CHATGPT_WID_HEX, lo resolvemos con scripts/chatgpt_get_wid.sh
+# (que en nuestro entorno ya usa x11_host_exec.sh, así funciona desde sandbox).
+if [[ -z "${CHATGPT_WID_HEX:-}" ]]; then
+  ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+  GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
+  if [[ -x "$GET_WID" ]]; then
+    CHATGPT_WID_HEX="$("$GET_WID" 2>/dev/null || true)"
+    export CHATGPT_WID_HEX
+  fi
+fi
+# -------------------------------------------------------
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

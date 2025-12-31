@@ -113,9 +113,13 @@ while True:
             if not payload.endswith("\n"):
                 payload += "\n"
 
-        tmp = res.with_suffix(".tmp")
-        tmp.write_text(payload, encoding="utf-8", errors="replace")
-        tmp.replace(res)
+        # CRITICO: escribimos directo al archivo de respuesta para evitar crash del agent.
+        # El swap atómico con tmp.replace estaba fallando en este entorno.
+        try:
+            res.write_text(payload, encoding="utf-8", errors="replace")
+        except Exception:
+            # No tumbar el proceso por fallas de IO.
+            pass
 
         # Archivamos el req para no re-procesarlo (y para post-mortem)
         try:

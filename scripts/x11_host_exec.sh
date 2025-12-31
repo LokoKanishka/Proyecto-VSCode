@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 FILE_CALL="$ROOT/scripts/x11_file_call.sh"
 
+# AUTOSET_X11_FILE_IPC_DIR (sandbox-safe)
+if [[ -z "${X11_FILE_IPC_DIR:-}" ]]; then
+  export X11_FILE_IPC_DIR="$ROOT/diagnostics/x11_file_ipc"
+fi
+
 # Ejecuta un comando en el host vía file-agent y devuelve SOLO el stdout del comando.
 # Propaga el exit code real (RC=...).
 if [[ $# -eq 0 ]]; then
