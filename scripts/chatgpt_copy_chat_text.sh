@@ -1,76 +1,78 @@
 #!/usr/bin/env bash
-# --- A3.12 fallback: resolver WID vía selector estable ---
-# Si no está seteado CHATGPT_WID_HEX, lo resolvemos con scripts/chatgpt_get_wid.sh
-# (que en nuestro entorno ya usa x11_host_exec.sh, así funciona desde sandbox).
-if [[ -z "${CHATGPT_WID_HEX:-}" ]]; then
-  ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-  GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
-  if [[ -x "$GET_WID" ]]; then
-    CHATGPT_WID_HEX="$("$GET_WID" 2>/dev/null || true)"
-    export CHATGPT_WID_HEX
-  fi
-fi
-# -------------------------------------------------------
-
 set -euo pipefail
 
-# Copia texto visible de la ventana ChatGPT (bridge) al stdout usando Ctrl+A/Ctrl+C
-# Robusto contra foco en omnibox/input: fuerza web-content con F6x2 + click en zona segura.
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
+GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 
-WID_HEX="${CHATGPT_WID_HEX:-${1:-}}"
+WID_HEX="${1:-${CHATGPT_WID_HEX:-}}"
 if [[ -z "${WID_HEX:-}" ]]; then
-  echo "ERROR: seteá CHATGPT_WID_HEX (ej: 0x04400004) o pasalo como arg" >&2
-  exit 2
+  WID_HEX="$("$GET_WID" 2>/dev/null || true)"
+fi
+if [[ -z "${WID_HEX:-}" ]]; then
+  echo "ERROR: seteá CHATGPT_WID_HEX o pasalo como arg" >&2
+  exit 3
 fi
 
-# decimal para xdotool
-WID_DEC=$((16#${WID_HEX#0x}))
+"$HOST_EXEC" "bash -lc '
+set -euo pipefail
+WID_HEX=\"$WID_HEX\"
+WID_DEC=\$(printf \"%d\" \"\$WID_HEX\")
 
-# activar
-wmctrl -ia "$WID_HEX" >/dev/null 2>&1 || true
-xdotool windowactivate --sync "$WID_DEC" >/dev/null 2>&1 || true
-sleep 0.12
-
-# geometry
-eval "$(xdotool getwindowgeometry --shell "$WID_DEC" 2>/dev/null || true)"
-# defaults por si falla
-X="${X:-0}"; Y="${Y:-0}"; WIDTH="${WIDTH:-900}"; HEIGHT="${HEIGHT:-900}"
-
-# punto de click: centro horizontal, 30% vertical, pero nunca arriba de 170px (evita omnibox)
-cx=$((WIDTH/2))
-cy=$(((HEIGHT*30)/100))
-if [[ "$cy" -lt 170 ]]; then cy=170; fi
-# margen inferior
-if [[ "$cy" -gt $((HEIGHT-120)) ]]; then cy=$((HEIGHT-120)); fi
-
-# limpiar overlays / sacar foco raro
-xdotool key --clearmodifiers Escape >/dev/null 2>&1 || true
-sleep 0.05
-
-# F6 suele alternar: omnibox <-> contenido web. Lo mandamos 2 veces.
-xdotool key --clearmodifiers F6 >/dev/null 2>&1 || true
-sleep 0.05
-xdotool key --clearmodifiers F6 >/dev/null 2>&1 || true
-sleep 0.05
-
-# click en zona “web content”
-xdotool mousemove --window "$WID_DEC" "$cx" "$cy" click 1 >/dev/null 2>&1 || true
-sleep 0.08
-
-# seleccionar todo + copiar
-xdotool key --clearmodifiers ctrl+a >/dev/null 2>&1 || true
-sleep 0.06
-xdotool key --clearmodifiers ctrl+c >/dev/null 2>&1 || true
+wmctrl -ia \"\$WID_HEX\" 2>/dev/null || true
+xdotool windowactivate --sync \"\$WID_DEC\" 2>/dev/null || true
 sleep 0.18
 
-# leer clipboard (reintentos cortos)
-text=""
-for _ in $(seq 1 60); do
-  text="$(timeout 2s xclip -selection clipboard -o 2>/dev/null || true)"
-  [[ -n "${text:-}" ]] && break
-  text="$(timeout 2s xsel --clipboard --output 2>/dev/null || true)"
-  [[ -n "${text:-}" ]] && break
-  sleep 0.08
-done
+# cerrar overlays
+xdotool key --clearmodifiers Escape 2>/dev/null || true
+sleep 0.06
 
-printf '%s\n' "${text:-}"
+geo=\$(xdotool getwindowgeometry --shell \"\$WID_DEC\" 2>/dev/null || true)
+eval \"\$geo\" || true
+: \${WIDTH:=1200}
+: \${HEIGHT:=900}
+
+best=\"\"
+bestLen=0
+
+try_copy() {
+  local px=\"\$1\" py=\"\$2\"
+  # click DENTRO del panel de mensajes (lado derecho) y copiar
+  xdotool mousemove --window \"\$WID_DEC\" \"\$px\" \"\$py\" click 1 2>/dev/null || true
+  sleep 0.10
+  xdotool key --clearmodifiers ctrl+a 2>/dev/null || true
+  sleep 0.06
+  xdotool key --clearmodifiers ctrl+c 2>/dev/null || true
+  sleep 0.20
+
+  local t=\"\"
+  # leer clipboard (60 intentos cortos)
+  for _ in \$(seq 1 60); do
+    t=\$(timeout 2s xclip -selection clipboard -o 2>/dev/null || true)
+    if [[ -n \"\$t\" ]]; then break; fi
+    t=\$(timeout 2s xsel --clipboard --output 2>/dev/null || true)
+    if [[ -n \"\$t\" ]]; then break; fi
+    sleep 0.06
+  done
+
+  local l=\${#t}
+  if [[ \"\$l\" -gt \"\$bestLen\" ]]; then
+    bestLen=\"\$l\"
+    best=\"\$t\"
+  fi
+}
+
+# 3 anclas: bien a la derecha (evita sidebar) en distintas alturas
+x1=\$(( WIDTH * 78 / 100 ))
+x2=\$(( WIDTH * 88 / 100 ))
+y1=\$(( HEIGHT * 28 / 100 ))
+y2=\$(( HEIGHT * 45 / 100 ))
+y3=\$(( HEIGHT * 62 / 100 ))
+
+try_copy \"\$x1\" \"\$y1\"
+try_copy \"\$x1\" \"\$y2\"
+try_copy \"\$x2\" \"\$y2\"
+try_copy \"\$x1\" \"\$y3\"
+
+printf \"%s\" \"\$best\"
+'"
