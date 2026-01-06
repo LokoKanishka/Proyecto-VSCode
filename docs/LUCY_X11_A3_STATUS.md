@@ -39,3 +39,16 @@ Scripts individuales:
 * `./scripts/verify_a3_11.sh` (send_keys Return)
 * `./scripts/verify_a3_12.sh` (ask end-to-end, espera `LUCY_ANSWER_...`)
 
+
+## Smoke suite (un solo comando)
+Para correr todo A3.7 → A3.12:
+
+```bash
+./scripts/verify_a3_all.sh
+```
+
+Notas:
+- El runner exporta por defecto timeouts más largos para A3.12 (porque ChatGPT a veces responde lento):
+  - `A3_12_TIMEOUT=260`
+  - `CHATGPT_ASK_TIMEOUT_SEC=240`
+- Podés overridear esos valores antes de correr el runner si querés.
