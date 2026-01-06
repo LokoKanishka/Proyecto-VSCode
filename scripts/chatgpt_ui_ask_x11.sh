@@ -14,6 +14,7 @@ ENSURE="$ROOT/scripts/chatgpt_bridge_ensure.sh"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 SEND="$ROOT/scripts/chatgpt_ui_send_x11.sh"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
+DISP="$ROOT/scripts/x11_dispatcher.py"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 
 PROMPT="${1:-}"
@@ -130,12 +131,55 @@ POLL_SEC=2
 MAX_POLLS=$(( TIMEOUT_SEC / POLL_SEC ))
 if [[ "$MAX_POLLS" -lt 5 ]]; then MAX_POLLS=5; fi
 
+# --- A3_12_WATCHDOG ---
+# Si no aparece respuesta tras N polls, hacemos “nudge” (foco + End + click panel).
+# Si sigue sin aparecer, hacemos refresh (Ctrl+R) una vez.
+NUDGE_AT="${CHATGPT_ASK_NUDGE_AT:-18}"      # ~36s si POLL_SEC=2
+RELOAD_AT="${CHATGPT_ASK_RELOAD_AT:-35}"    # ~70s si POLL_SEC=2
+DID_RELOAD=0
+
+# --- A3_12_RESEND_AFTER_RELOAD ---
+# Si el backend web queda colgado (intermitente), tras reload re-enviamos el mismo MSG y seguimos esperando.
+RESEND_AFTER_RELOAD="${CHATGPT_ASK_RESEND_AFTER_RELOAD:-1}"
+# --- /A3_12_RESEND_AFTER_RELOAD ---
+
+nudge_ui() {
+  # Best-effort: no debe matar el ask si falla
+  python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
+  python3 -u "$DISP" send_keys "$WID" "End" >/dev/null 2>/dev/null || true
+  # click al centro del panel (suele devolver foco a la conversación)
+  python3 -u "$DISP" click "$WID" "0.55" "0.50" >/dev/null 2>/dev/null || true
+}
+
+reload_ui() {
+  # Ctrl+R (si la pestaña quedó colgada, esto suele destrabar)
+  python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
+  python3 -u "$DISP" send_keys "$WID" "ctrl+r" >/dev/null 2>/dev/null || true
+  sleep 6
+}
+# --- /A3_12_WATCHDOG ---
+
+i=0
 for _ in $(seq 1 "$MAX_POLLS"); do
+  i=$((i+1))
   copy_chat_to "$TMP"
   line="$(extract_answer_line "$TMP")"
   if [[ -n "${line:-}" ]]; then
     printf '%s\n' "$line"
     exit 0
+  fi
+  if [[ "$i" -eq "$NUDGE_AT" ]]; then
+    nudge_ui
+  fi
+  if [[ "$i" -eq "$RELOAD_AT" ]] && [[ "$DID_RELOAD" -ne 1 ]]; then
+    DID_RELOAD=1
+    reload_ui
+
+    # Re-enviar el mismo mensaje (mismo token) si está habilitado
+    if [[ "${RESEND_AFTER_RELOAD:-1}" -eq 1 ]]; then
+      "$SEND" "$MSG" >/dev/null 2>/dev/null || true
+      sleep 0.9
+    fi
   fi
   sleep "$POLL_SEC"
 done
