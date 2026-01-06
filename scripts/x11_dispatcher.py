@@ -262,14 +262,15 @@ def do_focus_window(wid: str) -> None:
     if FAKE_MODE:
         return None
     exists = False
-    for line in do_list_windows():
+    windows = do_list_windows() if FAKE_MODE else _host_list_windows()
+    for line in windows:
         parts = line.split("\t", 1)
         if parts and parts[0] == wid:
             exists = True
             break
     if not exists:
         raise NotFound()
-    _run_cmd([WMCTRL_BIN, "-ia", wid])
+    _run_host_cmd(f"{WMCTRL_BIN} -ia {wid}")
     return None
 
 
@@ -281,15 +282,16 @@ def do_send_keys(wid: str, keys: str) -> None:
     if FAKE_MODE:
         return None
     exists = False
-    for line in do_list_windows():
+    windows = do_list_windows() if FAKE_MODE else _host_list_windows()
+    for line in windows:
         parts = line.split("\t", 1)
         if parts and parts[0] == wid:
             exists = True
             break
     if not exists:
         raise NotFound()
-    _run_cmd([WMCTRL_BIN, "-i", "-R", wid])
-    _run_cmd([XDOTOOL_BIN, "windowactivate", "--sync", wid, "key", keys])
+    _run_host_cmd(f"{WMCTRL_BIN} -i -R {wid}")
+    _run_host_cmd(f"{XDOTOOL_BIN} windowactivate --sync {wid} key {shlex.quote(keys)}")
     return None
 
 
@@ -301,16 +303,17 @@ def do_type_text(wid: str, text: str) -> None:
     if FAKE_MODE:
         return None
     exists = False
-    for line in do_list_windows():
+    windows = do_list_windows() if FAKE_MODE else _host_list_windows()
+    for line in windows:
         parts = line.split("\t", 1)
         if parts and parts[0] == wid:
             exists = True
             break
     if not exists:
         raise NotFound()
-    _run_cmd([WMCTRL_BIN, "-i", "-R", wid])
-    _run_cmd(
-        [XDOTOOL_BIN, "windowactivate", "--sync", wid, "type", "--delay", "0", "--", text]
+    _run_host_cmd(f"{WMCTRL_BIN} -i -R {wid}")
+    _run_host_cmd(
+        f"{XDOTOOL_BIN} windowactivate --sync {wid} type --delay 0 -- {shlex.quote(text)}"
     )
     return None
 
