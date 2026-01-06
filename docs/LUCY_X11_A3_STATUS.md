@@ -21,3 +21,21 @@
 - Robustecer `chatgpt_copy_chat_text.sh` para obtener transcript confiable en frío.
 - Consolidar smoke tests (A3.7..A3.12) en `scripts/verify_a3_*.sh`.
 - Integración final: pipeline “ask” estable + (si aplica) posteo/adjuntos y lectura de respuesta.
+
+<!-- SMOKE_SUITE_NOTE -->
+## Smoke tests (rápidos)
+
+Para validar todo el loop X11/IPC (A3.7–A3.12) en un solo comando:
+
+```bash
+./scripts/verify_a3_all.sh
+```
+
+Scripts individuales:
+
+* `./scripts/verify_a3_7.sh` (screenshot root)
+* `./scripts/verify_a3_8.sh` (screenshot por WID)
+* `./scripts/verify_a3_10.sh` (focus + type)
+* `./scripts/verify_a3_11.sh` (send_keys Return)
+* `./scripts/verify_a3_12.sh` (ask end-to-end, espera `LUCY_ANSWER_...`)
+
