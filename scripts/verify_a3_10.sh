@@ -14,9 +14,7 @@ TXT="LUCY_A3_10_SMOKE_$(date +%H%M%S)"
 python3 -u ./scripts/x11_dispatcher.py focus_window "$WID" >/tmp/a3_10_focus_out.txt 2>/tmp/a3_10_focus_err.txt || true
 python3 -u ./scripts/x11_dispatcher.py type_text "$WID" "$TXT" >/tmp/a3_10_type_out.txt 2>/tmp/a3_10_type_err.txt || true
 
-# cleanup best-effort: Ctrl+A + BackSpace (si el backend lo banca)
-python3 -u ./scripts/x11_dispatcher.py send_keys "$WID" "ctrl+a" >/dev/null 2>/dev/null || true
-python3 -u ./scripts/x11_dispatcher.py send_keys "$WID" "BackSpace" >/dev/null 2>/dev/null || true
+./scripts/chatgpt_clear_input_x11.sh
 
 if ! grep -q '^OK' /tmp/a3_10_focus_out.txt; then
   echo "VERIFY_A3_10_FAIL: focus_window"
