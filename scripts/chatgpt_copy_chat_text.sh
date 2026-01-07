@@ -14,7 +14,7 @@ if [[ -z "${WID_HEX:-}" ]]; then
   exit 3
 fi
 
-"$HOST_EXEC" "bash -lc '
+out="$("$HOST_EXEC" "bash -lc '
 set -euo pipefail
 WID_HEX=\"$WID_HEX\"
 WID_DEC=\$(printf \"%d\" \"\$WID_HEX\")
@@ -32,12 +32,8 @@ eval \"\$geo\" || true
 : \${WIDTH:=1200}
 : \${HEIGHT:=900}
 
-best=\"\"
-bestLen=0
-
-try_copy() {
+copy_at() {
   local px=\"\$1\" py=\"\$2\"
-  # click DENTRO del panel de mensajes (lado derecho) y copiar
   xdotool mousemove --window \"\$WID_DEC\" \"\$px\" \"\$py\" click 1 2>/dev/null || true
   sleep 0.10
   xdotool key --clearmodifiers ctrl+a 2>/dev/null || true
@@ -55,24 +51,47 @@ try_copy() {
     sleep 0.06
   done
 
-  local l=\${#t}
-  if [[ \"\$l\" -gt \"\$bestLen\" ]]; then
-    bestLen=\"\$l\"
-    best=\"\$t\"
-  fi
+  printf \"%s\" \"\$t\"
 }
 
-# 3 anclas: bien a la derecha (evita sidebar) en distintas alturas
-x1=\$(( WIDTH * 78 / 100 ))
-x2=\$(( WIDTH * 88 / 100 ))
-y1=\$(( HEIGHT * 28 / 100 ))
-y2=\$(( HEIGHT * 45 / 100 ))
-y3=\$(( HEIGHT * 62 / 100 ))
+bytes_len() {
+  local t=\"\$1\"
+  printf \"%s\" \"\$t\" | wc -c | tr -d \" \\n\"
+}
 
-try_copy \"\$x1\" \"\$y1\"
-try_copy \"\$x1\" \"\$y2\"
-try_copy \"\$x2\" \"\$y2\"
-try_copy \"\$x1\" \"\$y3\"
+# zonas: input (abajo-centro) y mensajes (medio-centro)
+input_x=\$(( WIDTH * 50 / 100 ))
+input_y=\$(( HEIGHT * 92 / 100 ))
+msg_x=\$(( WIDTH * 50 / 100 ))
+msg_y=\$(( HEIGHT * 55 / 100 ))
+
+txt1=\"\$(copy_at \"\$input_x\" \"\$input_y\")\"
+bytes1=\"\$(bytes_len \"\$txt1\")\"
+txt2=\"\$(copy_at \"\$msg_x\" \"\$msg_y\")\"
+bytes2=\"\$(bytes_len \"\$txt2\")\"
+
+chosen=\"input\"
+best=\"\$txt1\"
+bestBytes=\"\$bytes1\"
+if [[ \"\$bytes2\" -gt \"\$bytes1\" ]]; then
+  chosen=\"messages\"
+  best=\"\$txt2\"
+  bestBytes=\"\$bytes2\"
+fi
+
+printf \"__LUCY_COPY_META__ COPY_BYTES_1=%s COPY_BYTES_2=%s COPY_CHOSEN=%s COPY_BYTES=%s\\n\" \"\$bytes1\" \"\$bytes2\" \"\$chosen\" \"\$bestBytes\"
+if [[ \"\$bestBytes\" -lt 200 ]]; then
+  printf \"__LUCY_COPY_META__ COPY_WEAK=1\\n\"
+fi
 
 printf \"%s\" \"\$best\"
-'"
+'")"
+
+meta_lines="$(printf '%s\n' "$out" | sed -n 's/^__LUCY_COPY_META__ //p')"
+if [[ -n "${meta_lines:-}" ]]; then
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && printf '%s\n' "$line" >&2
+  done <<< "$meta_lines"
+fi
+copy_text="$(printf '%s\n' "$out" | sed '/^__LUCY_COPY_META__/d')"
+printf '%s' "$copy_text"
