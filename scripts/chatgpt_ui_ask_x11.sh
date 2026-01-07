@@ -137,6 +137,30 @@ extract_answer_line() {
 
 TMP="$(mktemp /tmp/lucy_ask_${TOKEN}.XXXX.txt)"
 
+AUTO_CHAT="${LUCY_CHATGPT_AUTO_CHAT:-0}"
+NEWCHAT_ATTEMPTS="${LUCY_CHATGPT_NEWCHAT_ATTEMPTS:-2}"
+NEWCHAT_X="${LUCY_CHATGPT_NEWCHAT_X:-0.08}"
+NEWCHAT_Y="${LUCY_CHATGPT_NEWCHAT_Y:-0.12}"
+NEWCHAT_ATTEMPTED=0
+NEWCHAT_OK=0
+
+auto_chat_prepare() {
+  if [[ "${AUTO_CHAT}" -ne 1 ]]; then
+    return 0
+  fi
+  printf 'AUTO_CHAT=1\n' >&2
+  printf 'NEWCHAT_ATTEMPTS=%s\n' "${NEWCHAT_ATTEMPTS}" >&2
+  for _ in $(seq 1 "${NEWCHAT_ATTEMPTS}"); do
+    NEWCHAT_ATTEMPTED=1
+    python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
+    python3 -u "$DISP" click "$WID" "$NEWCHAT_X" "$NEWCHAT_Y" >/dev/null 2>/dev/null || true
+    sleep 0.4
+  done
+}
+
+# Optional: move to a technical chat before sending.
+auto_chat_prepare
+
 # 1) SEND + verificar que el REQ aparece
 SENT_OK=0
 for attempt in 1 2 3; do
@@ -150,8 +174,17 @@ for attempt in 1 2 3; do
 done
 
 if [[ "$SENT_OK" -ne 1 ]]; then
+  if [[ "${AUTO_CHAT}" -eq 1 ]]; then
+    printf 'NEWCHAT_OK=0\n' >&2
+  fi
   echo "ERROR: el ASK no llegó a publicarse en el chat (no vi LUCY_REQ_${TOKEN}:)." >&2
   exit 4
+fi
+if [[ "${AUTO_CHAT}" -eq 1 ]]; then
+  if [[ "${SENT_OK}" -eq 1 ]] && [[ "${NEWCHAT_ATTEMPTED}" -eq 1 ]]; then
+    NEWCHAT_OK=1
+  fi
+  printf 'NEWCHAT_OK=%s\n' "${NEWCHAT_OK}" >&2
 fi
 
 # 2) Esperar respuesta
