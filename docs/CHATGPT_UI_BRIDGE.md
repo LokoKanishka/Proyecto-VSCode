@@ -19,6 +19,10 @@ Selector **seguro** del WID:
   - `CHATGPT_WID_HEX=0x...`
 - Si no hay overrides, busca **únicamente** `WM_CLASS` `chatgpt.com.*`
 - Si no existe, falla con código `2`
+- Recovery multi-Chrome:
+  - Si el pin apunta a WID inválido, intenta una pista fuerte en el título.
+  - Si hay ambigüedad, abre una ventana nueva de ChatGPT y repinea esa.
+  - Evita títulos con “V.S.Code / Visual Studio Code”.
 
 ### 2) `scripts/chatgpt_bridge_ensure.sh`
 Asegura que exista la ventana puente:

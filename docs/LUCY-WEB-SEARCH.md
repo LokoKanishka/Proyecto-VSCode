@@ -52,6 +52,14 @@ Verificación:
 ./scripts/verify_web_search_searxng.sh
 ```
 
+## Botón rojo A5
+
+```bash
+./scripts/verify_a5_all.sh
+```
+
+- Ejecuta `verify_a4_all.sh` (puente) + `verify_web_search_searxng.sh` (SearXNG).
+
 ## Configuración (`config.yaml`)
 
 ```yaml

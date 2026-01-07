@@ -10,12 +10,14 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin}"
 TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
-TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-V.S.Code}"
+TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-}"
+CHATGPT_OPEN_URL="${CHATGPT_OPEN_URL:-https://chat.openai.com/}"
 
-debug() {
-  if [[ "${CHATGPT_WID_DEBUG:-0}" != 0 ]]; then
+dbg() {
+  if [[ "${CHATGPT_WID_DEBUG:-0}" == "1" ]]; then
     echo "$*" >&2
   fi
+  return 0
 }
 
 # Si ya está forzado por env, respetarlo.
@@ -71,31 +73,55 @@ write_pin() {
   } > "$PIN_FILE"
 }
 
-list_candidates() {
-  awk -v inc="$TITLE_INCLUDE" -v exc="$TITLE_EXCLUDE" '
-    {
-      wid=$1;
-      title="";
-      for(i=4;i<=NF;i++){ title = title (i==4 ? "" : " ") $i }
-      if(inc!="" && index(title,inc)==0) next;
-      if(exc!="" && index(title,exc)>0) next;
-      printf "%s\t%s\n", wid, title
-    }
-  '
+title_is_excluded() {
+  local title_lc
+  title_lc="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  if [[ -n "${TITLE_EXCLUDE:-}" ]]; then
+    local exc_lc
+    exc_lc="$(printf '%s' "${TITLE_EXCLUDE}" | tr '[:upper:]' '[:lower:]')"
+    [[ "${title_lc}" == *"${exc_lc}"* ]] && return 0
+  fi
+  [[ "${title_lc}" == *"v.s.code"* ]] && return 0
+  [[ "${title_lc}" == *"visual studio code"* ]] && return 0
+  return 1
 }
 
-list_candidates_no_include() {
-  awk -v exc="$TITLE_EXCLUDE" '
+title_has_strong_hint() {
+  local title_lc
+  title_lc="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  [[ "${title_lc}" == *"chatgpt"* ]] && return 0
+  [[ "${title_lc}" == *"openai"* ]] && return 0
+  [[ "${title_lc}" == *"chat.openai"* ]] && return 0
+  [[ "${title_lc}" == *"chatgpt.com"* ]] && return 0
+  return 1
+}
+
+list_chrome_candidates() {
+  get_wmctrl_lx | awk '
     {
       wid=$1;
       klass=$3;
       title="";
       for(i=5;i<=NF;i++){ title = title (i==5 ? "" : " ") $i }
       if(tolower(klass) !~ /(google-chrome|chromium)/) next;
-      if(exc!="" && index(title,exc)>0) next;
       printf "%s\t%s\n", wid, title
     }
-  '
+  ' | while IFS=$'\t' read -r wid title; do
+    [[ -z "${wid:-}" ]] && continue
+    if title_is_excluded "$title"; then
+      continue
+    fi
+    printf "%s\t%s\n" "$wid" "$title"
+  done
+}
+
+list_strong_candidates() {
+  list_chrome_candidates | while IFS=$'\t' read -r wid title; do
+    [[ -z "${wid:-}" ]] && continue
+    if title_has_strong_hint "$title"; then
+      printf "%s\t%s\n" "$wid" "$title"
+    fi
+  done
 }
 
 get_active_wid() {
@@ -112,6 +138,19 @@ get_title_by_wid() {
   local wins
   wins="$(get_wmctrl)"
   awk -v w="$wid" '$1==w { $1=""; $2=""; $3=""; sub(/^ +/, ""); print; exit }' <<< "$wins"
+}
+
+wid_is_chrome() {
+  local wid="$1"
+  local klass=""
+  klass="$(get_wmctrl_lx | awk -v w="$wid" '$1==w {print $3; exit}')"
+  [[ -n "${klass:-}" ]] || return 1
+  case "${klass,,}" in
+    *google-chrome*|*chromium*)
+      return 0
+      ;;
+  esac
+  return 1
 }
 
 wid_exists() {
@@ -179,9 +218,67 @@ choose_wid() {
   fi
 
   if [[ -n "${chosen:-}" ]]; then
-    debug "WID_CHOSEN=${chosen} TITLE=${chosen_title}"
+    dbg "WID_CHOSEN=${chosen} TITLE=${chosen_title}"
     printf '%s\n' "$chosen"
   fi
+}
+
+choose_latest_wid() {
+  local candidates="$1"
+  local max_dec=-1
+  local max_wid=""
+  local max_title=""
+  local dec
+  while IFS=$'\t' read -r wid title; do
+    [[ -z "${wid:-}" ]] && continue
+    dec="$(printf "%d" "$wid" 2>/dev/null || echo -1)"
+    if [[ "$dec" -gt "$max_dec" ]]; then
+      max_dec="$dec"
+      max_wid="$wid"
+      max_title="$title"
+    fi
+  done <<< "$candidates"
+  if [[ -n "${max_wid:-}" ]]; then
+    dbg "WID_CHOSEN=${max_wid} TITLE=${max_title}"
+    printf '%s\n' "$max_wid"
+  fi
+}
+
+filter_new_candidates() {
+  local before="$1"
+  local candidates="$2"
+  local wid title
+  while IFS=$'\t' read -r wid title; do
+    [[ -z "${wid:-}" ]] && continue
+    if grep -Fxq "${wid}" <<< "${before}"; then
+      continue
+    fi
+    printf '%s\t%s\n' "$wid" "$title"
+  done <<< "$candidates"
+}
+
+open_chatgpt_window() {
+  "$HOST_EXEC" "bash -lc 'google-chrome --new-window \"${CHATGPT_OPEN_URL}\" >/dev/null 2>&1 & disown'" \
+    >/dev/null 2>&1 || true
+}
+
+open_chatgpt_and_pick_new() {
+  local before candidates new_candidates wid
+  before="$(list_chrome_candidates | awk -F '\t' '{print $1}')"
+  open_chatgpt_window
+  for _ in $(seq 1 15); do
+    sleep 1
+    candidates="$(list_chrome_candidates)"
+    new_candidates="$(filter_new_candidates "$before" "$candidates")"
+    if [[ -n "${new_candidates:-}" ]]; then
+      wid="$(choose_latest_wid "$new_candidates")"
+      [[ -n "${wid:-}" ]] && printf '%s\n' "$wid" && return 0
+    fi
+  done
+  candidates="$(list_chrome_candidates)"
+  wid="$(choose_latest_wid "$candidates")"
+  [[ -n "${wid:-}" ]] && printf '%s\n' "$wid" && return 0
+  return 1
 }
 
 PIN_RECOVER_NEEDS_WRITE=0
@@ -190,88 +287,73 @@ PIN_RECOVER_NEEDS_WRITE=0
 if [[ -f "${PIN_FILE}" ]]; then
   PIN_WID="$(read_pin_wid "$PIN_FILE" || true)"
   if [[ -n "${PIN_WID:-}" ]]; then
-    if ! wid_exists "$PIN_WID"; then
-      echo "PIN_INVALID=1 old_wid=${PIN_WID}" >&2
-      PIN_RECOVER_NEEDS_WRITE=1
-      rm -f "$PIN_FILE" 2>/dev/null || true
-      PIN_WID=""
-    fi
-    if [[ -n "${PIN_WID:-}" ]]; then
+    if wid_exists "$PIN_WID" && wid_is_chrome "$PIN_WID"; then
       TITLE_PIN="$(get_title_by_wid "$PIN_WID")"
-      PIN_TITLE_STORED="$(sed -n 's/^TITLE=//p' "$PIN_FILE" | head -n 1)"
-      pin_valid=0
-      if [[ -n "${TITLE_PIN:-}" ]] && [[ "${TITLE_PIN}" == *"${TITLE_INCLUDE}"* ]] && [[ "${TITLE_PIN}" != *"${TITLE_EXCLUDE}"* ]]; then
-        pin_valid=1
-      elif [[ -n "${PIN_TITLE_STORED:-}" ]] && [[ "${PIN_TITLE_STORED}" == *"${TITLE_INCLUDE}"* ]] && [[ "${PIN_TITLE_STORED}" != *"${TITLE_EXCLUDE}"* ]]; then
-        pin_valid=1
-      fi
-      if [[ "${pin_valid}" -eq 1 ]]; then
-        debug "WID_CHOSEN=${PIN_WID} TITLE=${TITLE_PIN:-$PIN_TITLE_STORED}"
+      if ! title_is_excluded "${TITLE_PIN:-}"; then
+        if [[ -z "${TITLE_PIN:-}" ]]; then
+          TITLE_PIN="${TITLE_INCLUDE}"
+        fi
+        write_pin "$PIN_WID" "$TITLE_PIN"
+        dbg "WID_CHOSEN=${PIN_WID} TITLE=${TITLE_PIN}"
         printf '%s\n' "$PIN_WID"
         exit 0
       fi
-      if [[ "${CHATGPT_WID_PIN_ONLY:-0}" -eq 1 ]]; then
-        echo "ERROR: PIN_INVALID WID=${PIN_WID} TITLE=${TITLE_PIN} PIN_TITLE=${PIN_TITLE_STORED}" >&2
-        exit 3
-      fi
-      echo "WARN: PIN_INVALID WID=${PIN_WID} TITLE=${TITLE_PIN} PIN_TITLE=${PIN_TITLE_STORED} (fallback)" >&2
     fi
+    echo "PIN_INVALID=1 old_wid=${PIN_WID}" >&2
+    if [[ "${CHATGPT_WID_PIN_ONLY:-0}" -eq 1 ]]; then
+      echo "ERROR: PIN_INVALID WID=${PIN_WID}" >&2
+      exit 3
+    fi
+    rm -f "$PIN_FILE" 2>/dev/null || true
+    PIN_RECOVER_NEEDS_WRITE=1
   fi
 fi
 
-# 1) Intento directo
-WINS="$(get_wmctrl)"
-CANDIDATES="$(printf '%s\n' "$WINS" | list_candidates)"
-# Si el include no matchea (p.ej. título del chat), caer a Chrome-only (excluyendo V.S.Code).
-if [[ -z "${CANDIDATES:-}" ]]; then
-  WINS_LX="$(get_wmctrl_lx)"
-  CANDIDATES="$(printf '%s\n' "$WINS_LX" | list_candidates_no_include)"
+if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
+  STRONG_CANDIDATES="$(list_strong_candidates)"
+  strong_count="$(printf '%s\n' "$STRONG_CANDIDATES" | awk 'NF{c++} END{print c+0}')"
+  RECOVER_WID=""
+  if [[ "${strong_count}" -eq 1 ]]; then
+    RECOVER_WID="$(printf '%s\n' "$STRONG_CANDIDATES" | head -n 1 | cut -f1)"
+  else
+    if [[ "${CHATGPT_GET_WID_NOOPEN:-0}" -eq 1 ]]; then
+      echo "ERROR: PIN_INVALID and recovery needs new window (CHATGPT_GET_WID_NOOPEN=1)" >&2
+      exit 3
+    fi
+    RECOVER_WID="$(open_chatgpt_and_pick_new || true)"
+  fi
+
+  if [[ -z "${RECOVER_WID:-}" ]]; then
+    echo "ERROR: PIN_INVALID and recovery failed" >&2
+    exit 3
+  fi
+
+  TITLE_RECOVER="$(get_title_by_wid "$RECOVER_WID")"
+  if [[ -z "${TITLE_RECOVER:-}" ]]; then
+    TITLE_RECOVER="${TITLE_INCLUDE}"
+  fi
+  write_pin "$RECOVER_WID" "$TITLE_RECOVER"
+  echo "PIN_RECOVERED=1 new_wid=${RECOVER_WID}" >&2
+  printf '%s\n' "$RECOVER_WID"
+  exit 0
 fi
+
+# 1) Selección normal
+CANDIDATES="$(list_chrome_candidates)"
 WID="$(choose_wid "$CANDIDATES" "$(get_active_wid)")"
 
-# 2) Si no hay ventana ChatGPT, abrirla y esperar (si no está deshabilitado)
+# 2) Si no hay ventana Chrome, abrir ChatGPT y esperar (si no está deshabilitado)
 if [[ -z "${WID:-}" ]]; then
   if [[ "${CHATGPT_GET_WID_NOOPEN:-0}" -eq 1 ]]; then
     echo "ERROR: NO_CANDIDATE_WID" >&2
     exit 3
   fi
-  "$HOST_EXEC" "bash -lc 'google-chrome --new-window \"https://chat.openai.com/\" >/dev/null 2>&1 & disown'" >/dev/null 2>&1 || true
-
-  for _ in $(seq 1 15); do
-    sleep 1
-    WINS="$(get_wmctrl)"
-    CANDIDATES="$(printf '%s\n' "$WINS" | list_candidates)"
-    WID="$(choose_wid "$CANDIDATES" "$(get_active_wid)")"
-    [[ -n "${WID:-}" ]] && break
-  done
-fi
-
-# 3) Resultado
-if [[ -z "${WID:-}" ]]; then
-  if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
-    "$ROOT/scripts/chatgpt_unpin_wid.sh" >/dev/null 2>&1 || true
-    "$ROOT/scripts/chatgpt_pin_wid.sh" >/dev/null
-    WID="$(read_pin_wid "$PIN_FILE" || true)"
-    if [[ -n "${WID:-}" ]]; then
-      echo "PIN_RECOVERED=1 new_wid=${WID}" >&2
-      PIN_RECOVER_NEEDS_WRITE=0
-    fi
-  fi
+  WID="$(open_chatgpt_and_pick_new || true)"
 fi
 
 if [[ -z "${WID:-}" ]]; then
-  echo "ERROR: no encuentro ventana ChatGPT (título no contiene '${TITLE_INCLUDE}'). Abrí ChatGPT en Chrome y reintentá." >&2
+  echo "ERROR: no encuentro ventana ChatGPT en Chrome. Abrí ChatGPT y reintentá." >&2
   exit 3
-fi
-
-if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
-  TITLE_RECOVER="$(get_title_by_wid "$WID")"
-  PIN_TITLE="$TITLE_RECOVER"
-  if [[ -n "${TITLE_INCLUDE:-}" ]] && [[ "${TITLE_RECOVER}" != *"${TITLE_INCLUDE}"* ]]; then
-    PIN_TITLE="$TITLE_INCLUDE"
-  fi
-  write_pin "$WID" "$PIN_TITLE"
-  echo "PIN_RECOVERED=1 new_wid=${WID}" >&2
 fi
 
 printf '%s\n' "$WID"
