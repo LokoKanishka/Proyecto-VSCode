@@ -6,11 +6,14 @@ Lucy ChatGPT Bridge (Python API).
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
+
+from lucy_agents.forensics_summary import summarize_forensics
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ASK_SCRIPT = PROJECT_ROOT / "scripts" / "lucy_chatgpt_ask.sh"
@@ -44,6 +47,22 @@ def _extract_answer_text(answer_line: str) -> str:
     return answer_line
 
 
+def _write_summary(forensics_dir: str) -> tuple[bool, Optional[str]]:
+    try:
+        base = Path(forensics_dir)
+        if not base.is_dir():
+            return False, None
+        summary = summarize_forensics(forensics_dir)
+        out_path = base / "summary.json"
+        out_path.write_text(
+            json.dumps(summary, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        return True, str(out_path)
+    except Exception:  # noqa: BLE001
+        return False, None
+
+
 def ask_raw(prompt: str, timeout_sec: int = 180, retries: int = 2) -> dict:
     if not ASK_SCRIPT.exists():
         raise RuntimeError(f"ask script not found: {ASK_SCRIPT}")
@@ -66,6 +85,10 @@ def ask_raw(prompt: str, timeout_sec: int = 180, retries: int = 2) -> dict:
 
     answer_line = _parse_answer_line(stdout)
     forensics_dir, elapsed_ms = _parse_meta(stderr)
+    summary_written = False
+    summary_path: Optional[str] = None
+    if forensics_dir:
+        summary_written, summary_path = _write_summary(forensics_dir)
 
     if completed.returncode != 0 or not answer_line:
         message = "chatgpt bridge failed"
@@ -87,6 +110,8 @@ def ask_raw(prompt: str, timeout_sec: int = 180, retries: int = 2) -> dict:
         "answer_text": answer_text,
         "forensics_dir": forensics_dir,
         "elapsed_ms": elapsed_ms,
+        "summary_written": summary_written,
+        "summary_path": summary_path,
     }
 
 
@@ -128,6 +153,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     forensics_dir = result.get("forensics_dir")
     if forensics_dir:
         print(f"FORENSICS_DIR={forensics_dir}", file=sys.stderr, flush=True)
+        if result.get("summary_written"):
+            summary_path = result.get("summary_path") or ""
+            print(f"SUMMARY_JSON=1 path={summary_path}", file=sys.stderr, flush=True)
 
     elapsed_ms = result.get("elapsed_ms")
     if elapsed_ms is not None:
