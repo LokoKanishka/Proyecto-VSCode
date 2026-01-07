@@ -25,8 +25,7 @@ from pathlib import Path
 from typing import List, Optional
 from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
 
-from lucy_agents.chatgpt_bridge import ask_raw
-from lucy_agents.chatgpt_client import request as chatgpt_service_request
+from lucy_agents.action_router import run_action
 from lucy_agents.desktop_bridge import run_desktop_command
 from lucy_web_agent import find_youtube_video_url
 
@@ -132,54 +131,19 @@ def _extract_chatgpt_answer(raw: str) -> str | None:
 
 
 def _ask_chatgpt_ui(question: str) -> tuple[bool, str]:
-    ask_timeout = _env_int("LUCY_CHATGPT_ASK_TIMEOUT", 75)
-    if ask_timeout <= 0:
-        ask_timeout = 75
-    ask_retries = _env_int("LUCY_CHATGPT_RETRIES", 2)
-    if ask_retries < 0:
-        ask_retries = 0
+    result = run_action("chatgpt_ask", {"prompt": question})
+    if not result.get("ok"):
+        error = result.get("error") or "unknown error"
+        return True, f"No pude ejecutar ChatGPT UI ({error})."
 
-    service_timeout = _env_int("LUCY_CHATGPT_SERVICE_TIMEOUT_SEC", 220)
-    if service_timeout <= 0:
-        service_timeout = 220
+    meta = result.get("meta") or {}
+    path = meta.get("path", "UNKNOWN")
+    print(f"[LucyVoiceActions] CHATGPT_ROUTER_OK path={path}", file=sys.stderr, flush=True)
 
-    use_service = _env_bool("LUCY_CHATGPT_USE_SERVICE", True)
-    if use_service:
-        service_resp = chatgpt_service_request(
-            question,
-            timeout_sec=ask_timeout,
-            retries=ask_retries,
-            wait_sec=service_timeout,
-        )
-        service_answer = (service_resp.get("answer_text") or "").strip()
-        if service_resp.get("ok") and service_answer:
-            print("CHATGPT_PATH=SERVICE", file=sys.stderr, flush=True)
-            return True, service_answer
-        reason = (service_resp.get("error") or "service_failed").strip() or "service_failed"
-        print(
-            f"CHATGPT_PATH=DIRECT_FALLBACK reason={reason}",
-            file=sys.stderr,
-            flush=True,
-        )
-    else:
-        print(
-            "CHATGPT_PATH=DIRECT_FALLBACK reason=SERVICE_DISABLED",
-            file=sys.stderr,
-            flush=True,
-        )
+    answer_text = (result.get("result", {}).get("answer_text") or "").strip()
+    if answer_text:
+        return True, answer_text
 
-    try:
-        result = ask_raw(question, timeout_sec=ask_timeout, retries=ask_retries)
-    except RuntimeError as exc:
-        return True, f"No pude ejecutar ChatGPT UI ({exc})."
-
-    answer = (result.get("answer_text") or "").strip()
-    if answer:
-        return True, answer
-
-    forensics_dir = result.get("forensics_dir")
-    if forensics_dir:
-        print(f"[LucyVoiceActions] ChatGPT bridge forensics: {forensics_dir}", flush=True)
     return True, "No pude leer la respuesta de ChatGPT."
 
 
