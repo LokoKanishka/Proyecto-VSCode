@@ -10,7 +10,7 @@
 
 ```bash
 cd ~/Lucy_Workspace/Proyecto-VSCode
-./scripts/searxng_up.sh
+docker compose -f infra/searxng/docker-compose.yml up -d
 ```
 
 Verificá en el navegador: `http://127.0.0.1:8080`.
@@ -18,8 +18,8 @@ Verificá en el navegador: `http://127.0.0.1:8080`.
 Para bajar y ver logs:
 
 ```bash
-./scripts/searxng_down.sh
-./scripts/searxng_logs.sh
+docker compose -f infra/searxng/docker-compose.yml down
+docker compose -f infra/searxng/docker-compose.yml logs -f
 ```
 
 ## Cómo se usa en Lucy
@@ -33,6 +33,24 @@ Para bajar y ver logs:
   3. Búsqueda en SearXNG (JSON), deduplicación y ranking ligero.
   4. Fetch de las top páginas y extracción en modo “reader” (trafilatura).
   5. Resumen + listado de fuentes (URLs) para que Lucy pueda citar.
+
+## Acción web_search (Action Router)
+
+- Acción local: `web_search` (no usa LLM).
+- Payload mínimo: `{"query": "texto"}`
+- Opcionales: `num_results`, `language`, `safesearch`, `time_range`
+
+Ejemplo:
+
+```bash
+python3 -m lucy_agents.action_router web_search '{"query":"wikipedia","num_results":5}'
+```
+
+Verificación:
+
+```bash
+./scripts/verify_web_search_searxng.sh
+```
 
 ## Configuración (`config.yaml`)
 
@@ -79,6 +97,11 @@ Probá la API JSON así (POST form-url-encoded):
   - Modelo para **resumir** (cuando NO_LLM no está activo). Default: `gpt-oss:20b` (viene de `DEFAULT_OLLAMA_MODEL_ID`).
 - `LUCY_OLLAMA_MODEL`
   - Modelo del **chat de voz** (scripts de voz), independiente del modelo del Web Agent.
+
+## Variables de entorno (Action Router)
+
+- `SEARXNG_URL` (default `http://127.0.0.1:8080`)
+- `SEARXNG_TIMEOUT_SEC` (default `10`)
 
 Notas:
 - En `infra/searxng/searxng/settings.yml`, `startpage` está en `disabled: true` porque cae en CAPTCHA/suspensión y te rompe el engine.

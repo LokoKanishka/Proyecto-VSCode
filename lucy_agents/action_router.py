@@ -13,6 +13,7 @@ from lucy_agents.chatgpt_bridge import ask_raw
 from lucy_agents.chatgpt_client import request as chatgpt_service_request
 from lucy_agents.daily_plan import build_chatgpt_prompt, get_base_plan
 from lucy_agents.forensics_summary import summarize_forensics
+from lucy_agents.searxng_client import search as searxng_search
 
 ACTION_SPECS: dict[str, dict[str, Any]] = {
     "chatgpt_ask": {
@@ -47,6 +48,18 @@ ACTION_SPECS: dict[str, dict[str, Any]] = {
         "returns": "forensics summary dict",
         "path": "LOCAL",
         "notes": "offline parser",
+    },
+    "web_search": {
+        "payload": {"required": ["query"], "optional": ["num_results", "language", "safesearch", "time_range"]},
+        "returns": {
+            "query": "str",
+            "engine": "searxng",
+            "searxng_url": "str",
+            "results": "list[{title,url,snippet,engine}]",
+            "errors": "list[str]",
+        },
+        "path": "LOCAL",
+        "notes": "local searxng search (no LLM)",
     },
 }
 
@@ -84,6 +97,16 @@ def _payload_bool(payload: dict[str, Any], key: str, default: bool) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "on"}
     return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw.strip())
+    except ValueError:
+        return default
 
 
 def _payload_int(payload: dict[str, Any], key: str, default: int) -> int:
@@ -222,6 +245,52 @@ def _daily_plan_action(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _web_search_action(payload: dict[str, Any]) -> dict[str, Any]:
+    query = (payload.get("query") or "").strip()
+    if not query:
+        return {"ok": False, "error": "missing query", "meta": {"path": "LOCAL"}}
+
+    num_results = _payload_int(payload, "num_results", 5)
+    if num_results <= 0:
+        num_results = 1
+    if num_results > 10:
+        num_results = 10
+
+    language = (payload.get("language") or "es").strip() or "es"
+    safesearch = _payload_int(payload, "safesearch", 0)
+
+    time_range = payload.get("time_range")
+    if isinstance(time_range, str):
+        time_range = time_range.strip() or None
+    else:
+        time_range = None
+    if time_range not in {None, "day", "week", "month", "year"}:
+        time_range = None
+
+    timeout_sec = _env_float("SEARXNG_TIMEOUT_SEC", 10.0)
+
+    results, errors, searxng_url = searxng_search(
+        query,
+        num_results=num_results,
+        language=language,
+        safesearch=safesearch,
+        time_range=time_range,
+        timeout_sec=timeout_sec,
+    )
+
+    return {
+        "ok": True if results is not None else False,
+        "result": {
+            "query": query,
+            "engine": "searxng",
+            "searxng_url": searxng_url,
+            "results": results,
+            "errors": errors,
+        },
+        "meta": {"path": "LOCAL"},
+    }
+
+
 def run_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     if action == "echo":
         return {"ok": True, "result": payload, "meta": {"path": "LOCAL"}}
@@ -235,6 +304,8 @@ def run_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
             return {"ok": False, "error": "missing dir", "meta": {"path": "LOCAL"}}
         summary = summarize_forensics(str(dir_path))
         return {"ok": True, "result": summary, "meta": {"path": "LOCAL"}}
+    if action == "web_search":
+        return _web_search_action(payload if isinstance(payload, dict) else {})
     return {"ok": False, "error": f"unknown action: {action}", "meta": {"path": "LOCAL"}}
 
 
