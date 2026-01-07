@@ -26,6 +26,17 @@ get_wmctrl_lx() {
   "$HOST_EXEC" 'wmctrl -lx' 2>/dev/null || true
 }
 
+get_stack_order() {
+  # Returns a list of WIDs in stacking order (bottom -> top). We prefer the last match.
+  "$HOST_EXEC" 'xprop -root _NET_CLIENT_LIST_STACKING' 2>/dev/null \
+    | sed -n 's/.*# //p' \
+    | tr ',' '\n' \
+    | awk '{
+        gsub(/^[[:space:]]+|[[:space:]]+$/,"");
+        if ($0 ~ /^0x[0-9a-fA-F]+$/) print $0
+      }' || true
+}
+
 read_pin_wid() {
   local f="$1"
   local line wid=""
@@ -74,7 +85,7 @@ list_candidates_no_include() {
       klass=$3;
       title="";
       for(i=5;i<=NF;i++){ title = title (i==5 ? "" : " ") $i }
-      if(tolower(klass) !~ /chrome/) next;
+      if(tolower(klass) !~ /(google-chrome|chromium)/) next;
       if(exc!="" && index(title,exc)>0) next;
       printf "%s\t%s\n", wid, title
     }
@@ -112,24 +123,53 @@ choose_wid() {
   local chosen=""
   local chosen_title=""
 
-  if [[ -n "${active:-}" ]] && printf '%s\n' "$candidates" | awk -v a="$active" -F '\t' '$1==a{exit 0} END{exit 1}'; then
+  [[ -n "${candidates:-}" ]] || return 0
+
+  # Build map wid -> title for fast membership checks
+  declare -A cand_title=()
+  while IFS=$'\t' read -r wid title; do
+    [[ -z "${wid:-}" ]] && continue
+    cand_title["$wid"]="$title"
+  done <<< "$candidates"
+
+  # 1) Prefer active if it is a candidate
+  if [[ -n "${active:-}" ]] && [[ -n "${cand_title[$active]:-}" ]]; then
     chosen="$active"
-    chosen_title="$(printf '%s\n' "$candidates" | awk -v a="$active" -F '\t' '$1==a{print $2; exit}')"
+    chosen_title="${cand_title[$active]}"
   else
-    local max_dec=-1
-    local max_wid=""
-    local max_title=""
-    while IFS=$'\t' read -r wid title; do
-      [[ -z "${wid:-}" ]] && continue
-      dec="$(printf "%d" "$wid" 2>/dev/null || echo -1)"
-      if [[ "$dec" -gt "$max_dec" ]]; then
-        max_dec="$dec"
-        max_wid="$wid"
-        max_title="$title"
+    # 2) Prefer top-most candidate in stacking order
+    local stack top=""
+    stack="$(get_stack_order)"
+    if [[ -n "${stack:-}" ]]; then
+      while IFS= read -r w; do
+        [[ -z "${w:-}" ]] && continue
+        if [[ -n "${cand_title[$w]:-}" ]]; then
+          top="$w"
+        fi
+      done <<< "$stack"
+      if [[ -n "${top:-}" ]]; then
+        chosen="$top"
+        chosen_title="${cand_title[$top]}"
       fi
-    done <<< "$candidates"
-    chosen="$max_wid"
-    chosen_title="$max_title"
+    fi
+
+    # 3) Fallback: highest numeric WID (old behavior)
+    if [[ -z "${chosen:-}" ]]; then
+      local max_dec=-1
+      local max_wid=""
+      local max_title=""
+      local dec
+      for w in "${!cand_title[@]}"; do
+        dec="$(printf "%d" "$w" 2>/dev/null || echo -1)"
+        if [[ "$dec" -gt "$max_dec" ]]; then
+          max_dec="$dec"
+          max_wid="$w"
+          max_title="${cand_title[$w]}"
+        fi
+      done
+      chosen="$max_wid"
+      chosen_title="$max_title"
+    fi
   fi
 
   if [[ -n "${chosen:-}" ]]; then
@@ -176,7 +216,8 @@ fi
 # 1) Intento directo
 WINS="$(get_wmctrl)"
 CANDIDATES="$(printf '%s\n' "$WINS" | list_candidates)"
-if [[ -z "${CANDIDATES:-}" ]] && [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
+# Si el include no matchea (p.ej. título del chat), caer a Chrome-only (excluyendo V.S.Code).
+if [[ -z "${CANDIDATES:-}" ]]; then
   WINS_LX="$(get_wmctrl_lx)"
   CANDIDATES="$(printf '%s\n' "$WINS_LX" | list_candidates_no_include)"
 fi
