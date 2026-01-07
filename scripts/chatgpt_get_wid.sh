@@ -22,6 +22,10 @@ get_wmctrl() {
   "$HOST_EXEC" 'wmctrl -l' 2>/dev/null || true
 }
 
+get_wmctrl_lx() {
+  "$HOST_EXEC" 'wmctrl -lx' 2>/dev/null || true
+}
+
 read_pin_wid() {
   local f="$1"
   local line wid=""
@@ -40,6 +44,16 @@ read_pin_wid() {
   return 1
 }
 
+write_pin() {
+  local wid="$1"
+  local title="$2"
+  mkdir -p "$(dirname "$PIN_FILE")"
+  {
+    echo "$wid"
+    echo "TITLE=$title"
+  } > "$PIN_FILE"
+}
+
 list_candidates() {
   awk -v inc="$TITLE_INCLUDE" -v exc="$TITLE_EXCLUDE" '
     {
@@ -47,6 +61,20 @@ list_candidates() {
       title="";
       for(i=4;i<=NF;i++){ title = title (i==4 ? "" : " ") $i }
       if(inc!="" && index(title,inc)==0) next;
+      if(exc!="" && index(title,exc)>0) next;
+      printf "%s\t%s\n", wid, title
+    }
+  '
+}
+
+list_candidates_no_include() {
+  awk -v exc="$TITLE_EXCLUDE" '
+    {
+      wid=$1;
+      klass=$3;
+      title="";
+      for(i=5;i<=NF;i++){ title = title (i==5 ? "" : " ") $i }
+      if(tolower(klass) !~ /chrome/) next;
       if(exc!="" && index(title,exc)>0) next;
       printf "%s\t%s\n", wid, title
     }
@@ -110,45 +138,48 @@ choose_wid() {
   fi
 }
 
+PIN_RECOVER_NEEDS_WRITE=0
+
 # Pin file handling (if present)
 if [[ -f "${PIN_FILE}" ]]; then
   PIN_WID="$(read_pin_wid "$PIN_FILE" || true)"
   if [[ -n "${PIN_WID:-}" ]]; then
     if ! wid_exists "$PIN_WID"; then
-      echo "PIN_INVALID=1" >&2
-      "$ROOT/scripts/chatgpt_unpin_wid.sh" >/dev/null 2>&1 || true
-      "$ROOT/scripts/chatgpt_pin_wid.sh" >/dev/null
-      PIN_WID="$(read_pin_wid "$PIN_FILE" || true)"
-      if [[ -z "${PIN_WID:-}" ]]; then
-        echo "ERROR: PIN_RECOVER_FAILED (empty pin)" >&2
+      echo "PIN_INVALID=1 old_wid=${PIN_WID}" >&2
+      PIN_RECOVER_NEEDS_WRITE=1
+      rm -f "$PIN_FILE" 2>/dev/null || true
+      PIN_WID=""
+    fi
+    if [[ -n "${PIN_WID:-}" ]]; then
+      TITLE_PIN="$(get_title_by_wid "$PIN_WID")"
+      PIN_TITLE_STORED="$(sed -n 's/^TITLE=//p' "$PIN_FILE" | head -n 1)"
+      pin_valid=0
+      if [[ -n "${TITLE_PIN:-}" ]] && [[ "${TITLE_PIN}" == *"${TITLE_INCLUDE}"* ]] && [[ "${TITLE_PIN}" != *"${TITLE_EXCLUDE}"* ]]; then
+        pin_valid=1
+      elif [[ -n "${PIN_TITLE_STORED:-}" ]] && [[ "${PIN_TITLE_STORED}" == *"${TITLE_INCLUDE}"* ]] && [[ "${PIN_TITLE_STORED}" != *"${TITLE_EXCLUDE}"* ]]; then
+        pin_valid=1
+      fi
+      if [[ "${pin_valid}" -eq 1 ]]; then
+        printf 'WID_CHOSEN=%s TITLE=%s\n' "$PIN_WID" "${TITLE_PIN:-$PIN_TITLE_STORED}" >&2
+        printf '%s\n' "$PIN_WID"
+        exit 0
+      fi
+      if [[ "${CHATGPT_WID_PIN_ONLY:-0}" -eq 1 ]]; then
+        echo "ERROR: PIN_INVALID WID=${PIN_WID} TITLE=${TITLE_PIN} PIN_TITLE=${PIN_TITLE_STORED}" >&2
         exit 3
       fi
-      echo "PIN_RECOVERED=1" >&2
+      echo "WARN: PIN_INVALID WID=${PIN_WID} TITLE=${TITLE_PIN} PIN_TITLE=${PIN_TITLE_STORED} (fallback)" >&2
     fi
-    TITLE_PIN="$(get_title_by_wid "$PIN_WID")"
-    PIN_TITLE_STORED="$(sed -n 's/^TITLE=//p' "$PIN_FILE" | head -n 1)"
-    pin_valid=0
-    if [[ -n "${TITLE_PIN:-}" ]] && [[ "${TITLE_PIN}" == *"${TITLE_INCLUDE}"* ]] && [[ "${TITLE_PIN}" != *"${TITLE_EXCLUDE}"* ]]; then
-      pin_valid=1
-    elif [[ -n "${PIN_TITLE_STORED:-}" ]] && [[ "${PIN_TITLE_STORED}" == *"${TITLE_INCLUDE}"* ]] && [[ "${PIN_TITLE_STORED}" != *"${TITLE_EXCLUDE}"* ]]; then
-      pin_valid=1
-    fi
-    if [[ "${pin_valid}" -eq 1 ]]; then
-      printf 'WID_CHOSEN=%s TITLE=%s\n' "$PIN_WID" "${TITLE_PIN:-$PIN_TITLE_STORED}" >&2
-      printf '%s\n' "$PIN_WID"
-      exit 0
-    fi
-    if [[ "${CHATGPT_WID_PIN_ONLY:-0}" -eq 1 ]]; then
-      echo "ERROR: PIN_INVALID WID=${PIN_WID} TITLE=${TITLE_PIN} PIN_TITLE=${PIN_TITLE_STORED}" >&2
-      exit 3
-    fi
-    echo "WARN: PIN_INVALID WID=${PIN_WID} TITLE=${TITLE_PIN} PIN_TITLE=${PIN_TITLE_STORED} (fallback)" >&2
   fi
 fi
 
 # 1) Intento directo
 WINS="$(get_wmctrl)"
 CANDIDATES="$(printf '%s\n' "$WINS" | list_candidates)"
+if [[ -z "${CANDIDATES:-}" ]] && [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
+  WINS_LX="$(get_wmctrl_lx)"
+  CANDIDATES="$(printf '%s\n' "$WINS_LX" | list_candidates_no_include)"
+fi
 WID="$(choose_wid "$CANDIDATES" "$(get_active_wid)")"
 
 # 2) Si no hay ventana ChatGPT, abrirla y esperar (si no está deshabilitado)
@@ -170,8 +201,30 @@ fi
 
 # 3) Resultado
 if [[ -z "${WID:-}" ]]; then
+  if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
+    "$ROOT/scripts/chatgpt_unpin_wid.sh" >/dev/null 2>&1 || true
+    "$ROOT/scripts/chatgpt_pin_wid.sh" >/dev/null
+    WID="$(read_pin_wid "$PIN_FILE" || true)"
+    if [[ -n "${WID:-}" ]]; then
+      echo "PIN_RECOVERED=1 new_wid=${WID}" >&2
+      PIN_RECOVER_NEEDS_WRITE=0
+    fi
+  fi
+fi
+
+if [[ -z "${WID:-}" ]]; then
   echo "ERROR: no encuentro ventana ChatGPT (título no contiene '${TITLE_INCLUDE}'). Abrí ChatGPT en Chrome y reintentá." >&2
   exit 3
+fi
+
+if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
+  TITLE_RECOVER="$(get_title_by_wid "$WID")"
+  PIN_TITLE="$TITLE_RECOVER"
+  if [[ -n "${TITLE_INCLUDE:-}" ]] && [[ "${TITLE_RECOVER}" != *"${TITLE_INCLUDE}"* ]]; then
+    PIN_TITLE="$TITLE_INCLUDE"
+  fi
+  write_pin "$WID" "$PIN_TITLE"
+  echo "PIN_RECOVERED=1 new_wid=${WID}" >&2
 fi
 
 printf '%s\n' "$WID"

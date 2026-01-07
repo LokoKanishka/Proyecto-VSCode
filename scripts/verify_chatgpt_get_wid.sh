@@ -42,7 +42,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   fi
 done
 
-if [[ "${LUCY_REQUIRE_FOCUS:-0}" -eq 1 ]]; then
+if [[ "${LUCY_SKIP_RECOVERY_TEST:-0}" -ne 1 ]]; then
   TMP_PIN="$(mktemp /tmp/lucy_chatgpt_pin_fake.XXXX.txt)"
   RECOVER_ERR="$(mktemp /tmp/verify_chatgpt_get_wid_recover_err.XXXX.txt)"
   cleanup_pin() {
@@ -54,10 +54,16 @@ if [[ "${LUCY_REQUIRE_FOCUS:-0}" -eq 1 ]]; then
   printf '0xDEADBEEF\nTITLE=Fake\n' > "$TMP_PIN"
   export CHATGPT_WID_PIN_FILE="$TMP_PIN"
 
-  RECOVER_WID="$($GET_WID 2> "$RECOVER_ERR")"
+  RECOVER_WID="$($GET_WID 2> "$RECOVER_ERR" || true)"
+  cat "$RECOVER_ERR" >&2 || true
 
   if ! check_wid "${RECOVER_WID}"; then
     echo "ERROR: invalid recovered WID format: ${RECOVER_WID}" >&2
+    cat "$RECOVER_ERR" >&2 || true
+    exit 1
+  fi
+  if ! grep -q 'PIN_INVALID=1' "$RECOVER_ERR"; then
+    echo "ERROR: missing PIN_INVALID=1 in stderr" >&2
     cat "$RECOVER_ERR" >&2 || true
     exit 1
   fi
