@@ -11,6 +11,21 @@ say() {
 say "A3 BASELINE"
 ./scripts/verify_a3_all.sh
 
+PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin}"
+if [[ -f "${PIN_FILE}" ]]; then
+  export CHATGPT_WID_PIN_ONLY=1
+  echo "PIN_FILE=${PIN_FILE}"
+  pin_wid="$(head -n 1 "${PIN_FILE}" | sed -n 's/.*\(0x[0-9a-fA-F]\+\).*/\1/p' | head -n 1)"
+  if [[ -n "${pin_wid:-}" ]]; then
+    echo "PIN_WID=${pin_wid}"
+    wins_pin="$(./scripts/x11_host_exec.sh 'wmctrl -l' 2>/dev/null || true)"
+    title_pin="$(awk -v w="$pin_wid" '$1==w { $1=""; $2=""; $3=""; sub(/^ +/, ""); print; exit }' <<< "$wins_pin")"
+    if [[ -n "${title_pin:-}" ]]; then
+      echo "PIN_TITLE=${title_pin}"
+    fi
+  fi
+fi
+
 say "WID VERIFY"
 ./scripts/verify_chatgpt_get_wid.sh
 

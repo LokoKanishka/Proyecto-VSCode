@@ -8,6 +8,9 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
+PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin}"
+TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
+TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-V.S.Code}"
 
 # Si ya está forzado por env, respetarlo.
 if [[ -n "${CHATGPT_WID_HEX:-}" ]]; then
@@ -17,6 +20,24 @@ fi
 
 get_wmctrl() {
   "$HOST_EXEC" 'wmctrl -l' 2>/dev/null || true
+}
+
+read_pin_wid() {
+  local f="$1"
+  local line wid=""
+  [[ -f "$f" ]] || return 1
+  while IFS= read -r line; do
+    [[ -z "${line}" ]] && continue
+    if [[ "$line" =~ (0x[0-9a-fA-F]+) ]]; then
+      wid="${BASH_REMATCH[1]}"
+      break
+    fi
+  done < "$f"
+  if [[ -n "${wid:-}" ]]; then
+    printf '%s\n' "$wid"
+    return 0
+  fi
+  return 1
 }
 
 list_candidates() {
@@ -33,8 +54,19 @@ list_candidates() {
 }
 
 get_active_wid() {
-  "$HOST_EXEC" 'xprop -root _NET_ACTIVE_WINDOW' 2>/dev/null \
-    | sed -n 's/.*\(0x[0-9a-fA-F]\+\).*/\1/p' | head -n 1
+  local raw
+  raw="$("$HOST_EXEC" 'xprop -root _NET_ACTIVE_WINDOW' 2>/dev/null \
+    | sed -n 's/.*\(0x[0-9a-fA-F]\+\).*/\1/p' | head -n 1)"
+  if [[ -n "${raw:-}" ]]; then
+    printf '0x%08x\n' "$((raw))"
+  fi
+}
+
+get_title_by_wid() {
+  local wid="$1"
+  local wins
+  wins="$(get_wmctrl)"
+  awk -v w="$wid" '$1==w { $1=""; $2=""; $3=""; sub(/^ +/, ""); print; exit }' <<< "$wins"
 }
 
 choose_wid() {
@@ -69,8 +101,30 @@ choose_wid() {
   fi
 }
 
-TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
-TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-V.S.Code}"
+# Pin file handling (if present)
+if [[ -f "${PIN_FILE}" ]]; then
+  PIN_WID="$(read_pin_wid "$PIN_FILE" || true)"
+  if [[ -n "${PIN_WID:-}" ]]; then
+    TITLE_PIN="$(get_title_by_wid "$PIN_WID")"
+    PIN_TITLE_STORED="$(sed -n 's/^TITLE=//p' "$PIN_FILE" | head -n 1)"
+    pin_valid=0
+    if [[ -n "${TITLE_PIN:-}" ]] && [[ "${TITLE_PIN}" == *"${TITLE_INCLUDE}"* ]] && [[ "${TITLE_PIN}" != *"${TITLE_EXCLUDE}"* ]]; then
+      pin_valid=1
+    elif [[ -n "${PIN_TITLE_STORED:-}" ]] && [[ "${PIN_TITLE_STORED}" == *"${TITLE_INCLUDE}"* ]] && [[ "${PIN_TITLE_STORED}" != *"${TITLE_EXCLUDE}"* ]]; then
+      pin_valid=1
+    fi
+    if [[ "${pin_valid}" -eq 1 ]]; then
+      printf 'WID_CHOSEN=%s TITLE=%s\n' "$PIN_WID" "${TITLE_PIN:-$PIN_TITLE_STORED}" >&2
+      printf '%s\n' "$PIN_WID"
+      exit 0
+    fi
+    if [[ "${CHATGPT_WID_PIN_ONLY:-0}" -eq 1 ]]; then
+      echo "ERROR: PIN_INVALID WID=${PIN_WID} TITLE=${TITLE_PIN} PIN_TITLE=${PIN_TITLE_STORED}" >&2
+      exit 3
+    fi
+    echo "WARN: PIN_INVALID WID=${PIN_WID} TITLE=${TITLE_PIN} PIN_TITLE=${PIN_TITLE_STORED} (fallback)" >&2
+  fi
+fi
 
 # 1) Intento directo
 WINS="$(get_wmctrl)"
