@@ -51,6 +51,8 @@ def ask_raw(prompt: str, timeout_sec: int = 180, retries: int = 2) -> dict:
     env = os.environ.copy()
     env["LUCY_CHATGPT_TIMEOUT_SEC"] = str(timeout_sec)
     env["LUCY_CHATGPT_RETRIES"] = str(retries)
+    if "CHATGPT_WID_HEX" not in env and "LUCY_CHATGPT_WID_HEX" in env:
+        env["CHATGPT_WID_HEX"] = env["LUCY_CHATGPT_WID_HEX"]
 
     completed = subprocess.run(
         [str(ASK_SCRIPT), prompt],

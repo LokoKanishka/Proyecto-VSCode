@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import List, Optional
 from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
 
+from lucy_agents.chatgpt_bridge import ask_raw
 from lucy_agents.desktop_bridge import run_desktop_command
 from lucy_web_agent import find_youtube_video_url
 
@@ -130,77 +131,25 @@ def _extract_chatgpt_answer(raw: str) -> str | None:
 
 
 def _ask_chatgpt_ui(question: str) -> tuple[bool, str]:
-    ask_script = _repo_root() / "scripts" / "chatgpt_ui_ask_x11.sh"
-    runner = _repo_root() / "scripts" / "x11_host_exec.sh"
-
-    if not ask_script.exists():
-        return True, "No encontré el script de UI para ChatGPT."
-
     ask_timeout = _env_int("LUCY_CHATGPT_ASK_TIMEOUT", 75)
     if ask_timeout <= 0:
         ask_timeout = 75
-
-    env = os.environ.copy()
-    # Compatibilidad: algunos scripts miran ASK_TIMEOUT, otros CHATGPT_TIMEOUT_SEC
-    env["ASK_TIMEOUT"] = str(ask_timeout)
-    env["CHATGPT_TIMEOUT_SEC"] = str(ask_timeout)
-
-    # Permite fijar WID desde config si lo necesitás
-    wid = env.get("LUCY_CHATGPT_WID_HEX")
-    if wid and not env.get("CHATGPT_WID_HEX"):
-        env["CHATGPT_WID_HEX"] = wid
-
-    # Auto: si no hay WID explícito, lo resolvemos con el selector seguro (solo ventana PUENTE).
-    if not env.get("CHATGPT_WID_HEX"):
-        get_wid = _repo_root() / "scripts" / "chatgpt_get_wid.sh"
-        if get_wid.exists():
-            get_cmd = [str(get_wid)]
-            if runner.exists():
-                get_cmd = [str(runner), str(get_wid)]
-            try:
-                gw = subprocess.run(
-                    get_cmd,
-                    text=True,
-                    capture_output=True,
-                    env=env,
-                    timeout=10,
-                )
-                if gw.returncode == 0:
-                    w = (gw.stdout or "").strip().splitlines()[-1].strip() if (gw.stdout or "").strip() else ""
-                    if w:
-                        env["CHATGPT_WID_HEX"] = w
-                else:
-                    err = (gw.stderr or gw.stdout or "").strip()
-                    if err:
-                        print(f"[LucyVoiceActions] chatgpt_get_wid.sh falló: {err}", flush=True)
-                    return True, "No encontré la ventana puente de ChatGPT (chatgpt.com.*). Abrila y reintentá."
-            except Exception as exc:  # noqa: BLE001
-                return True, f"No pude resolver el WID de ChatGPT ({exc})."
-
-    cmd = [str(ask_script), question]
-    if runner.exists():
-        cmd = [str(runner), str(ask_script), question]
+    ask_retries = _env_int("LUCY_CHATGPT_RETRIES", 2)
+    if ask_retries < 0:
+        ask_retries = 0
 
     try:
-        completed = subprocess.run(
-            cmd,
-            text=True,
-            capture_output=True,
-            env=env,
-            timeout=ask_timeout + 20,
-        )
-    except subprocess.TimeoutExpired:
-        return True, "Timeout esperando respuesta de ChatGPT."
-    except Exception as exc:  # noqa: BLE001
+        result = ask_raw(question, timeout_sec=ask_timeout, retries=ask_retries)
+    except RuntimeError as exc:
         return True, f"No pude ejecutar ChatGPT UI ({exc})."
 
-    answer = _extract_chatgpt_answer(completed.stdout)
+    answer = (result.get("answer_text") or "").strip()
     if answer:
         return True, answer
 
-    stderr = (completed.stderr or "").strip()
-    if stderr:
-        print(f"[LucyVoiceActions] ChatGPT UI stderr: {stderr}", flush=True)
+    forensics_dir = result.get("forensics_dir")
+    if forensics_dir:
+        print(f"[LucyVoiceActions] ChatGPT bridge forensics: {forensics_dir}", flush=True)
     return True, "No pude leer la respuesta de ChatGPT."
 
 
