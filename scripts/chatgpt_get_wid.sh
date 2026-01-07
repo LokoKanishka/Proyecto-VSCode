@@ -69,6 +69,15 @@ get_title_by_wid() {
   awk -v w="$wid" '$1==w { $1=""; $2=""; $3=""; sub(/^ +/, ""); print; exit }' <<< "$wins"
 }
 
+wid_exists() {
+  local wid="$1"
+  [[ -n "${wid:-}" ]] || return 1
+  if "$HOST_EXEC" "xdotool getwindowname ${wid}" >/dev/null 2>&1; then
+    return 0
+  fi
+  "$HOST_EXEC" "wmctrl -l | awk '{print \\$1}' | grep -Fxq \"${wid}\"" >/dev/null 2>&1
+}
+
 choose_wid() {
   local candidates="$1"
   local active="$2"
@@ -105,6 +114,17 @@ choose_wid() {
 if [[ -f "${PIN_FILE}" ]]; then
   PIN_WID="$(read_pin_wid "$PIN_FILE" || true)"
   if [[ -n "${PIN_WID:-}" ]]; then
+    if ! wid_exists "$PIN_WID"; then
+      echo "PIN_INVALID=1" >&2
+      "$ROOT/scripts/chatgpt_unpin_wid.sh" >/dev/null 2>&1 || true
+      "$ROOT/scripts/chatgpt_pin_wid.sh" >/dev/null
+      PIN_WID="$(read_pin_wid "$PIN_FILE" || true)"
+      if [[ -z "${PIN_WID:-}" ]]; then
+        echo "ERROR: PIN_RECOVER_FAILED (empty pin)" >&2
+        exit 3
+      fi
+      echo "PIN_RECOVERED=1" >&2
+    fi
     TITLE_PIN="$(get_title_by_wid "$PIN_WID")"
     PIN_TITLE_STORED="$(sed -n 's/^TITLE=//p' "$PIN_FILE" | head -n 1)"
     pin_valid=0
