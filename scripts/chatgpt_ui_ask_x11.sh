@@ -134,36 +134,54 @@ MAX_POLLS=$(( TIMEOUT_SEC / POLL_SEC ))
 if [[ "$MAX_POLLS" -lt 5 ]]; then MAX_POLLS=5; fi
 
 # --- A3_12_WATCHDOG ---
-# Si no aparece respuesta tras N polls, hacemos “nudge” (foco + End + click panel).
-# Si sigue sin aparecer, hacemos refresh (Ctrl+R) una vez.
-NUDGE_AT="${CHATGPT_ASK_NUDGE_AT:-18}"      # ~36s si POLL_SEC=2
+# Watchdog escalonado con trazas (NUDGE_1 -> NUDGE_2 -> RELOAD -> RESEND).
+NUDGE_AT="${CHATGPT_ASK_NUDGE_AT:-18}"      # ~36s si POLL_SEC=2 (fallback TIMEOUT)
+# RELOAD_AT queda como fallback externo si se requiere en el futuro
 RELOAD_AT="${CHATGPT_ASK_RELOAD_AT:-35}"    # ~70s si POLL_SEC=2
-DID_NUDGE=0
-DID_RELOAD=0
+WATCHDOG_ACTIVE=0
+WATCHDOG_REASON=""
+WATCHDOG_LAST_STEP=""
+WATCHDOG_WAIT=0
 
 # --- A3_12_RESEND_AFTER_RELOAD ---
 # Si el backend web queda colgado (intermitente), tras reload re-enviamos el mismo MSG y seguimos esperando.
 RESEND_AFTER_RELOAD="${CHATGPT_ASK_RESEND_AFTER_RELOAD:-1}"
 # --- /A3_12_RESEND_AFTER_RELOAD ---
 
-nudge_ui() {
+nudge_input() {
   # Best-effort: no debe matar el ask si falla
   python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
+  # click en zona input (abajo-centro)
+  python3 -u "$DISP" click "$WID" "0.55" "0.92" >/dev/null 2>/dev/null || true
   python3 -u "$DISP" send_keys "$WID" "End" >/dev/null 2>/dev/null || true
-  # click al centro del panel (suele devolver foco a la conversación)
-  python3 -u "$DISP" click "$WID" "0.55" "0.50" >/dev/null 2>/dev/null || true
+  sleep 0.3
+}
+
+nudge_scroll() {
+  python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
+  python3 -u "$DISP" send_keys "$WID" "Page_Down" >/dev/null 2>/dev/null || true
+  python3 -u "$DISP" send_keys "$WID" "Page_Up" >/dev/null 2>/dev/null || true
+  sleep 0.3
 }
 
 reload_ui() {
   # Ctrl+R (si la pestaña quedó colgada, esto suele destrabar)
   python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
   python3 -u "$DISP" send_keys "$WID" "ctrl+r" >/dev/null 2>/dev/null || true
-  sleep 6
+  sleep 2.0
+}
+
+resend_msg() {
+  if [[ "${RESEND_AFTER_RELOAD:-1}" -eq 1 ]]; then
+    "$SEND" "$MSG" >/dev/null 2>/dev/null || true
+    sleep 0.9
+  fi
 }
 # --- /A3_12_WATCHDOG ---
 
 i=0
 stall_count=0
+stall_start_ms=0
 prev_copy_bytes=0
 prev_copy_sha=""
 prev_shot_sha=""
@@ -175,6 +193,61 @@ hash_file() {
     return 0
   fi
   cksum "$f" | awk '{print $1}'
+}
+
+now_ms() {
+  local ms
+  ms="$(date +%s%3N 2>/dev/null || true)"
+  if ! [[ "${ms}" =~ ^[0-9]+$ ]]; then
+    ms=$(( $(date +%s) * 1000 ))
+  fi
+  printf '%s' "${ms}"
+}
+
+START_MS="$(now_ms)"
+
+watchdog_t_ms() {
+  local now
+  now="$(now_ms)"
+  printf '%s' "$(( now - START_MS ))"
+}
+
+watchdog_step() {
+  local step="$1"
+  printf 'WATCHDOG_STEP=%s t_ms=%s\n' "$step" "$(watchdog_t_ms)" >&2
+  case "$step" in
+    NUDGE_1)
+      nudge_input
+      WATCHDOG_LAST_STEP="NUDGE_1"
+      WATCHDOG_WAIT=1
+      ;;
+    NUDGE_2)
+      nudge_scroll
+      WATCHDOG_LAST_STEP="NUDGE_2"
+      WATCHDOG_WAIT=1
+      ;;
+    RELOAD)
+      reload_ui
+      WATCHDOG_LAST_STEP="RELOAD"
+      WATCHDOG_WAIT=0
+      ;;
+    RESEND)
+      resend_msg
+      WATCHDOG_LAST_STEP="RESEND"
+      WATCHDOG_ACTIVE=0
+      ;;
+  esac
+}
+
+watchdog_start() {
+  local reason="$1"
+  if [[ "${WATCHDOG_ACTIVE}" -eq 1 ]]; then
+    return 0
+  fi
+  WATCHDOG_ACTIVE=1
+  WATCHDOG_REASON="$reason"
+  printf 'WATCHDOG_REASON=%s t_ms=%s\n' "$reason" "$(watchdog_t_ms)" >&2
+  watchdog_step "NUDGE_1"
 }
 
 for _ in $(seq 1 "$MAX_POLLS"); do
@@ -197,20 +270,59 @@ for _ in $(seq 1 "$MAX_POLLS"); do
     progress=1
   fi
 
+  poll_ms="$(now_ms)"
   if [[ "${progress}" -eq 1 ]]; then
     stall_count=0
+    stall_start_ms=0
   else
     stall_count=$((stall_count + 1))
+    if [[ "${stall_start_ms}" -eq 0 ]]; then
+      stall_start_ms="${poll_ms}"
+    fi
   fi
 
   printf 'POLL i=%s copy_bytes=%s copy_sha=%s shot_sha=%s progress=%s stall=%s\n' \
     "$i" "$copy_bytes" "$copy_sha" "$shot_sha" "$progress" "$stall_count" >&2
 
-  if [[ "${stall_count}" -eq "${STALL_POLLS}" ]]; then
+  if [[ "${WATCHDOG_ACTIVE}" -eq 1 ]] && [[ "${progress}" -eq 1 ]] && \
+     [[ "${WATCHDOG_LAST_STEP}" == "NUDGE_1" || "${WATCHDOG_LAST_STEP}" == "NUDGE_2" ]]; then
+    printf 'WATCHDOG_ABORTED step=%s reason=PROGRESS_RETURNED\n' "$WATCHDOG_LAST_STEP" >&2
+    WATCHDOG_ACTIVE=0
+    WATCHDOG_REASON=""
+    WATCHDOG_LAST_STEP=""
+    WATCHDOG_WAIT=0
+  fi
+
+  watchdog_skip_decrement=0
+  stall_elapsed_ms=0
+  if [[ "${stall_start_ms}" -gt 0 ]]; then
+    stall_elapsed_ms=$(( poll_ms - stall_start_ms ))
+  fi
+  stall_ms_threshold=$(( STALL_POLLS * POLL_SEC * 1000 ))
+  if [[ "${stall_count}" -ge "${STALL_POLLS}" ]] || [[ "${stall_elapsed_ms}" -ge "${stall_ms_threshold}" ]]; then
     printf 'STALL_DETECTED polls=%s seconds=%s\n' "$stall_count" "$((stall_count * POLL_SEC))" >&2
-    if [[ "${DID_NUDGE}" -ne 1 ]]; then
-      DID_NUDGE=1
-      nudge_ui
+    if [[ "${WATCHDOG_ACTIVE}" -ne 1 ]]; then
+      watchdog_start "STALL"
+      watchdog_skip_decrement=1
+    fi
+  fi
+
+  if [[ "${WATCHDOG_ACTIVE}" -ne 1 ]] && [[ "$i" -eq "$NUDGE_AT" ]] && [[ "${progress}" -eq 0 ]]; then
+    watchdog_start "TIMEOUT"
+    watchdog_skip_decrement=1
+  fi
+
+  if [[ "${WATCHDOG_ACTIVE}" -eq 1 ]]; then
+    if [[ "${WATCHDOG_WAIT}" -gt 0 ]] && [[ "${watchdog_skip_decrement}" -eq 0 ]]; then
+      WATCHDOG_WAIT=$((WATCHDOG_WAIT - 1))
+    fi
+    if [[ "${WATCHDOG_WAIT}" -eq 0 ]] && [[ "${progress}" -eq 0 ]]; then
+      if [[ "${WATCHDOG_LAST_STEP}" == "NUDGE_1" ]]; then
+        watchdog_step "NUDGE_2"
+      elif [[ "${WATCHDOG_LAST_STEP}" == "NUDGE_2" ]]; then
+        watchdog_step "RELOAD"
+        watchdog_step "RESEND"
+      fi
     fi
   fi
 
@@ -222,20 +334,6 @@ for _ in $(seq 1 "$MAX_POLLS"); do
   if [[ -n "${line:-}" ]]; then
     printf '%s\n' "$line"
     exit 0
-  fi
-  if [[ "$i" -eq "$NUDGE_AT" ]] && [[ "${DID_NUDGE}" -ne 1 ]]; then
-    DID_NUDGE=1
-    nudge_ui
-  fi
-  if [[ "$i" -eq "$RELOAD_AT" ]] && [[ "$DID_RELOAD" -ne 1 ]]; then
-    DID_RELOAD=1
-    reload_ui
-
-    # Re-enviar el mismo mensaje (mismo token) si está habilitado
-    if [[ "${RESEND_AFTER_RELOAD:-1}" -eq 1 ]]; then
-      "$SEND" "$MSG" >/dev/null 2>/dev/null || true
-      sleep 0.9
-    fi
   fi
   sleep "$POLL_SEC"
 done
