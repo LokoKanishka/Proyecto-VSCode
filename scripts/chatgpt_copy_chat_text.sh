@@ -96,16 +96,47 @@ fi
 copy_text="$(printf '%s\n' "$out" | sed '/^__LUCY_COPY_META__/d')"
 
 raw_tmp="$(mktemp /tmp/lucy_copy_raw.XXXX.txt)"
+pre_tmp="$(mktemp /tmp/lucy_copy_pre.XXXX.txt)"
 norm_tmp="$(mktemp /tmp/lucy_copy_norm.XXXX.txt)"
 counts_tmp="$(mktemp /tmp/lucy_copy_counts.XXXX.txt)"
 cleanup() {
-  rm -f "$raw_tmp" "$norm_tmp" "$counts_tmp" 2>/dev/null || true
+  rm -f "$raw_tmp" "$pre_tmp" "$norm_tmp" "$counts_tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
 
 printf '%s' "$copy_text" > "$raw_tmp"
 before_bytes="$(wc -c < "$raw_tmp" 2>/dev/null || echo 0)"
 : > "$counts_tmp"
+
+python3 - "$raw_tmp" "$pre_tmp" "$counts_tmp" <<'PY'
+import sys
+
+raw_path, out_path, counts_path = sys.argv[1], sys.argv[2], sys.argv[3]
+phrases = [
+    ("SUBSTR_DROP_NOFILE", "Ningún archivo seleccionado"),
+    ("SUBSTR_DROP_DISCLAIMER", "ChatGPT puede cometer errores. Comprueba la información importante."),
+    ("SUBSTR_DROP_SKIP", "Saltar al contenido"),
+    ("SUBSTR_DROP_HISTORY", "Historial del chat"),
+]
+
+try:
+    text = open(raw_path, encoding="utf-8", errors="replace").read()
+except Exception:
+    text = ""
+
+counts = {}
+for key, phrase in phrases:
+    counts[key] = text.count(phrase)
+    if counts[key]:
+        text = text.replace(phrase, "")
+
+with open(out_path, "w", encoding="utf-8") as f:
+    f.write(text)
+
+with open(counts_path, "a", encoding="utf-8") as f:
+    for key, val in counts.items():
+        f.write(f"{key}={val}\n")
+PY
 
 awk -v counts="$counts_tmp" '
 BEGIN {
@@ -131,11 +162,11 @@ BEGIN {
   prev=line
 }
 END {
-  print "DEDUPE_DROPPED=" dedupe > counts
-  print "FILTER_DROPPED=" filter > counts
-  print "BLANKS_COLLAPSED=" blanks_collapsed > counts
+  print "DEDUPE_DROPPED=" dedupe >> counts
+  print "FILTER_DROPPED=" filter >> counts
+  print "BLANKS_COLLAPSED=" blanks_collapsed >> counts
 }
-' "$raw_tmp" > "$norm_tmp"
+' "$pre_tmp" > "$norm_tmp"
 
 after_bytes="$(wc -c < "$norm_tmp" 2>/dev/null || echo 0)"
 printf 'COPY_NORM_BEFORE_BYTES=%s COPY_NORM_AFTER_BYTES=%s\n' "$before_bytes" "$after_bytes" >&2
