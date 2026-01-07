@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from lucy_agents.chatgpt_bridge import ask_raw
 from lucy_agents.chatgpt_client import request as chatgpt_service_request
+from lucy_agents.forensics_summary import summarize_forensics
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -122,6 +123,12 @@ def run_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "result": payload, "meta": {"path": "LOCAL"}}
     if action == "chatgpt_ask":
         return _chatgpt_action(payload)
+    if action == "summarize_forense":
+        dir_path = payload.get("dir") if isinstance(payload, dict) else None
+        if not dir_path:
+            return {"ok": False, "error": "missing dir", "meta": {"path": "LOCAL"}}
+        summary = summarize_forensics(str(dir_path))
+        return {"ok": True, "result": summary, "meta": {"path": "LOCAL"}}
     return {"ok": False, "error": f"unknown action: {action}", "meta": {"path": "LOCAL"}}
 
 
