@@ -13,6 +13,27 @@ from lucy_agents.chatgpt_bridge import ask_raw
 from lucy_agents.chatgpt_client import request as chatgpt_service_request
 from lucy_agents.forensics_summary import summarize_forensics
 
+ACTION_SPECS: dict[str, dict[str, Any]] = {
+    "chatgpt_ask": {
+        "payload": {"required": ["prompt"], "optional": ["timeout_sec", "use_service"]},
+        "returns": {"answer_text": "str", "answer_line": "str|None"},
+        "path": "SERVICE|DIRECT_FALLBACK",
+        "notes": "uses ChatGPT UI bridge",
+    },
+    "echo": {
+        "payload": {"required": [], "optional": ["..."]},
+        "returns": "payload passthrough",
+        "path": "LOCAL",
+        "notes": "sanity/offline",
+    },
+    "summarize_forense": {
+        "payload": {"required": ["dir"], "optional": []},
+        "returns": "forensics summary dict",
+        "path": "LOCAL",
+        "notes": "offline parser",
+    },
+}
+
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
@@ -134,13 +155,32 @@ def run_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Lucy action router")
-    parser.add_argument("action", help="Action name")
-    parser.add_argument("payload", help="JSON payload for the action")
+    parser.add_argument("--list", action="store_true", dest="list_actions")
+    parser.add_argument("--describe", dest="describe_action")
+    parser.add_argument("action", nargs="?", help="Action name")
+    parser.add_argument("payload", nargs="?", help="JSON payload for the action")
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = _parse_args(argv)
+    if args.list_actions:
+        for name in sorted(ACTION_SPECS.keys()):
+            print(name)
+        return 0
+
+    if args.describe_action:
+        spec = ACTION_SPECS.get(args.describe_action)
+        if not spec:
+            print(f"ERROR: unknown action: {args.describe_action}", file=sys.stderr)
+            return 2
+        print(json.dumps(spec, ensure_ascii=False, separators=(",", ":")))
+        return 0
+
+    if not args.action or args.payload is None:
+        print("ERROR: missing action or payload", file=sys.stderr)
+        return 2
+
     try:
         payload = json.loads(args.payload)
     except json.JSONDecodeError as exc:
