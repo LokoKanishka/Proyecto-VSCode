@@ -20,6 +20,13 @@ echo "PIN_OK WID=${WID}"
 
 SERVICE="lucy-chatgpt-service.service"
 if command -v systemctl >/dev/null 2>&1; then
+  if systemctl --user cat "${SERVICE}" >/dev/null 2>&1; then
+    echo "SERVICE_INSTALLED=1"
+    service_installed=1
+  else
+    echo "SERVICE_INSTALLED=0"
+    service_installed=0
+  fi
   if systemctl --user is-enabled --quiet "${SERVICE}"; then
     echo "SERVICE_ENABLED=1"
   else
@@ -29,6 +36,22 @@ if command -v systemctl >/dev/null 2>&1; then
     echo "SERVICE_ACTIVE=1"
   else
     echo "SERVICE_ACTIVE=0"
+  fi
+  if [[ "${LUCY_CHATGPT_SERVICE_AUTOSTART:-0}" -eq 1 ]]; then
+    echo "SERVICE_AUTOSTART=1"
+    if [[ "${service_installed:-0}" -eq 1 ]] && ! systemctl --user is-active --quiet "${SERVICE}"; then
+      if systemctl --user start "${SERVICE}"; then
+        if systemctl --user is-active --quiet "${SERVICE}"; then
+          echo "SERVICE_AUTOSTART_RESULT=started"
+        else
+          echo "SERVICE_AUTOSTART_RESULT=failed"
+        fi
+      else
+        echo "SERVICE_AUTOSTART_RESULT=failed"
+      fi
+    else
+      echo "SERVICE_AUTOSTART_RESULT=noop"
+    fi
   fi
 else
   echo "SYSTEMCTL_MISSING=1"
