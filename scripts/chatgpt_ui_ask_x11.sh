@@ -47,34 +47,35 @@ resolve_wid() {
     return 0
   fi
 
-  # 3) hard fallback: host_exec + filtro por título
-  if [[ -x "$HOST_EXEC" ]]; then
-    "$HOST_EXEC" 'wmctrl -lx' 2>/dev/null \
-    | awk '
-      BEGIN{best=""; bestScore=-1}
-      {
-        wid=$1; cls=$3;
-        title="";
-        for(i=4;i<=NF;i++){ title=title (i==4?"":" ") $i }
-        if(cls!="google-chrome.Google-chrome") next;
-        if(index(title,"ChatGPT")==0) next;
-        if(index(title,"V.S.Code")>0) next;
-        score=10;
-        if(index(title,"ChatGPT - Google Chrome")>0) score=90;
-        if(score>bestScore){bestScore=score; best=wid}
-      }
-      END{print best}
-    ' | head -n 1
-    return 0
-  fi
-
   return 0
+}
+
+get_wid_title() {
+  local wid="$1"
+  if [[ -x "$HOST_EXEC" ]]; then
+    "$HOST_EXEC" "wmctrl -l | awk '\$1==\"${wid}\" { \$1=\"\"; \$2=\"\"; \$3=\"\"; sub(/^ +/, \"\"); print; exit }'" 2>/dev/null || true
+  fi
 }
 
 WID="$(resolve_wid || true)"
 if [[ -z "${WID:-}" ]]; then
+  "$ENSURE" >/dev/null 2>&1 || true
+  WID="$(resolve_wid || true)"
+fi
+if [[ -z "${WID:-}" ]]; then
   echo "ERROR: no pude resolver CHATGPT_WID_HEX" >&2
   exit 3
+fi
+
+TITLE="$(get_wid_title "$WID")"
+if [[ "${TITLE}" == *"V.S.Code"* ]]; then
+  "$ENSURE" >/dev/null 2>&1 || true
+  WID="$(resolve_wid || true)"
+  TITLE="$(get_wid_title "$WID")"
+  if [[ "${TITLE}" == *"V.S.Code"* ]]; then
+    echo "ERROR: BAD_WID_VSCODE WID=${WID} TITLE=${TITLE}" >&2
+    exit 3
+  fi
 fi
 export CHATGPT_WID_HEX="$WID"
 
@@ -127,7 +128,8 @@ fi
 
 # 2) Esperar respuesta
 TIMEOUT_SEC="${CHATGPT_ASK_TIMEOUT_SEC:-90}"
-POLL_SEC=2
+POLL_SEC="${POLL_SEC:-2}"
+STALL_POLLS="${STALL_POLLS:-12}"
 MAX_POLLS=$(( TIMEOUT_SEC / POLL_SEC ))
 if [[ "$MAX_POLLS" -lt 5 ]]; then MAX_POLLS=5; fi
 
@@ -136,6 +138,7 @@ if [[ "$MAX_POLLS" -lt 5 ]]; then MAX_POLLS=5; fi
 # Si sigue sin aparecer, hacemos refresh (Ctrl+R) una vez.
 NUDGE_AT="${CHATGPT_ASK_NUDGE_AT:-18}"      # ~36s si POLL_SEC=2
 RELOAD_AT="${CHATGPT_ASK_RELOAD_AT:-35}"    # ~70s si POLL_SEC=2
+DID_NUDGE=0
 DID_RELOAD=0
 
 # --- A3_12_RESEND_AFTER_RELOAD ---
@@ -160,15 +163,68 @@ reload_ui() {
 # --- /A3_12_WATCHDOG ---
 
 i=0
+stall_count=0
+prev_copy_bytes=0
+prev_copy_sha=""
+prev_shot_sha=""
+
+hash_file() {
+  local f="$1"
+  if command -v sha1sum >/dev/null 2>&1; then
+    sha1sum "$f" | awk '{print $1}'
+    return 0
+  fi
+  cksum "$f" | awk '{print $1}'
+}
+
 for _ in $(seq 1 "$MAX_POLLS"); do
   i=$((i+1))
   copy_chat_to "$TMP"
+  copy_bytes="$(wc -c < "$TMP" 2>/dev/null || echo 0)"
+  copy_sha="NA"
+  if [[ -f "$TMP" ]]; then
+    copy_sha="$(hash_file "$TMP" 2>/dev/null || echo NA)"
+  fi
+  shot_sha="NA"
+  progress=0
+  if [[ -z "${prev_copy_sha}" ]]; then
+    progress=1
+  elif [[ "${copy_sha}" != "${prev_copy_sha}" ]]; then
+    progress=1
+  elif [[ $(( copy_bytes - prev_copy_bytes )) -ge 20 ]]; then
+    progress=1
+  elif [[ "${shot_sha}" != "NA" ]] && [[ -n "${prev_shot_sha}" ]] && [[ "${shot_sha}" != "${prev_shot_sha}" ]]; then
+    progress=1
+  fi
+
+  if [[ "${progress}" -eq 1 ]]; then
+    stall_count=0
+  else
+    stall_count=$((stall_count + 1))
+  fi
+
+  printf 'POLL i=%s copy_bytes=%s copy_sha=%s shot_sha=%s progress=%s stall=%s\n' \
+    "$i" "$copy_bytes" "$copy_sha" "$shot_sha" "$progress" "$stall_count" >&2
+
+  if [[ "${stall_count}" -eq "${STALL_POLLS}" ]]; then
+    printf 'STALL_DETECTED polls=%s seconds=%s\n' "$stall_count" "$((stall_count * POLL_SEC))" >&2
+    if [[ "${DID_NUDGE}" -ne 1 ]]; then
+      DID_NUDGE=1
+      nudge_ui
+    fi
+  fi
+
+  prev_copy_bytes="${copy_bytes}"
+  prev_copy_sha="${copy_sha}"
+  prev_shot_sha="${shot_sha}"
+
   line="$(extract_answer_line "$TMP")"
   if [[ -n "${line:-}" ]]; then
     printf '%s\n' "$line"
     exit 0
   fi
-  if [[ "$i" -eq "$NUDGE_AT" ]]; then
+  if [[ "$i" -eq "$NUDGE_AT" ]] && [[ "${DID_NUDGE}" -ne 1 ]]; then
+    DID_NUDGE=1
     nudge_ui
   fi
   if [[ "$i" -eq "$RELOAD_AT" ]] && [[ "$DID_RELOAD" -ne 1 ]]; then

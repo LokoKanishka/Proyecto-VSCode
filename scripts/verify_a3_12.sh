@@ -16,9 +16,9 @@ command -v timeout >/dev/null 2>&1 || { echo "ERROR: falta 'timeout' (coreutils)
 # “env frío” a propósito
 unset CHATGPT_WID_HEX || true
 
-A3_12_TIMEOUT="${A3_12_TIMEOUT:-140}"
+TIMEOUT_SEC="${A3_12_TIMEOUT_SEC:-${A3_12_TIMEOUT:-260}}"
 
-echo "== A3.12 verify (timeout=${A3_12_TIMEOUT}s) =="
+echo "== A3.12 verify (timeout=${TIMEOUT_SEC}s) =="
 
 WID="$("$GET_WID" 2>/tmp/a3_12_get_wid.err || true)"
 echo "WID=$WID"
@@ -34,7 +34,7 @@ export CHATGPT_WID_HEX="$WID"
 
 # ejecutar ask con timeout
 set +e
-timeout "${A3_12_TIMEOUT}s" "$ASK" "Respondé exactamente con: OK" \
+timeout "${TIMEOUT_SEC}s" "$ASK" "Respondé exactamente con: OK" \
   > /tmp/a3_12_ans.txt 2> /tmp/a3_12_err.txt
 RC=$?
 set -e
