@@ -6,6 +6,9 @@ ASK="${ROOT}/scripts/lucy_chatgpt_ask.sh"
 
 prompt="Respondé exactamente con: OK"
 
+: "${LUCY_CHATGPT_AUTO_CHAT:=1}"
+export LUCY_CHATGPT_AUTO_CHAT
+
 check_answer_ok() {
   local line="$1"
   if [[ "${line}" =~ :[[:space:]]*OK$ ]]; then

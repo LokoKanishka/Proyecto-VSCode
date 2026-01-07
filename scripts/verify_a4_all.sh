@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+: "${LUCY_CHATGPT_AUTO_CHAT:=1}"
+export LUCY_CHATGPT_AUTO_CHAT
+
 say() {
   echo "== $* =="
 }

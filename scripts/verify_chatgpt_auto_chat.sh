@@ -6,9 +6,12 @@ ASK="${ROOT}/scripts/lucy_chatgpt_ask.sh"
 
 prompt="Respondé exactamente con: OK"
 
+: "${LUCY_CHATGPT_AUTO_CHAT:=1}"
+export LUCY_CHATGPT_AUTO_CHAT
+
 tmp_err="$(mktemp)"
 set +e
-out="$(LUCY_CHATGPT_AUTO_CHAT=1 "${ASK}" "${prompt}" 2> >(tee "${tmp_err}" >&2))"
+out="$("${ASK}" "${prompt}" 2> >(tee "${tmp_err}" >&2))"
 rc=$?
 set -e
 
@@ -39,14 +42,18 @@ if [[ ! -f "${forensics_dir}/stderr.txt" ]]; then
   exit 1
 fi
 
-if ! grep -q "AUTO_CHAT=1" "${forensics_dir}/stderr.txt"; then
-  echo "ERROR: missing AUTO_CHAT=1 in forensics" >&2
-  exit 1
-fi
+if [[ "${LUCY_CHATGPT_AUTO_CHAT}" -eq 1 ]]; then
+  if ! grep -q "AUTO_CHAT=1" "${forensics_dir}/stderr.txt"; then
+    echo "ERROR: missing AUTO_CHAT=1 in forensics" >&2
+    exit 1
+  fi
 
-if ! grep -q "NEWCHAT_OK=" "${forensics_dir}/stderr.txt"; then
-  echo "ERROR: missing NEWCHAT_OK in forensics" >&2
-  exit 1
+  if ! grep -q "NEWCHAT_OK=" "${forensics_dir}/stderr.txt"; then
+    echo "ERROR: missing NEWCHAT_OK in forensics" >&2
+    exit 1
+  fi
+else
+  echo "AUTO_CHAT_DISABLED=1"
 fi
 
 echo "VERIFY_CHATGPT_AUTO_CHAT_OK"

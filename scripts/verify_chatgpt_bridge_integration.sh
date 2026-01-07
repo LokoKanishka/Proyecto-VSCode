@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin}"
 
+: "${LUCY_CHATGPT_AUTO_CHAT:=1}"
+export LUCY_CHATGPT_AUTO_CHAT
+
 if [[ -f "${PIN_FILE}" ]]; then
   export CHATGPT_WID_PIN_ONLY=1
 fi

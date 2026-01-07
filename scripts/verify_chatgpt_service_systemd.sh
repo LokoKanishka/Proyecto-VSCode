@@ -5,6 +5,14 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 cd "${ROOT}"
 
+: "${LUCY_CHATGPT_AUTO_CHAT:=1}"
+export LUCY_CHATGPT_AUTO_CHAT
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user set-environment LUCY_CHATGPT_AUTO_CHAT="${LUCY_CHATGPT_AUTO_CHAT}" || true
+  trap 'systemctl --user unset-environment LUCY_CHATGPT_AUTO_CHAT >/dev/null 2>&1 || true' EXIT
+fi
+
 ./scripts/install_chatgpt_service_user.sh
 
 active=0

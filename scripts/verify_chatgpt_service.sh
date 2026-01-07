@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_FILE="$(mktemp)"
 
+: "${LUCY_CHATGPT_AUTO_CHAT:=1}"
+export LUCY_CHATGPT_AUTO_CHAT
+
 cleanup() {
   if [[ -n "${service_pid:-}" ]]; then
     kill "${service_pid}" 2>/dev/null || true

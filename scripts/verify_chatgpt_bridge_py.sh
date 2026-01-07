@@ -5,6 +5,9 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 prompt="Respondé exactamente con: OK"
 
+: "${LUCY_CHATGPT_AUTO_CHAT:=1}"
+export LUCY_CHATGPT_AUTO_CHAT
+
 for i in 1 2 3; do
   tmp_err="$(mktemp)"
   set +e
