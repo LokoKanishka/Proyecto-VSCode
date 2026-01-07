@@ -55,6 +55,7 @@ Qué verifica:
 - Asegura/abre la ventana puente
 - Ejecuta `ask_x11` **dos veces**
 - Loguea a `/tmp/lucy_chatgpt_ui_smoketest_YYYYMMDD_HHMMSS.log`
+- El botón rojo `./scripts/verify_a5_all.sh` incluye `verify_web_search_searxng.sh`.
 
 Ejecutar:
 ```bash

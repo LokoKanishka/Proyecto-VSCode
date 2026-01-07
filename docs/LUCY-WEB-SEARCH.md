@@ -22,6 +22,17 @@ docker compose -f infra/searxng/docker-compose.yml down
 docker compose -f infra/searxng/docker-compose.yml logs -f
 ```
 
+## Arranque local (recomendado)
+
+```bash
+./scripts/local_services_up.sh
+```
+
+Variables útiles:
+- `SEARXNG_URL` (default `http://127.0.0.1:8080`)
+- `SEARXNG_COMPOSE_FILE` (default `infra/searxng/docker-compose.yml`)
+- `SEARXNG_HEALTH_TIMEOUT_SEC` (default `30`)
+
 ## Cómo se usa en Lucy
 
 - El web agent ahora consulta **SearXNG** como backend principal.

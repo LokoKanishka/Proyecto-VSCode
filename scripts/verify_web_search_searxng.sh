@@ -5,6 +5,39 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 SEARXNG_URL="${SEARXNG_URL:-http://127.0.0.1:8080}"
+SEARXNG_COMPOSE_FILE="${SEARXNG_COMPOSE_FILE:-infra/searxng/docker-compose.yml}"
+SEARXNG_HEALTH_TIMEOUT_SEC="${SEARXNG_HEALTH_TIMEOUT_SEC:-30}"
+
+searxng_reachable() {
+  if curl -fsS --max-time 5 "${SEARXNG_URL}/healthz" >/dev/null 2>&1; then
+    return 0
+  fi
+  curl -fsS --max-time 5 "${SEARXNG_URL}/" >/dev/null 2>&1
+}
+
+ensure_searxng_up() {
+  if searxng_reachable; then
+    return 0
+  fi
+
+  echo "WARN: SearxNG no está activo. Intentando levantarlo..." >&2
+  if ! docker compose -f "${SEARXNG_COMPOSE_FILE}" up -d; then
+    echo "ERROR: no se pudo ejecutar docker compose up -d" >&2
+    exit 3
+  fi
+
+  for _ in $(seq 1 "${SEARXNG_HEALTH_TIMEOUT_SEC}"); do
+    if searxng_reachable; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "ERROR: SearxNG no está activo. Levantalo con: docker compose -f ${SEARXNG_COMPOSE_FILE} up -d" >&2
+  docker compose -f "${SEARXNG_COMPOSE_FILE}" ps || true
+  docker compose -f "${SEARXNG_COMPOSE_FILE}" logs --tail 80 || true
+  exit 3
+}
 
 list_out="$(python3 -m lucy_agents.action_router --list)"
 if ! grep -qx "web_search" <<<"${list_out}"; then
@@ -27,12 +60,7 @@ if "LOCAL" not in path:
     raise SystemExit(1)
 PY
 
-if ! curl -fsS --max-time 5 "${SEARXNG_URL}/healthz" >/dev/null 2>&1; then
-  if ! curl -fsS --max-time 5 "${SEARXNG_URL}/" >/dev/null 2>&1; then
-    echo "SearxNG no está activo. Levantalo con: docker compose -f infra/searxng/docker-compose.yml up -d" >&2
-    exit 2
-  fi
-fi
+ensure_searxng_up
 
 payload='{"query":"wikipedia","num_results":5,"language":"es","safesearch":0}'
 out="$(python3 -m lucy_agents.action_router web_search "${payload}")"
