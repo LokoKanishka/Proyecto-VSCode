@@ -94,4 +94,51 @@ if [[ -n "${meta_lines:-}" ]]; then
   done <<< "$meta_lines"
 fi
 copy_text="$(printf '%s\n' "$out" | sed '/^__LUCY_COPY_META__/d')"
-printf '%s' "$copy_text"
+
+raw_tmp="$(mktemp /tmp/lucy_copy_raw.XXXX.txt)"
+norm_tmp="$(mktemp /tmp/lucy_copy_norm.XXXX.txt)"
+counts_tmp="$(mktemp /tmp/lucy_copy_counts.XXXX.txt)"
+cleanup() {
+  rm -f "$raw_tmp" "$norm_tmp" "$counts_tmp" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+printf '%s' "$copy_text" > "$raw_tmp"
+before_bytes="$(wc -c < "$raw_tmp" 2>/dev/null || echo 0)"
+: > "$counts_tmp"
+
+awk -v counts="$counts_tmp" '
+BEGIN {
+  dedupe=0; filter=0; blanks_collapsed=0;
+  prev="__NONE__"; blank_run=0;
+}
+{
+  line=$0
+  if (line=="Saltar al contenido" || line=="Historial del chat" || line=="Ningún archivo seleccionado" || line=="ChatGPT puede cometer errores. Comprueba la información importante.") {
+    filter++
+    next
+  }
+  if (line=="") {
+    blank_run++
+    if (blank_run>2) { blanks_collapsed++; next }
+    print line
+    prev=line
+    next
+  }
+  blank_run=0
+  if (line==prev) { dedupe++; next }
+  print line
+  prev=line
+}
+END {
+  print "DEDUPE_DROPPED=" dedupe > counts
+  print "FILTER_DROPPED=" filter > counts
+  print "BLANKS_COLLAPSED=" blanks_collapsed > counts
+}
+' "$raw_tmp" > "$norm_tmp"
+
+after_bytes="$(wc -c < "$norm_tmp" 2>/dev/null || echo 0)"
+printf 'COPY_NORM_BEFORE_BYTES=%s COPY_NORM_AFTER_BYTES=%s\n' "$before_bytes" "$after_bytes" >&2
+cat "$counts_tmp" >&2
+
+cat "$norm_tmp"
