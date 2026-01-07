@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from lucy_agents.chatgpt_bridge import ask_raw
 from lucy_agents.chatgpt_client import request as chatgpt_service_request
+from lucy_agents.daily_plan import build_chatgpt_prompt, get_base_plan
 from lucy_agents.forensics_summary import summarize_forensics
 
 ACTION_SPECS: dict[str, dict[str, Any]] = {
@@ -19,6 +20,21 @@ ACTION_SPECS: dict[str, dict[str, Any]] = {
         "returns": {"answer_text": "str", "answer_line": "str|None"},
         "path": "SERVICE|DIRECT_FALLBACK",
         "notes": "uses ChatGPT UI bridge",
+    },
+    "daily_plan": {
+        "payload": {
+            "required": [],
+            "optional": ["date", "use_chatgpt", "prompt_hint", "max_chars"],
+        },
+        "returns": {
+            "base_plan": "str",
+            "final_plan": "str",
+            "source": "FILE|OFFLINE",
+            "chatgpt_used": "bool",
+            "chatgpt_path": "SERVICE|DIRECT_FALLBACK|NONE|FAILED",
+        },
+        "path": "LOCAL|SERVICE|DIRECT_FALLBACK",
+        "notes": "local-first plan, optional ChatGPT enhancement",
     },
     "echo": {
         "payload": {"required": [], "optional": ["..."]},
@@ -57,12 +73,39 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _payload_bool(payload: dict[str, Any], key: str, default: bool) -> bool:
+    if key not in payload:
+        return default
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return default
+
+
+def _payload_int(payload: dict[str, Any], key: str, default: int) -> int:
+    if key not in payload:
+        return default
+    value = payload.get(key)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return default
+    return default
+
+
 def _chatgpt_action(payload: dict[str, Any]) -> dict[str, Any]:
     prompt = (payload.get("prompt") or "").strip()
     if not prompt:
         return {"ok": False, "error": "missing prompt", "meta": {"path": "LOCAL"}}
 
-    ask_timeout = _env_int("LUCY_CHATGPT_ASK_TIMEOUT", 75)
+    ask_timeout = _payload_int(payload, "timeout_sec", _env_int("LUCY_CHATGPT_ASK_TIMEOUT", 75))
     if ask_timeout <= 0:
         ask_timeout = 75
     ask_retries = _env_int("LUCY_CHATGPT_RETRIES", 2)
@@ -72,7 +115,7 @@ def _chatgpt_action(payload: dict[str, Any]) -> dict[str, Any]:
     if service_timeout <= 0:
         service_timeout = 220
 
-    use_service = _env_bool("LUCY_CHATGPT_USE_SERVICE", True)
+    use_service = _payload_bool(payload, "use_service", _env_bool("LUCY_CHATGPT_USE_SERVICE", True))
     if use_service:
         service_resp = chatgpt_service_request(
             prompt,
@@ -139,11 +182,53 @@ def _chatgpt_action(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _daily_plan_action(payload: dict[str, Any]) -> dict[str, Any]:
+    date_str = (payload.get("date") or "").strip() if isinstance(payload, dict) else ""
+    prompt_hint = (payload.get("prompt_hint") or "").strip() if isinstance(payload, dict) else ""
+    max_chars = _payload_int(payload, "max_chars", 2500)
+    if max_chars <= 0:
+        max_chars = 2500
+    use_chatgpt = _payload_bool(payload, "use_chatgpt", False)
+
+    base_plan, source = get_base_plan(date_str or None, max_chars=max_chars)
+    final_plan = base_plan
+    chatgpt_used = False
+    chatgpt_path = "NONE"
+
+    if use_chatgpt:
+        chatgpt_used = True
+        prompt = build_chatgpt_prompt(base_plan, date_str or None, prompt_hint, max_chars)
+        resp = _chatgpt_action({"prompt": prompt})
+        if resp.get("ok"):
+            answer_text = (resp.get("result", {}).get("answer_text") or "").strip()
+            if answer_text:
+                final_plan = answer_text[:max_chars]
+                chatgpt_path = resp.get("meta", {}).get("path", "UNKNOWN")
+            else:
+                chatgpt_path = "FAILED"
+        else:
+            chatgpt_path = resp.get("meta", {}).get("path", "FAILED")
+
+    return {
+        "ok": True,
+        "result": {
+            "base_plan": base_plan,
+            "final_plan": final_plan,
+            "source": source,
+            "chatgpt_used": chatgpt_used,
+            "chatgpt_path": chatgpt_path,
+        },
+        "meta": {"path": chatgpt_path if chatgpt_used else "LOCAL"},
+    }
+
+
 def run_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     if action == "echo":
         return {"ok": True, "result": payload, "meta": {"path": "LOCAL"}}
     if action == "chatgpt_ask":
         return _chatgpt_action(payload)
+    if action == "daily_plan":
+        return _daily_plan_action(payload)
     if action == "summarize_forense":
         dir_path = payload.get("dir") if isinstance(payload, dict) else None
         if not dir_path:

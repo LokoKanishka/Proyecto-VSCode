@@ -14,6 +14,10 @@ if ! grep -qx "summarize_forense" <<<"${list_out}"; then
   echo "ERROR: summarize_forense missing" >&2
   exit 1
 fi
+if ! grep -qx "daily_plan" <<<"${list_out}"; then
+  echo "ERROR: daily_plan missing" >&2
+  exit 1
+fi
 
 desc="$(python3 -m lucy_agents.action_router --describe chatgpt_ask)"
 python3 - <<'PY' "$desc"
