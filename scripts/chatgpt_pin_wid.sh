@@ -5,6 +5,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 
 PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin}"
+export CHATGPT_WID_PIN_FILE="$PIN_FILE"
 TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
 TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-V.S.Code}"
 
