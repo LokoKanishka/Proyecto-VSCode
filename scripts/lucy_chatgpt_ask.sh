@@ -213,6 +213,20 @@ if [[ -n "${tmpdir:-}" ]] && [[ -d "${tmpdir}" ]]; then
     cp -f "${tmpdir}/copy.txt" "${FORENSICS_DIR}/copy.txt" 2>/dev/null || true
     copied_copy_txt=1
   fi
+  if [[ -f "${tmpdir}/copy_1.stderr" ]]; then
+    cp -f "${tmpdir}/copy_1.stderr" "${FORENSICS_DIR}/copy_1.stderr" 2>/dev/null || true
+  fi
+  if [[ -f "${tmpdir}/copy_2.stderr" ]]; then
+    cp -f "${tmpdir}/copy_2.stderr" "${FORENSICS_DIR}/copy_2.stderr" 2>/dev/null || true
+  fi
+  if [[ -f "${tmpdir}/copy_2.stderr" ]]; then
+    cp -f "${tmpdir}/copy_2.stderr" "${FORENSICS_DIR}/copy.stderr" 2>/dev/null || true
+  elif [[ -f "${tmpdir}/copy_1.stderr" ]]; then
+    cp -f "${tmpdir}/copy_1.stderr" "${FORENSICS_DIR}/copy.stderr" 2>/dev/null || true
+  fi
+  if [[ -f "${tmpdir}/summary.json" ]]; then
+    cp -f "${tmpdir}/summary.json" "${FORENSICS_DIR}/summary.json" 2>/dev/null || true
+  fi
   if [[ -f "${tmpdir}/fail_screenshot.png" ]]; then
     cp -f "${tmpdir}/fail_screenshot.png" "${FORENSICS_DIR}/screenshot.png" 2>/dev/null || true
     copied_screenshot=1
@@ -224,6 +238,40 @@ printf 'COPIED_SCREENSHOT=%s\n' "${copied_screenshot}" >&2
 
 printf 'FORENSICS_DIR=%s\n' "${FORENSICS_DIR}" >&2
 printf 'ELAPSED_MS=%s\n' "${ELAPSED_MS}" >&2
+
+summary_path="${FORENSICS_DIR}/summary.json"
+if [[ ! -f "${summary_path}" ]]; then
+  FINAL_RC=0
+  FINAL_STATUS="ok"
+  if [[ -z "${ANSWER_LINE}" ]]; then
+    FINAL_RC=1
+    FINAL_STATUS="fail"
+  fi
+  TOKEN="${token}"
+  export FINAL_RC FINAL_STATUS ANSWER_LINE TOKEN
+  python3 - "$summary_path" <<'PY'
+import json
+import os
+import sys
+
+out = sys.argv[1]
+def env(key, default=""):
+    return os.environ.get(key, default)
+
+data = {
+    "token": env("TOKEN", ""),
+    "wid": env("CHATGPT_WID_HEX", ""),
+    "elapsed_ms": int(env("ELAPSED_MS", "0") or 0),
+    "rc": int(env("FINAL_RC", "1") or 1),
+    "status": env("FINAL_STATUS", "fail"),
+    "answer_line": env("ANSWER_LINE", ""),
+    "step": "lucy_chatgpt_ask",
+}
+
+with open(out, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=True)
+PY
+fi
 
 if [[ -z "${ANSWER_LINE}" ]]; then
   exit 1

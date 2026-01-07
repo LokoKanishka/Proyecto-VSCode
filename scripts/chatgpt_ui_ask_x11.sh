@@ -28,7 +28,21 @@ RUN_RAND="${RANDOM}"
 export LUCY_ASK_TMPDIR="${LUCY_ASK_TMPDIR:-/tmp/lucy_chatgpt_ask_run_${RUN_EPOCH}_${RUN_RAND}}"
 mkdir -p "$LUCY_ASK_TMPDIR"
 TMP=""
+TMP_MSG=""
 TMPDIR_ANNOUNCED=0
+SUMMARY_WRITTEN=0
+META_WRITTEN=0
+ASK_RC=1
+ASK_STATUS="fail"
+FAIL_REASON=""
+ANSWER_LINE=""
+ANSWER_EMPTY_SEEN=0
+ANSWER_EMPTY_ANY=0
+COPY_PRIMARY_PATH=""
+COPY_SECONDARY_PATH=""
+COPY_BEST_PATH=""
+LAST_LINE_SEEN=""
+LINE_STABLE_COUNT=0
 
 announce_tmpdir() {
   if [[ "${TMPDIR_ANNOUNCED}" -ne 1 ]]; then
@@ -44,6 +58,15 @@ cleanup() {
   if [[ -n "${TMP:-}" ]]; then
     rm -f "$TMP" 2>/dev/null || true
   fi
+  if [[ -n "${TMP_MSG:-}" ]]; then
+    rm -f "$TMP_MSG" 2>/dev/null || true
+  fi
+  if [[ "${ASK_STATUS}" != "ok" ]] && [[ "${SUMMARY_WRITTEN}" -ne 1 ]]; then
+    capture_failure_context || true
+  else
+    write_meta || true
+    write_summary || true
+  fi
   announce_tmpdir
 }
 
@@ -52,7 +75,7 @@ trap cleanup EXIT
 # Preflight
 if ! "$REQ_ACCESS" >/dev/null 2>&1; then
   echo "ERROR: no hay acceso X11 (ni IPC disponible)." >&2
-  exit 111
+  fail_exit "NO_X11" 111
 fi
 
 # Ensure bridge (no fatal)
@@ -90,7 +113,7 @@ if [[ -z "${WID:-}" ]]; then
 fi
 if [[ -z "${WID:-}" ]]; then
   echo "ERROR: no pude resolver CHATGPT_WID_HEX" >&2
-  exit 3
+  fail_exit "NO_WID" 3
 fi
 
 TITLE="$(get_wid_title "$WID")"
@@ -100,14 +123,16 @@ if [[ "${TITLE}" == *"V.S.Code"* ]]; then
   TITLE="$(get_wid_title "$WID")"
   if [[ "${TITLE}" == *"V.S.Code"* ]]; then
     echo "ERROR: BAD_WID_VSCODE WID=${WID} TITLE=${TITLE}" >&2
-    exit 3
+    fail_exit "BAD_WID_VSCODE" 3
   fi
 fi
 export CHATGPT_WID_HEX="$WID"
+export WID TITLE
 
 TS="$(date +%s)"
 RID="$(( (RANDOM % 90000) + 10000 ))"
 TOKEN="${TS}_${RID}"
+export TOKEN
 
 REQ="LUCY_REQ_${TOKEN}: ${PROMPT}"
 INSTR=$'Respondé SOLO con UNA línea.\nDebe empezar EXACTAMENTE con: LUCY_ANSWER_'"${TOKEN}"$': (dos puntos y un espacio)\ny en ESA MISMA LÍNEA, después de eso, poné tu respuesta.'
@@ -119,9 +144,26 @@ sanitize() {
 
 copy_chat_to() {
   local out="$1"
-  timeout 25s "$COPY" >"$out" 2>/dev/null || true
+  local tag="${2:-1}"
+  local mode="${3:-auto}"
+  local err_file=""
+  : > "$out"
   if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
-    cp -f "$out" "$LUCY_ASK_TMPDIR/copy.txt" 2>/dev/null || true
+    err_file="$LUCY_ASK_TMPDIR/copy_${tag}.stderr"
+  else
+    err_file="/tmp/lucy_copy_${TOKEN}_${tag}.stderr"
+  fi
+  LUCY_COPY_MODE="$mode" timeout 25s "$COPY" >"$out" 2>"$err_file" || true
+  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
+    cp -f "$out" "$LUCY_ASK_TMPDIR/copy_${tag}.txt" 2>/dev/null || true
+    cp -f "$err_file" "$LUCY_ASK_TMPDIR/copy_${tag}.stderr" 2>/dev/null || true
+  fi
+}
+
+store_best_copy() {
+  local file="$1"
+  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]] && [[ -f "$file" ]]; then
+    cp -f "$file" "$LUCY_ASK_TMPDIR/copy.txt" 2>/dev/null || true
   fi
 }
 
@@ -130,12 +172,41 @@ chat_has() {
   sanitize <"$file" | grep -Fq "$needle"
 }
 
+copy_needs_retry() {
+  local file="$1"
+  sanitize <"$file" | grep -Fq "Tú dijiste:"
+}
+
 extract_answer_line() {
   local file="$1"
-  sanitize <"$file" | grep -E "^LUCY_ANSWER_${TOKEN}:" | tail -n 1 || true
+  local label="LUCY_ANSWER_${TOKEN}"
+  local best=""
+  local empty_seen=0
+  while IFS= read -r line; do
+    case "$line" in
+      "${label}:"* )
+        val="${line#${label}:}"
+        val="${val#" "}"
+        if [[ -z "${val//[[:space:]]/}" ]]; then
+          empty_seen=1
+          continue
+        fi
+        val_lc="$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')"
+        if [[ "$val_lc" == *"tu respuesta"* ]] || [[ "$val_lc" == *"una sola linea"* ]] || [[ "$val_lc" == *"una sola línea"* ]]; then
+          continue
+        fi
+        best="${label}: ${val}"
+        ;;
+    esac
+  done < <(sanitize <"$file")
+  ANSWER_EMPTY_SEEN=$empty_seen
+  if [[ -n "${best:-}" ]]; then
+    printf '%s\n' "$best"
+  fi
 }
 
 TMP="$(mktemp /tmp/lucy_ask_${TOKEN}.XXXX.txt)"
+TMP_MSG="$(mktemp /tmp/lucy_ask_${TOKEN}.msg.XXXX.txt)"
 
 AUTO_CHAT="${LUCY_CHATGPT_AUTO_CHAT:-0}"
 NEWCHAT_ATTEMPTS="${LUCY_CHATGPT_NEWCHAT_ATTEMPTS:-2}"
@@ -161,6 +232,12 @@ auto_chat_prepare() {
 # Optional: move to a technical chat before sending.
 auto_chat_prepare
 
+# hard clear input before sending (A3.12 stability)
+if [[ "${CHATGPT_CLEAR_INPUT_BEFORE_SEND:-1}" -eq 1 ]] && [[ -x "$ROOT/scripts/chatgpt_clear_input_x11.sh" ]]; then
+  "$ROOT/scripts/chatgpt_clear_input_x11.sh" >/dev/null 2>/dev/null || true
+fi
+
+
 # 1) SEND + verificar que el REQ aparece
 SENT_OK=0
 for attempt in 1 2 3; do
@@ -177,6 +254,16 @@ if [[ "$SENT_OK" -ne 1 ]]; then
   if [[ "${AUTO_CHAT}" -eq 1 ]]; then
     printf 'NEWCHAT_OK=0\n' >&2
   fi
+  FAIL_REASON="SEND_NOT_PUBLISHED"
+  ASK_RC=4
+  ASK_STATUS="fail"
+  END_MS="$(now_ms)"
+  ELAPSED_MS=$(( END_MS - START_MS ))
+  if [[ "${ELAPSED_MS}" -lt 0 ]]; then
+    ELAPSED_MS=0
+  fi
+  export ASK_RC ASK_STATUS ANSWER_LINE END_MS ELAPSED_MS COPY_PRIMARY_PATH COPY_SECONDARY_PATH COPY_BEST_PATH FAIL_REASON
+  capture_failure_context || true
   echo "ERROR: el ASK no llegó a publicarse en el chat (no vi LUCY_REQ_${TOKEN}:)." >&2
   exit 4
 fi
@@ -265,7 +352,116 @@ now_ms() {
   printf '%s' "${ms}"
 }
 
+get_active_wid() {
+  local raw
+  raw="$("$HOST_EXEC" 'xprop -root _NET_ACTIVE_WINDOW' 2>/dev/null \
+    | sed -n 's/.*\(0x[0-9a-fA-F]\+\).*/\1/p' | head -n 1)"
+  if [[ -n "${raw:-}" ]]; then
+    printf '0x%08x\n' "$((raw))"
+  fi
+}
+
+write_meta() {
+  if [[ "${META_WRITTEN}" -eq 1 ]] || [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
+    return 0
+  fi
+  local active_wid active_title
+  active_wid="$(get_active_wid || true)"
+  active_title="$(get_wid_title "${active_wid:-}" 2>/dev/null || true)"
+  {
+    echo "WID=${WID:-}"
+    echo "TITLE=${TITLE:-}"
+    echo "ACTIVE_WID=${active_wid:-}"
+    echo "ACTIVE_TITLE=${active_title:-}"
+  } > "$LUCY_ASK_TMPDIR/meta.txt"
+  META_WRITTEN=1
+}
+
+write_summary() {
+  if [[ "${SUMMARY_WRITTEN}" -eq 1 ]] || [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
+    return 0
+  fi
+  if [[ -z "${END_MS:-}" ]]; then
+    END_MS="$(now_ms)"
+  fi
+  if [[ -z "${START_MS:-}" ]]; then
+    START_MS="${END_MS}"
+  fi
+  ELAPSED_MS=$(( END_MS - START_MS ))
+  if [[ "${ELAPSED_MS}" -lt 0 ]]; then
+    ELAPSED_MS=0
+  fi
+  export START_MS END_MS ELAPSED_MS
+  python3 - "$LUCY_ASK_TMPDIR/summary.json" <<'PY'
+import json
+import os
+import sys
+
+out = sys.argv[1]
+def env(key, default=""):
+    return os.environ.get(key, default)
+
+data = {
+    "token": env("TOKEN", ""),
+    "wid": env("WID", ""),
+    "title": env("TITLE", ""),
+    "start_ms": int(env("START_MS", "0") or 0),
+    "end_ms": int(env("END_MS", "0") or 0),
+    "elapsed_ms": int(env("ELAPSED_MS", "0") or 0),
+    "rc": int(env("ASK_RC", "1") or 1),
+    "status": env("ASK_STATUS", "fail"),
+    "reason": env("FAIL_REASON", ""),
+    "step": "ask",
+    "answer_line": env("ANSWER_LINE", ""),
+    "copy_primary": env("COPY_PRIMARY_PATH", ""),
+    "copy_secondary": env("COPY_SECONDARY_PATH", ""),
+    "copy_best": env("COPY_BEST_PATH", ""),
+}
+
+with open(out, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=True)
+PY
+  SUMMARY_WRITTEN=1
+}
+
+capture_screenshot() {
+  if [[ -z "${LUCY_ASK_TMPDIR:-}" ]] || [[ -z "${WID:-}" ]]; then
+    return 0
+  fi
+  local out err path
+  out="$(mktemp /tmp/lucy_ask_shot_out.XXXX.txt)"
+  err="$(mktemp /tmp/lucy_ask_shot_err.XXXX.txt)"
+  python3 -u "$DISP" screenshot "$WID" >"$out" 2>"$err" || true
+  path="$(sed -n 's/^PATH[[:space:]]\+\([^[:space:]]\+\).*/\1/p' "$out" | head -n 1)"
+  if [[ -n "${path:-}" ]] && [[ -f "${path}" ]]; then
+    cp -f "$path" "$LUCY_ASK_TMPDIR/screenshot.png" 2>/dev/null || true
+    FAIL_SHOT_PATH="$path"
+  fi
+  rm -f "$out" "$err" 2>/dev/null || true
+}
+
+capture_failure_context() {
+  capture_screenshot
+  if [[ -n "${TMP:-}" ]]; then
+    store_best_copy "$TMP"
+  fi
+  write_meta
+  write_summary
+}
+
+fail_exit() {
+  local reason="$1"
+  local rc="${2:-1}"
+  FAIL_REASON="$reason"
+  ASK_RC="$rc"
+  ASK_STATUS="fail"
+  export ASK_RC ASK_STATUS FAIL_REASON ANSWER_LINE COPY_PRIMARY_PATH COPY_SECONDARY_PATH COPY_BEST_PATH
+  capture_failure_context || true
+  exit "$rc"
+}
+
 START_MS="$(now_ms)"
+export START_MS
 
 watchdog_t_ms() {
   local now
@@ -313,11 +509,49 @@ watchdog_start() {
 
 for _ in $(seq 1 "$MAX_POLLS"); do
   i=$((i+1))
-  copy_chat_to "$TMP"
-  copy_bytes="$(wc -c < "$TMP" 2>/dev/null || echo 0)"
+  copy_chat_to "$TMP" "1" "auto"
+  COPY_PRIMARY_PATH="$TMP"
+  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
+    COPY_PRIMARY_PATH="$LUCY_ASK_TMPDIR/copy_1.txt"
+  fi
+  copy_best="$TMP"
+  line="$(extract_answer_line "$TMP")"
+  if [[ "${ANSWER_EMPTY_SEEN}" -eq 1 ]]; then
+    ANSWER_EMPTY_ANY=1
+  fi
+
+  if [[ -z "${line:-}" ]] && copy_needs_retry "$TMP"; then
+    copy_chat_to "$TMP_MSG" "2" "messages"
+    COPY_SECONDARY_PATH="$TMP_MSG"
+    if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
+      COPY_SECONDARY_PATH="$LUCY_ASK_TMPDIR/copy_2.txt"
+    fi
+    alt_line="$(extract_answer_line "$TMP_MSG")"
+    if [[ "${ANSWER_EMPTY_SEEN}" -eq 1 ]]; then
+      ANSWER_EMPTY_ANY=1
+    fi
+    if [[ -n "${alt_line:-}" ]]; then
+      line="$alt_line"
+      copy_best="$TMP_MSG"
+    else
+      bytes1="$(wc -c < "$TMP" 2>/dev/null || echo 0)"
+      bytes2="$(wc -c < "$TMP_MSG" 2>/dev/null || echo 0)"
+      if [[ "${bytes2}" -gt "${bytes1}" ]]; then
+        copy_best="$TMP_MSG"
+      fi
+    fi
+  fi
+
+  store_best_copy "$copy_best"
+  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
+    COPY_BEST_PATH="$LUCY_ASK_TMPDIR/copy.txt"
+  else
+    COPY_BEST_PATH="$copy_best"
+  fi
+  copy_bytes="$(wc -c < "$copy_best" 2>/dev/null || echo 0)"
   copy_sha="NA"
-  if [[ -f "$TMP" ]]; then
-    copy_sha="$(hash_file "$TMP" 2>/dev/null || echo NA)"
+  if [[ -f "$copy_best" ]]; then
+    copy_sha="$(hash_file "$copy_best" 2>/dev/null || echo NA)"
   fi
   shot_sha="NA"
   progress=0
@@ -391,13 +625,48 @@ for _ in $(seq 1 "$MAX_POLLS"); do
   prev_copy_sha="${copy_sha}"
   prev_shot_sha="${shot_sha}"
 
-  line="$(extract_answer_line "$TMP")"
   if [[ -n "${line:-}" ]]; then
-    printf '%s\n' "$line"
-    exit 0
+    if [[ "$line" == "$LAST_LINE_SEEN" ]]; then
+      LINE_STABLE_COUNT=$((LINE_STABLE_COUNT + 1))
+    else
+      LAST_LINE_SEEN="$line"
+      LINE_STABLE_COUNT=0
+    fi
+    if [[ "${LINE_STABLE_COUNT}" -ge 1 ]]; then
+      ANSWER_LINE="$line"
+      ASK_RC=0
+      ASK_STATUS="ok"
+      END_MS="$(now_ms)"
+      ELAPSED_MS=$(( END_MS - START_MS ))
+      if [[ "${ELAPSED_MS}" -lt 0 ]]; then
+        ELAPSED_MS=0
+      fi
+      export ASK_RC ASK_STATUS ANSWER_LINE END_MS ELAPSED_MS COPY_PRIMARY_PATH COPY_SECONDARY_PATH COPY_BEST_PATH FAIL_REASON
+      write_meta || true
+      write_summary || true
+      printf '%s\n' "$line"
+      exit 0
+    fi
+  else
+    LAST_LINE_SEEN=""
+    LINE_STABLE_COUNT=0
   fi
   sleep "$POLL_SEC"
 done
 
+if [[ "${ANSWER_EMPTY_ANY}" -eq 1 ]]; then
+  FAIL_REASON="ANSWER_EMPTY"
+else
+  FAIL_REASON="TIMEOUT"
+fi
+ASK_RC=1
+ASK_STATUS="fail"
+END_MS="$(now_ms)"
+ELAPSED_MS=$(( END_MS - START_MS ))
+if [[ "${ELAPSED_MS}" -lt 0 ]]; then
+  ELAPSED_MS=0
+fi
+export ASK_RC ASK_STATUS ANSWER_LINE END_MS ELAPSED_MS COPY_PRIMARY_PATH COPY_SECONDARY_PATH COPY_BEST_PATH FAIL_REASON
+capture_failure_context || true
 echo "ERROR: timeout esperando LUCY_ANSWER_${TOKEN}:" >&2
 exit 1

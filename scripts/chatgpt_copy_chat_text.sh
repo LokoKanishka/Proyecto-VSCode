@@ -70,16 +70,27 @@ bytes1=\"\$(bytes_len \"\$txt1\")\"
 txt2=\"\$(copy_at \"\$msg_x\" \"\$msg_y\")\"
 bytes2=\"\$(bytes_len \"\$txt2\")\"
 
+mode=\"\${LUCY_COPY_MODE:-auto}\"
 chosen=\"input\"
 best=\"\$txt1\"
 bestBytes=\"\$bytes1\"
-if [[ \"\$bytes2\" -gt \"\$bytes1\" ]]; then
+if [[ \"\$mode\" == \"messages\" ]]; then
   chosen=\"messages\"
   best=\"\$txt2\"
   bestBytes=\"\$bytes2\"
+elif [[ \"\$mode\" == \"input\" ]]; then
+  chosen=\"input\"
+  best=\"\$txt1\"
+  bestBytes=\"\$bytes1\"
+else
+  if [[ \"\$bytes2\" -gt \"\$bytes1\" ]]; then
+    chosen=\"messages\"
+    best=\"\$txt2\"
+    bestBytes=\"\$bytes2\"
+  fi
 fi
 
-printf \"__LUCY_COPY_META__ COPY_BYTES_1=%s COPY_BYTES_2=%s COPY_CHOSEN=%s COPY_BYTES=%s\\n\" \"\$bytes1\" \"\$bytes2\" \"\$chosen\" \"\$bestBytes\"
+printf \"__LUCY_COPY_META__ COPY_BYTES_1=%s COPY_BYTES_2=%s COPY_CHOSEN=%s COPY_BYTES=%s COPY_MODE=%s\\n\" \"\$bytes1\" \"\$bytes2\" \"\$chosen\" \"\$bestBytes\" \"\$mode\"
 if [[ \"\$bestBytes\" -lt 200 ]]; then
   printf \"__LUCY_COPY_META__ COPY_WEAK=1\\n\"
 fi
