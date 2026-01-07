@@ -1,0 +1,12 @@
+[Unit]
+Description=Lucy ChatGPT file-queue service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Lucy_Workspace/Proyecto-VSCode
+ExecStart=/usr/bin/env bash -lc 'cd %h/Lucy_Workspace/Proyecto-VSCode && ./scripts/chatgpt_service_run.sh'
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=default.target
