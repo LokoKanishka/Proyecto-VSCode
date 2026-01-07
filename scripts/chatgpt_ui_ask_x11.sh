@@ -23,6 +23,32 @@ if [[ -z "${PROMPT:-}" ]]; then
   exit 2
 fi
 
+RUN_EPOCH="$(date +%s)"
+RUN_RAND="${RANDOM}"
+export LUCY_ASK_TMPDIR="${LUCY_ASK_TMPDIR:-/tmp/lucy_chatgpt_ask_run_${RUN_EPOCH}_${RUN_RAND}}"
+mkdir -p "$LUCY_ASK_TMPDIR"
+TMP=""
+TMPDIR_ANNOUNCED=0
+
+announce_tmpdir() {
+  if [[ "${TMPDIR_ANNOUNCED}" -ne 1 ]]; then
+    printf 'LUCY_ASK_TMPDIR=%s\n' "$LUCY_ASK_TMPDIR" >&2
+    TMPDIR_ANNOUNCED=1
+  fi
+}
+
+cleanup() {
+  if [[ -n "${FAIL_SHOT_PATH:-}" ]] && [[ -f "${FAIL_SHOT_PATH}" ]]; then
+    cp -f "${FAIL_SHOT_PATH}" "$LUCY_ASK_TMPDIR/fail_screenshot.png" 2>/dev/null || true
+  fi
+  if [[ -n "${TMP:-}" ]]; then
+    rm -f "$TMP" 2>/dev/null || true
+  fi
+  announce_tmpdir
+}
+
+trap cleanup EXIT
+
 # Preflight
 if ! "$REQ_ACCESS" >/dev/null 2>&1; then
   echo "ERROR: no hay acceso X11 (ni IPC disponible)." >&2
@@ -94,6 +120,9 @@ sanitize() {
 copy_chat_to() {
   local out="$1"
   timeout 25s "$COPY" >"$out" 2>/dev/null || true
+  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
+    cp -f "$out" "$LUCY_ASK_TMPDIR/copy.txt" 2>/dev/null || true
+  fi
 }
 
 chat_has() {
@@ -107,7 +136,6 @@ extract_answer_line() {
 }
 
 TMP="$(mktemp /tmp/lucy_ask_${TOKEN}.XXXX.txt)"
-trap 'rm -f "$TMP" 2>/dev/null || true' EXIT
 
 # 1) SEND + verificar que el REQ aparece
 SENT_OK=0

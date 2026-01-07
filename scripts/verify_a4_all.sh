@@ -31,6 +31,8 @@ if ! grep -q "ANSWER_LINE=.*: OK" <<<"$ask_out"; then
   echo "ERROR: wrapper output missing OK" >&2
   exit 1
 fi
+fore_dir="$(sed -n 's/^FORENSICS_DIR=//p' "$ask_err" | tail -n 1)"
+echo "FORENSICS_DIR=${fore_dir}"
 
 say "LOCK TEST"
 rm -f /tmp/lucy_chatgpt_bridge.lock /tmp/lucy_chatgpt_bridge/lock 2>/dev/null || true
@@ -99,14 +101,17 @@ if [[ "$waited_max" -le 0 ]]; then
 fi
 
 say "COPY ASSERT"
-fore_dir="$(sed -n 's/^FORENSICS_DIR=//p' "$ask_err" | tail -n 1)"
-if [[ -n "${fore_dir:-}" ]] && [[ -f "$fore_dir/copy.txt" ]]; then
-  if grep -q "Ningún archivo seleccionado" "$fore_dir/copy.txt"; then
-    echo "ERROR: copy.txt contains UI noise" >&2
-    exit 1
-  fi
-else
-  echo "SKIP: copy.txt not present"
+if [[ -z "${fore_dir:-}" ]]; then
+  echo "ERROR: missing FORENSICS_DIR from wrapper" >&2
+  exit 1
+fi
+if [[ ! -f "$fore_dir/copy.txt" ]]; then
+  echo "ERROR: copy.txt not present" >&2
+  exit 1
+fi
+if grep -q "Ningún archivo seleccionado" "$fore_dir/copy.txt"; then
+  echo "ERROR: copy.txt contains UI noise" >&2
+  exit 1
 fi
 
 rm -f "$ask_err" 2>/dev/null || true

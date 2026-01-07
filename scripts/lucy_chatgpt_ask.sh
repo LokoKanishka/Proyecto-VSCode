@@ -103,6 +103,8 @@ printf '%s' "${PROMPT}" > "${FORENSICS_DIR}/request.txt"
 
 START_MS="$(now_ms)"
 ANSWER_LINE=""
+RUN_TMPDIR=""
+LAST_TMPDIR=""
 
 attempt=0
 while [[ "${attempt}" -lt "${LUCY_CHATGPT_RETRIES}" ]]; do
@@ -127,9 +129,17 @@ while [[ "${attempt}" -lt "${LUCY_CHATGPT_RETRIES}" ]]; do
     cat "${tmp_err}"
   } >> "${FORENSICS_DIR}/stderr.txt"
 
+  attempt_tmpdir="$(sed -n 's/^LUCY_ASK_TMPDIR=//p' "${tmp_err}" | tail -n 1)"
+  if [[ -n "${attempt_tmpdir:-}" ]]; then
+    LAST_TMPDIR="${attempt_tmpdir}"
+  fi
+
   line="$(grep -m1 -E '^LUCY_ANSWER_' "${tmp_out}" || true)"
   if [[ "${rc}" -eq 0 ]] && [[ -n "${line}" ]]; then
     ANSWER_LINE="${line}"
+    if [[ -n "${attempt_tmpdir:-}" ]]; then
+      RUN_TMPDIR="${attempt_tmpdir}"
+    fi
     rm -f "${tmp_out}" "${tmp_err}"
     break
   fi
@@ -194,6 +204,23 @@ fi
 
 copy_if_present "${copy_path}" "${FORENSICS_DIR}/copy.txt"
 copy_if_present "${shot_path}" "${FORENSICS_DIR}/screenshot.png"
+
+copied_copy_txt=0
+copied_screenshot=0
+tmpdir="${RUN_TMPDIR:-${LAST_TMPDIR:-}}"
+if [[ -n "${tmpdir:-}" ]] && [[ -d "${tmpdir}" ]]; then
+  if [[ -f "${tmpdir}/copy.txt" ]]; then
+    cp -f "${tmpdir}/copy.txt" "${FORENSICS_DIR}/copy.txt" 2>/dev/null || true
+    copied_copy_txt=1
+  fi
+  if [[ -f "${tmpdir}/fail_screenshot.png" ]]; then
+    cp -f "${tmpdir}/fail_screenshot.png" "${FORENSICS_DIR}/screenshot.png" 2>/dev/null || true
+    copied_screenshot=1
+  fi
+fi
+
+printf 'COPIED_COPY_TXT=%s\n' "${copied_copy_txt}" >&2
+printf 'COPIED_SCREENSHOT=%s\n' "${copied_screenshot}" >&2
 
 printf 'FORENSICS_DIR=%s\n' "${FORENSICS_DIR}" >&2
 printf 'ELAPSED_MS=%s\n' "${ELAPSED_MS}" >&2
