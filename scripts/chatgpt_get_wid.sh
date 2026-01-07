@@ -12,6 +12,12 @@ PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin}"
 TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
 TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-V.S.Code}"
 
+debug() {
+  if [[ "${CHATGPT_WID_DEBUG:-0}" != 0 ]]; then
+    echo "$*" >&2
+  fi
+}
+
 # Si ya está forzado por env, respetarlo.
 if [[ -n "${CHATGPT_WID_HEX:-}" ]]; then
   printf '%s\n' "$CHATGPT_WID_HEX"
@@ -173,7 +179,7 @@ choose_wid() {
   fi
 
   if [[ -n "${chosen:-}" ]]; then
-    printf 'WID_CHOSEN=%s TITLE=%s\n' "$chosen" "$chosen_title" >&2
+    debug "WID_CHOSEN=${chosen} TITLE=${chosen_title}"
     printf '%s\n' "$chosen"
   fi
 }
@@ -200,7 +206,7 @@ if [[ -f "${PIN_FILE}" ]]; then
         pin_valid=1
       fi
       if [[ "${pin_valid}" -eq 1 ]]; then
-        printf 'WID_CHOSEN=%s TITLE=%s\n' "$PIN_WID" "${TITLE_PIN:-$PIN_TITLE_STORED}" >&2
+        debug "WID_CHOSEN=${PIN_WID} TITLE=${TITLE_PIN:-$PIN_TITLE_STORED}"
         printf '%s\n' "$PIN_WID"
         exit 0
       fi
