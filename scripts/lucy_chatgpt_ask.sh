@@ -27,6 +27,69 @@ now_ms() {
   printf '%s' "${ms}"
 }
 
+LOCK_TIMEOUT_SEC="${LUCY_CHATGPT_LOCK_TIMEOUT_SEC:-120}"
+LOCK_BASE="/tmp/lucy_chatgpt_bridge"
+LOCK_FILE="${LOCK_BASE}/lock"
+LOCK_DIR="${LOCK_FILE}.d"
+LOCK_HELD=0
+LOCK_METHOD=""
+LOCK_FD=""
+
+release_lock() {
+  if [[ "${LOCK_HELD}" -ne 1 ]]; then
+    return 0
+  fi
+  if [[ "${LOCK_METHOD}" == "flock" ]]; then
+    flock -u "${LOCK_FD}" 2>/dev/null || true
+    eval "exec ${LOCK_FD}>&-"
+  elif [[ "${LOCK_METHOD}" == "lockdir" ]]; then
+    rmdir "${LOCK_DIR}" 2>/dev/null || true
+  fi
+  LOCK_HELD=0
+  printf 'LOCK_RELEASED=1\n' >&2
+}
+
+acquire_lock() {
+  mkdir -p "${LOCK_BASE}"
+  local start_ms end_ms now waited_ms waited_sec
+  start_ms="$(now_ms)"
+  end_ms=$(( start_ms + (LOCK_TIMEOUT_SEC * 1000) ))
+
+  if command -v flock >/dev/null 2>&1; then
+    LOCK_METHOD="flock"
+    exec {LOCK_FD}>"${LOCK_FILE}"
+    if ! flock -w "${LOCK_TIMEOUT_SEC}" "${LOCK_FD}"; then
+      waited_sec=$(( LOCK_TIMEOUT_SEC ))
+      echo "ERROR: LOCK_TIMEOUT waited=${waited_sec}" >&2
+      exit 4
+    fi
+    waited_ms=$(( $(now_ms) - start_ms ))
+    printf 'LOCK_ACQUIRED=1 waited_ms=%s\n' "${waited_ms}" >&2
+    LOCK_HELD=1
+    return 0
+  fi
+
+  LOCK_METHOD="lockdir"
+  while true; do
+    if mkdir "${LOCK_DIR}" 2>/dev/null; then
+      waited_ms=$(( $(now_ms) - start_ms ))
+      printf 'LOCK_ACQUIRED=1 waited_ms=%s\n' "${waited_ms}" >&2
+      LOCK_HELD=1
+      return 0
+    fi
+    now="$(now_ms)"
+    if [[ "${now}" -ge "${end_ms}" ]]; then
+      waited_sec=$(( LOCK_TIMEOUT_SEC ))
+      echo "ERROR: LOCK_TIMEOUT waited=${waited_sec}" >&2
+      exit 4
+    fi
+    sleep 0.2
+  done
+}
+
+trap release_lock EXIT
+acquire_lock
+
 TODAY="$(date +%F)"
 EPOCH="$(date +%s)"
 RAND="${RANDOM}"
