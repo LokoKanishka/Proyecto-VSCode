@@ -26,6 +26,7 @@ from typing import List, Optional
 from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
 
 from lucy_agents.chatgpt_bridge import ask_raw
+from lucy_agents.chatgpt_client import request as chatgpt_service_request
 from lucy_agents.desktop_bridge import run_desktop_command
 from lucy_web_agent import find_youtube_video_url
 
@@ -137,6 +138,35 @@ def _ask_chatgpt_ui(question: str) -> tuple[bool, str]:
     ask_retries = _env_int("LUCY_CHATGPT_RETRIES", 2)
     if ask_retries < 0:
         ask_retries = 0
+
+    service_timeout = _env_int("LUCY_CHATGPT_SERVICE_TIMEOUT_SEC", 220)
+    if service_timeout <= 0:
+        service_timeout = 220
+
+    use_service = _env_bool("LUCY_CHATGPT_USE_SERVICE", True)
+    if use_service:
+        service_resp = chatgpt_service_request(
+            question,
+            timeout_sec=ask_timeout,
+            retries=ask_retries,
+            wait_sec=service_timeout,
+        )
+        service_answer = (service_resp.get("answer_text") or "").strip()
+        if service_resp.get("ok") and service_answer:
+            print("CHATGPT_PATH=SERVICE", file=sys.stderr, flush=True)
+            return True, service_answer
+        reason = (service_resp.get("error") or "service_failed").strip() or "service_failed"
+        print(
+            f"CHATGPT_PATH=DIRECT_FALLBACK reason={reason}",
+            file=sys.stderr,
+            flush=True,
+        )
+    else:
+        print(
+            "CHATGPT_PATH=DIRECT_FALLBACK reason=SERVICE_DISABLED",
+            file=sys.stderr,
+            flush=True,
+        )
 
     try:
         result = ask_raw(question, timeout_sec=ask_timeout, retries=ask_retries)
