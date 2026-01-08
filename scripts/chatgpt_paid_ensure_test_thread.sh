@@ -23,6 +23,7 @@ log() {
 }
 
 THREAD_FILE="${CHATGPT_PAID_TEST_THREAD_FILE:-$HOME/.cache/lucy_chatgpt_paid_test_thread.url}"
+STRICT_THREAD="${CHATGPT_PAID_THREAD_STRICT:-0}"
 ensure_thread_file() {
   local f="$1"
   local dir
@@ -135,6 +136,13 @@ if [[ -n "${THREAD_URL:-}" ]]; then
     cur_url="$("$GET_URL" "$WID_HEX" 2>/dev/null || true)"
   fi
   if [[ "${cur_url}" != "${THREAD_URL}" ]]; then
+    if [[ "${STRICT_THREAD}" -eq 1 ]]; then
+      log "ERROR: WRONG_THREAD cur=${cur_url} expected=${THREAD_URL}"
+      dump_forensics "${cur_url}" "${THREAD_URL}" "${WID_HEX}"
+      echo "ERROR: WRONG_THREAD cur=${cur_url} expected=${THREAD_URL}" >&2
+      echo "PAID_THREAD_LOG=$LOG_PATH" >&2
+      exit 6
+    fi
     log "WARN: thread URL mismatch cur=${cur_url} expected=${THREAD_URL}"
     dump_forensics "${cur_url}" "${THREAD_URL}" "${WID_HEX}"
     rm -f "$THREAD_FILE" 2>/dev/null || true

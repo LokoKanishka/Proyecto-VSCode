@@ -108,6 +108,18 @@ Cuando `main` quedó adelante de `origin/main` por falta de red:
 - Flags útiles (opcionales): `PUSH_WHEN_NET_BACKOFF`, `PUSH_WHEN_NET_MAX_ATTEMPTS`, `RUN_VERIFY_A7=0`.
 - `net_check` distingue: timeout (RC 124) vs error git (RC != 0) y muestra tail de stderr.
 
+## Arranque del día (READY)
+
+- Script: `scripts/lucy_day_start.sh`
+- Deja el entorno paid listo (thread fijo + pin en `/tmp`), SearxNG OK y smokes cortos.
+- Logs: `/tmp/lucy_day_start.<stamp>.log`.
+
+## Botón rojo A8
+
+- Script: `scripts/verify_a8_day_start.sh`
+- Ejecuta `lucy_day_start.sh` y valida markers de dummy/web_search/A5 paid smoke.
+- Logs: `/tmp/verify_a8_day_start.<stamp>.log`.
+
 ## Logs de verify (timestamp)
 
 - Los verifies dejan logs en `/tmp` con timestamp.
