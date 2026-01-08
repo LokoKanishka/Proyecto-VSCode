@@ -92,8 +92,29 @@ En `CHATGPT_TARGET=paid`, el bridge no usa perfil dedicado:
 - Ejecuta: dummy UI, web search y `verify_a6_all.sh` en paid dos veces.
 - Si falla, lista los 3 forenses más recientes del día.
 
+## Cierre offline → online
+
+Cuando `main` quedó adelante de `origin/main` por falta de red:
+- Usar `scripts/push_when_net.sh` para cerrar el push cuando vuelva DNS/red.
+- El script imprime estado local, reintenta y valida que `origin/main` alcance a `main`.
+
+## Push cuando vuelva red
+
+- `scripts/push_when_net.sh` usa `scripts/net_check.sh` para chequear:
+  - DNS de `github.com` (getent/nslookup).
+  - `git ls-remote --heads origin` con timeout.
+- Salida final: `PUSH_WHEN_NET_OK` o `PUSH_WHEN_NET_FAIL(reason=...)`.
+- Flags útiles (opcionales): `PUSH_WHEN_NET_BACKOFF`, `PUSH_WHEN_NET_MAX_ATTEMPTS`, `RUN_VERIFY_A7=0`.
+
+## Logs de verify (timestamp)
+
+- Los verifies dejan logs en `/tmp` con timestamp.
+- Ejemplo A7: `/tmp/verify_a7_all.a37.<stamp>.log`.
+
 ## Limpieza de /tmp
 
 - Script: `scripts/lucy_tmp_gc.sh`
-- Borra forenses viejos (default >7 días) y runs viejos (>3 días).
-- Modo dry-run: `LUCY_GC_DRYRUN=1 ./scripts/lucy_tmp_gc.sh`
+- Default: dry-run si no hay flag.
+- `KEEP_DAYS` (default 3) controla `/tmp/lucy_chatgpt_bridge/YYYY-MM-DD` (nunca borra el día actual).
+- Runs viejos: `LUCY_GC_ASK_DAYS` (default 3) para `/tmp/lucy_chatgpt_ask_run_*`.
+- Modo real: `LUCY_GC_DRYRUN=0 KEEP_DAYS=3 ./scripts/lucy_tmp_gc.sh`
