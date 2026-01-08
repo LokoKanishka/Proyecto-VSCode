@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
-ASK="$ROOT/scripts/chatgpt_ui_ask_x11.sh"
+COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
 
 PROFILE_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}"
 export CHATGPT_CHROME_USER_DATA_DIR="$PROFILE_DIR"
@@ -12,6 +12,7 @@ export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"
 export CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 
 DUMMY_FILE="$ROOT/diagnostics/ui_dummy_chat.html"
+DUMMY_CLASS="lucy-dummy-bridge"
 if [[ ! -f "$DUMMY_FILE" ]]; then
   echo "ERROR: missing dummy file: ${DUMMY_FILE}" >&2
   exit 1
@@ -26,6 +27,10 @@ get_wmctrl_lp() {
   "$HOST_EXEC" 'wmctrl -lp' 2>/dev/null || true
 }
 
+get_wmctrl_l() {
+  "$HOST_EXEC" 'wmctrl -l' 2>/dev/null || true
+}
+
 get_cmdline_by_pid() {
   local pid="$1"
   [[ "${pid:-}" =~ ^[0-9]+$ ]] || return 1
@@ -34,7 +39,12 @@ get_cmdline_by_pid() {
 
 get_wm_command_by_wid() {
   local wid="$1"
-  "$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true
+  local out
+  out="$("$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true)"
+  if [[ "${out}" == *"not found"* ]]; then
+    return 0
+  fi
+  printf '%s\n' "$out"
 }
 
 cmdline_has_user_data() {
@@ -52,7 +62,9 @@ wm_command_has_user_data() {
   local wid="$1"
   local cmd
   cmd="$(get_wm_command_by_wid "$wid")"
-  [[ -n "${cmd:-}" ]] || return 1
+  if [[ -z "${cmd:-}" ]]; then
+    return 0
+  fi
   if [[ "${cmd}" == *"--user-data-dir=${PROFILE_DIR}"* ]]; then
     return 0
   fi
@@ -77,27 +89,30 @@ choose_latest_wid() {
   [[ -n "${max_wid:-}" ]] && printf '%s\n' "$max_wid"
 }
 
-URL="file://${DUMMY_FILE}"
+URL="file://${DUMMY_FILE}?t=$(date +%s%N)"
 CHATGPT_OPEN_URL="$URL" \
   CHATGPT_CHROME_USER_DATA_DIR="$PROFILE_DIR" \
-  CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS}" \
+  CHATGPT_BRIDGE_CLASS="${DUMMY_CLASS}" \
   "$CHROME_OPEN" >/dev/null 2>&1 || true
 
 dummy_wid=""
 for _ in $(seq 1 20); do
   sleep 0.5
-  candidates="$(get_wmctrl_lp | awk -v t="LUCY Dummy Chat" '
+  candidates="$(get_wmctrl_l | awk -v tag="${DUMMY_CLASS}" -v title="LUCY Dummy Chat" '
     {
-      wid=$1; pid=$3; title="";
-      for(i=5;i<=NF;i++){ title = title (i==5 ? "" : " ") $i }
-      if (index(title, t) > 0) {
-        printf "%s\t%s\n", wid, pid
+      wid=$1;
+      t="";
+      for(i=4;i<=NF;i++){ t = t (i==4 ? "" : " ") $i }
+      if (tolower(t) ~ tolower(tag) || index(t, title) > 0) {
+        printf "%s\n", wid
       }
     }
   ')"
   if [[ -n "${candidates:-}" ]]; then
     filtered=""
-    while IFS=$'\t' read -r wid pid; do
+    while IFS= read -r wid; do
+      [[ -z "${wid:-}" ]] && continue
+      pid="$(get_wmctrl_lp | awk -v w="${wid}" '$1==w {print $3; exit}')"
       cmd="$(get_cmdline_by_pid "$pid")"
       if ! cmdline_has_user_data "$cmd"; then
         continue
@@ -122,13 +137,36 @@ cleanup() {
 }
 trap cleanup EXIT
 
-CHATGPT_WID_HEX="$dummy_wid" \
-  CHATGPT_CLEAR_INPUT_BEFORE_SEND=0 \
-  LUCY_CHATGPT_AUTO_CHAT=0 \
-  CHATGPT_GET_WID_NOOPEN=1 \
-  "$ASK" "dummy" >/tmp/verify_ui_dummy_pipe.out 2>/tmp/verify_ui_dummy_pipe.err
+TOKEN="$(date +%s)_$(( (RANDOM % 90000) + 10000 ))"
+MSG="LUCY_REQ_${TOKEN}: dummy"
 
-if ! grep -q "^LUCY_ANSWER_" /tmp/verify_ui_dummy_pipe.out; then
+MSG_Q="$(printf '%q' "$MSG")"
+"$HOST_EXEC" "bash -lc '
+set -euo pipefail
+WID_HEX=${dummy_wid}
+WID_DEC=\$(printf \"%d\" \"\$WID_HEX\")
+wmctrl -ia \"\$WID_HEX\" 2>/dev/null || true
+xdotool windowactivate --sync \"\$WID_DEC\" 2>/dev/null || true
+sleep 0.1
+geo=\$(xdotool getwindowgeometry --shell \"\$WID_DEC\" 2>/dev/null || true)
+eval \"\$geo\" || true
+: \${WIDTH:=1200}
+: \${HEIGHT:=900}
+input_x=\$(( WIDTH * 50 / 100 ))
+input_y=\$(( HEIGHT * 88 / 100 ))
+xdotool mousemove --window \"\$WID_DEC\" \"\$input_x\" \"\$input_y\" click 1 2>/dev/null || true
+sleep 0.05
+xdotool key --window \"\$WID_DEC\" ctrl+a 2>/dev/null || true
+xdotool key --window \"\$WID_DEC\" Delete 2>/dev/null || true
+xdotool type --delay 0 -- ${MSG_Q}
+xdotool key --window \"\$WID_DEC\" Return
+'" >/dev/null 2>&1 || true
+sleep 0.8
+
+LUCY_COPY_MODE=input CHATGPT_WID_HEX="$dummy_wid" "$COPY" \
+  >/tmp/verify_ui_dummy_pipe.out 2>/tmp/verify_ui_dummy_pipe.err || true
+
+if ! grep -q "^LUCY_ANSWER_${TOKEN}: " /tmp/verify_ui_dummy_pipe.out; then
   echo "ERROR: dummy pipe did not return answer line" >&2
   cat /tmp/verify_ui_dummy_pipe.err >&2 || true
   exit 1

@@ -14,7 +14,7 @@ if [[ -n "${PROFILE_DIR:-}" ]]; then
   args+=(--user-data-dir="${PROFILE_DIR}")
 fi
 if [[ -n "${BRIDGE_CLASS:-}" ]]; then
-  args+=(--class "${BRIDGE_CLASS}")
+  args+=(--class="${BRIDGE_CLASS}")
 fi
 args+=(--no-first-run --no-default-browser-check --new-window "${URL}")
 

@@ -5,7 +5,7 @@ Este módulo permite que Lucy “hable” con ChatGPT vía UI (X11) **sin tocar 
 ## Idea clave
 
 - El bridge usa **un Chrome dedicado** con `--user-data-dir` propio (perfil free).
-- Se valida por **WM_COMMAND** + `--user-data-dir` (no solo por título/WM_CLASS).
+- Se valida por cmdline del proceso (user-data-dir) y `WM_COMMAND` si está disponible.
 - Si el perfil no matchea, **se aborta** antes de tipear.
 
 Variables clave:
@@ -29,7 +29,7 @@ Helper recomendado:
 Selector seguro del WID:
 - Si hay pin válido, lo reutiliza (y lo re-escribe).
 - Si el pin es inválido, hace recovery **sin foco**.
-- **Nunca** selecciona ventanas fuera del perfil (`WM_COMMAND` + `user-data-dir`).
+- **Nunca** selecciona ventanas fuera del perfil (cmdline y `WM_COMMAND` si existe).
 - Si no hay ventana, abre una nueva con `chatgpt_chrome_open.sh`.
 
 ### 3) `scripts/chatgpt_bridge_ensure.sh`

@@ -48,6 +48,8 @@ COPY_SECONDARY_PATH=""
 COPY_BEST_PATH=""
 LAST_LINE_SEEN=""
 LINE_STABLE_COUNT=0
+COPY_MODE_DEFAULT="${LUCY_COPY_MODE_DEFAULT:-auto}"
+COPY_MODE_FALLBACK="${LUCY_COPY_MODE_FALLBACK:-messages}"
 
 now_ms() {
   local ms
@@ -77,7 +79,27 @@ get_wid_title() {
 get_wm_command_by_wid() {
   local wid="$1"
   if [[ -x "$HOST_EXEC" ]]; then
-    "$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true
+    local out
+    out="$("$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true)"
+    if [[ "${out}" == *"not found"* ]]; then
+      return 0
+    fi
+    printf '%s\n' "$out"
+  fi
+}
+
+get_pid_by_wid() {
+  local wid="$1"
+  if [[ -x "$HOST_EXEC" ]]; then
+    "$HOST_EXEC" "wmctrl -lp | awk '\$1==\"${wid}\" {print \$3; exit}'" 2>/dev/null || true
+  fi
+}
+
+get_cmdline_by_pid() {
+  local pid="$1"
+  [[ "${pid:-}" =~ ^[0-9]+$ ]] || return 1
+  if [[ -x "$HOST_EXEC" ]]; then
+    "$HOST_EXEC" "bash -lc 'tr \"\\0\" \" \" < /proc/${pid}/cmdline 2>/dev/null'" || true
   fi
 }
 
@@ -86,13 +108,16 @@ profile_guard_ok() {
     return 0
   fi
   local wid="$1"
-  local cmd
-  cmd="$(get_wm_command_by_wid "$wid")"
-  [[ -n "${cmd:-}" ]] || return 1
-  if [[ "${cmd}" == *"--user-data-dir=${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
+  local cmd pid
+  pid="$(get_pid_by_wid "$wid")"
+  cmd="$(get_cmdline_by_pid "$pid")"
+  if [[ "${cmd}" == *"--user-data-dir=${CHATGPT_CHROME_USER_DATA_DIR}"* ]] || \
+     [[ "${cmd}" == *"--user-data-dir ${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
     return 0
   fi
-  if [[ "${cmd}" == *"--user-data-dir ${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
+  cmd="$(get_wm_command_by_wid "$wid")"
+  if [[ -n "${cmd:-}" ]] && ( [[ "${cmd}" == *"--user-data-dir=${CHATGPT_CHROME_USER_DATA_DIR}"* ]] || \
+    [[ "${cmd}" == *"--user-data-dir ${CHATGPT_CHROME_USER_DATA_DIR}"* ]] ); then
     return 0
   fi
   return 1
@@ -567,7 +592,7 @@ watchdog_start() {
 
 for _ in $(seq 1 "$MAX_POLLS"); do
   i=$((i+1))
-  copy_chat_to "$TMP" "1" "auto"
+  copy_chat_to "$TMP" "1" "$COPY_MODE_DEFAULT"
   COPY_PRIMARY_PATH="$TMP"
   if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
     COPY_PRIMARY_PATH="$LUCY_ASK_TMPDIR/copy_1.txt"
@@ -579,7 +604,7 @@ for _ in $(seq 1 "$MAX_POLLS"); do
   fi
 
   if [[ -z "${line:-}" ]] && copy_needs_retry "$TMP"; then
-    copy_chat_to "$TMP_MSG" "2" "messages"
+    copy_chat_to "$TMP_MSG" "2" "$COPY_MODE_FALLBACK"
     COPY_SECONDARY_PATH="$TMP_MSG"
     if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
       COPY_SECONDARY_PATH="$LUCY_ASK_TMPDIR/copy_2.txt"

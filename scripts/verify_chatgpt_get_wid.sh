@@ -37,7 +37,12 @@ get_cmdline_by_pid() {
 
 get_wm_command_by_wid() {
   local wid="$1"
-  "$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true
+  local out
+  out="$("$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true)"
+  if [[ "${out}" == *"not found"* ]]; then
+    return 0
+  fi
+  printf '%s\n' "$out"
 }
 
 cmdline_is_chrome() {
@@ -69,7 +74,10 @@ wm_command_has_user_data() {
   local dir="$2"
   local cmd
   cmd="$(get_wm_command_by_wid "$wid")"
-  [[ -n "${cmd:-}" ]] || return 1
+  if [[ -z "${cmd:-}" ]]; then
+    echo "WARN: WM_COMMAND missing for ${wid}" >&2
+    return 0
+  fi
   if [[ "${cmd}" == *"--user-data-dir=${dir}"* ]]; then
     return 0
   fi

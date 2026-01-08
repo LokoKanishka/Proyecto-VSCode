@@ -14,6 +14,9 @@ if [[ -z "${WID_HEX:-}" ]]; then
   exit 3
 fi
 
+COPY_MODE="${LUCY_COPY_MODE:-auto}"
+COPY_MODE_Q="$(printf '%q' "${COPY_MODE}")"
+
 out="$("$HOST_EXEC" "bash -lc '
 set -euo pipefail
 WID_HEX=\"$WID_HEX\"
@@ -70,7 +73,7 @@ bytes1=\"\$(bytes_len \"\$txt1\")\"
 txt2=\"\$(copy_at \"\$msg_x\" \"\$msg_y\")\"
 bytes2=\"\$(bytes_len \"\$txt2\")\"
 
-mode=\"\${LUCY_COPY_MODE:-auto}\"
+mode=${COPY_MODE_Q}
 chosen=\"input\"
 best=\"\$txt1\"
 bestBytes=\"\$bytes1\"

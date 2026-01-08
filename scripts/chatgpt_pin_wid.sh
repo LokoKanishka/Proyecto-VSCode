@@ -46,7 +46,12 @@ get_cmdline_by_pid() {
 
 get_wm_command_by_wid() {
   local wid="$1"
-  "$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true
+  local out
+  out="$("$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true)"
+  if [[ "${out}" == *"not found"* ]]; then
+    return 0
+  fi
+  printf '%s\n' "$out"
 }
 
 wm_command_matches_profile() {
@@ -56,7 +61,9 @@ wm_command_matches_profile() {
   local wid="$1"
   local cmd
   cmd="$(get_wm_command_by_wid "$wid")"
-  [[ -n "${cmd:-}" ]] || return 1
+  if [[ -z "${cmd:-}" ]]; then
+    return 0
+  fi
   if [[ "${cmd}" == *"--user-data-dir=${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
     return 0
   fi
