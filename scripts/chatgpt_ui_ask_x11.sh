@@ -605,10 +605,11 @@ nudge_input() {
   python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
   # click en zona input (abajo-centro)
   local nx ny
-  nx="${CHATGPT_INPUT_CLICK_X:-0.55}"
+  python3 -u "$DISP" send_keys "$WID" "Escape" >/dev/null 2>/dev/null || true
+  python3 -u "$DISP" send_keys "$WID" "Escape" >/dev/null 2>/dev/null || true
+  nx="${CHATGPT_INPUT_CLICK_X:-0.62}"
   ny="${CHATGPT_INPUT_CLICK_Y:-0.95}"
   python3 -u "$DISP" click "$WID" "$nx" "$ny" >/dev/null 2>/dev/null || true
-  python3 -u "$DISP" send_keys "$WID" "Escape" >/dev/null 2>/dev/null || true
   python3 -u "$DISP" send_keys "$WID" "End" >/dev/null 2>/dev/null || true
   sleep 0.3
 }
