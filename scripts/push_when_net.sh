@@ -28,6 +28,7 @@ print_status() {
 
 net_check_with_backoff() {
   local attempt=1
+  local last_rc=0
   local -a delays=()
   read -r -a delays <<<"${BACKOFF}"
   local max_attempts="${MAX_ATTEMPTS}"
@@ -38,10 +39,13 @@ net_check_with_backoff() {
   while true; do
     log "NET_CHECK_ATTEMPT=${attempt}"
     if "${NET_CHECK_SCRIPT}"; then
+      NET_CHECK_LAST_RC=0
       return 0
     fi
+    last_rc=$?
+    NET_CHECK_LAST_RC="${last_rc}"
     if [[ "${attempt}" -ge "${max_attempts}" ]]; then
-      return 1
+      return "${last_rc}"
     fi
     local delay="${delays[$((attempt - 1))]:-0}"
     log "NET_CHECK_RETRY_SLEEP=${delay}s"
@@ -83,8 +87,12 @@ main() {
     return 1
   fi
 
-  if ! net_check_with_backoff; then
-    echo "PUSH_WHEN_NET_FAIL(reason=net_check_failed)"
+  if net_check_with_backoff; then
+    :
+  else
+    net_rc=$?
+    log "NET_CHECK_FAILED rc=${net_rc}"
+    echo "PUSH_WHEN_NET_FAIL(reason=net_check_failed rc=${net_rc})"
     return 1
   fi
 

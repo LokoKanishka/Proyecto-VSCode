@@ -104,7 +104,9 @@ Cuando `main` quedó adelante de `origin/main` por falta de red:
   - DNS de `github.com` (getent/nslookup).
   - `git ls-remote --heads origin` con timeout.
 - Salida final: `PUSH_WHEN_NET_OK` o `PUSH_WHEN_NET_FAIL(reason=...)`.
+- Si `net_check` falla pero sabés que hay red, podés hacer `git push origin main` directo.
 - Flags útiles (opcionales): `PUSH_WHEN_NET_BACKOFF`, `PUSH_WHEN_NET_MAX_ATTEMPTS`, `RUN_VERIFY_A7=0`.
+- `net_check` distingue: timeout (RC 124) vs error git (RC != 0) y muestra tail de stderr.
 
 ## Logs de verify (timestamp)
 
