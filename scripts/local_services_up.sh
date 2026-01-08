@@ -21,24 +21,32 @@ searxng_reachable() {
 }
 
 if searxng_reachable; then
+  echo "SERVICES_MODE=already_up"
+  echo "HEALTHCHECK_OK=1"
   log "SearxNG already up: ${SEARXNG_URL}"
   exit 0
 fi
 
 log "Starting SearxNG (compose: ${SEARXNG_COMPOSE_FILE})"
 if ! "$HOST_DOCKER" compose -f "${SEARXNG_COMPOSE_FILE}" up -d; then
+  echo "SERVICES_MODE=failed"
+  echo "HEALTHCHECK_OK=0"
   echo "ERROR: no se pudo ejecutar docker compose up -d" >&2
   exit 3
 fi
 
 for _ in $(seq 1 "${SEARXNG_HEALTH_TIMEOUT_SEC}"); do
   if searxng_reachable; then
+    echo "SERVICES_MODE=started"
+    echo "HEALTHCHECK_OK=1"
     log "SearxNG ready: ${SEARXNG_URL}"
     exit 0
   fi
   sleep 1
 done
 
+echo "SERVICES_MODE=failed"
+echo "HEALTHCHECK_OK=0"
 echo "ERROR: SearxNG no estuvo listo tras ${SEARXNG_HEALTH_TIMEOUT_SEC}s" >&2
 "$HOST_DOCKER" compose -f "${SEARXNG_COMPOSE_FILE}" ps || true
 exit 3

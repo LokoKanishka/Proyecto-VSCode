@@ -58,9 +58,10 @@ LAST_LINE_SEEN=""
 LINE_STABLE_COUNT=0
 COPY_MODE_DEFAULT="${LUCY_COPY_MODE_DEFAULT:-auto}"
 COPY_MODE_FALLBACK="${LUCY_COPY_MODE_FALLBACK:-messages}"
-PAID_THREAD_FILE="${CHATGPT_PAID_TEST_THREAD_FILE:-$HOME/.cache/lucy_chatgpt_paid_test_thread.url}"
-if [[ ! -r "${PAID_THREAD_FILE}" ]]; then
-  if [[ -r "/tmp/lucy_chatgpt_paid_test_thread.url" ]]; then
+PAID_THREAD_FILE="${CHATGPT_PAID_TEST_THREAD_FILE:-}"
+if [[ -z "${PAID_THREAD_FILE}" ]]; then
+  PAID_THREAD_FILE="$HOME/.cache/lucy_chatgpt_paid_test_thread.url"
+  if [[ ! -r "${PAID_THREAD_FILE}" ]] && [[ -r "/tmp/lucy_chatgpt_paid_test_thread.url" ]]; then
     PAID_THREAD_FILE="/tmp/lucy_chatgpt_paid_test_thread.url"
   fi
 fi

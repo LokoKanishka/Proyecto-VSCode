@@ -30,7 +30,7 @@ ensure_thread_file() {
   dir="$(dirname "$f")"
   mkdir -p "$dir" 2>/dev/null || true
   if [[ -e "$f" ]]; then
-    dd if=/dev/null of="$f" 2>/dev/null || return 1
+    : >>"$f" 2>/dev/null || return 1
   else
     local tmp
     tmp="$(mktemp "$dir/.threadwrite.XXXX" 2>/dev/null)" || return 1
@@ -39,22 +39,30 @@ ensure_thread_file() {
   return 0
 }
 if ! ensure_thread_file "$THREAD_FILE"; then
-  THREAD_FILE="/tmp/lucy_chatgpt_paid_test_thread.url"
-  mkdir -p "$(dirname "$THREAD_FILE")" 2>/dev/null || true
-  log "WARN: THREAD_FILE not writable, using ${THREAD_FILE}"
+  log "ERROR: THREAD_FILE not writable: ${THREAD_FILE}"
+  echo "ERROR: THREAD_FILE not writable: ${THREAD_FILE}" >&2
+  echo "PAID_THREAD_LOG=$LOG_PATH" >&2
+  exit 4
 fi
 MARKER_MSG="${CHATGPT_PAID_THREAD_MARKER:-LUCY_TEST_THREAD_DO_NOT_DELETE}"
 BASE_URL="${CHATGPT_PAID_THREAD_BASE_URL:-https://chatgpt.com/}"
 OPEN_NEW_TAB="${CHATGPT_PAID_OPEN_NEW_TAB:-0}"
 
 dump_forensics() {
+  local cur_url="$1"
+  local expected_url="$2"
+  local wid="$3"
+  local pid="$4"
   local dir
   dir="/tmp/lucy_chatgpt_bridge/$(date +%F)/PAID_ENSURE_$(date +%s)_$RANDOM"
   mkdir -p "$dir"
-  printf '%s\n' "${1:-}" > "$dir/url.txt" 2>/dev/null || true
-  printf '%s\n' "${2:-}" > "$dir/thread_url.txt" 2>/dev/null || true
+  printf '%s\n' "${cur_url:-}" > "$dir/current_url.txt" 2>/dev/null || true
+  printf '%s\n' "${expected_url:-}" > "$dir/expected_thread_url.txt" 2>/dev/null || true
+  printf '%s\n' "${cur_url:-}" > "$dir/url.txt" 2>/dev/null || true
+  printf '%s\n' "${expected_url:-}" > "$dir/thread_url.txt" 2>/dev/null || true
+  printf '%s\n' "${pid:-}" > "$dir/paid_pid.txt" 2>/dev/null || true
   "$HOST_EXEC" "wmctrl -lp" > "$dir/wmctrl_lp.txt" 2>/dev/null || true
-  printf '%s\n' "${3:-}" > "$dir/active_wid.txt" 2>/dev/null || true
+  printf '%s\n' "${wid:-}" > "$dir/active_wid.txt" 2>/dev/null || true
   log "FORENSICS_DIR=${dir}"
 }
 
@@ -109,21 +117,34 @@ ensure_paid_window() {
   "$GET_WID" 2>/dev/null || true
 }
 
+WID_HEX="$(ensure_paid_window)"
+if [[ -z "${WID_HEX:-}" ]]; then
+  log "ERROR: no WID for paid"
+  dump_forensics "" "" "" ""
+  echo "ERROR: no WID for paid" >&2
+  echo "PAID_THREAD_LOG=$LOG_PATH" >&2
+  exit 3
+fi
+PAID_PID="${PAID_CHATGPT_PID:-}"
+if [[ -z "${PAID_PID:-}" ]]; then
+  PAID_PID="$("$HOST_EXEC" "wmctrl -lp | awk '\$1==\"${WID_HEX}\" {print \$3; exit}'" 2>/dev/null || true)"
+fi
+
 THREAD_URL=""
 if [[ -f "$THREAD_FILE" ]]; then
   THREAD_URL="$(head -n 1 "$THREAD_FILE" | tr -d '\r')"
   if [[ -n "${THREAD_URL:-}" ]]; then
+    if ! valid_thread_url "$THREAD_URL"; then
+      log "ERROR: invalid thread URL in file: ${THREAD_URL}"
+      dump_forensics "" "${THREAD_URL}" "${WID_HEX}" "${PAID_PID}"
+      echo "ERROR: invalid thread URL in file" >&2
+      echo "PAID_THREAD_LOG=$LOG_PATH" >&2
+      exit 4
+    fi
     log "THREAD_FILE_OK=${THREAD_URL}"
+  else
+    log "THREAD_FILE_EMPTY"
   fi
-fi
-
-WID_HEX="$(ensure_paid_window)"
-if [[ -z "${WID_HEX:-}" ]]; then
-  log "ERROR: no WID for paid"
-  dump_forensics "" "${THREAD_URL}" ""
-  echo "ERROR: no WID for paid" >&2
-  echo "PAID_THREAD_LOG=$LOG_PATH" >&2
-  exit 3
 fi
 
 if [[ -n "${THREAD_URL:-}" ]]; then
@@ -138,15 +159,16 @@ if [[ -n "${THREAD_URL:-}" ]]; then
   if [[ "${cur_url}" != "${THREAD_URL}" ]]; then
     if [[ "${STRICT_THREAD}" -eq 1 ]]; then
       log "ERROR: WRONG_THREAD cur=${cur_url} expected=${THREAD_URL}"
-      dump_forensics "${cur_url}" "${THREAD_URL}" "${WID_HEX}"
+      dump_forensics "${cur_url}" "${THREAD_URL}" "${WID_HEX}" "${PAID_PID}"
       echo "ERROR: WRONG_THREAD cur=${cur_url} expected=${THREAD_URL}" >&2
       echo "PAID_THREAD_LOG=$LOG_PATH" >&2
       exit 6
     fi
-    log "WARN: thread URL mismatch cur=${cur_url} expected=${THREAD_URL}"
-    dump_forensics "${cur_url}" "${THREAD_URL}" "${WID_HEX}"
-    rm -f "$THREAD_FILE" 2>/dev/null || true
-    THREAD_URL=""
+    log "ERROR: THREAD_UNEXPECTEDLY_CHANGED cur=${cur_url} expected=${THREAD_URL}"
+    dump_forensics "${cur_url}" "${THREAD_URL}" "${WID_HEX}" "${PAID_PID}"
+    echo "ERROR: THREAD_UNEXPECTEDLY_CHANGED cur=${cur_url} expected=${THREAD_URL}" >&2
+    echo "PAID_THREAD_LOG=$LOG_PATH" >&2
+    exit 6
   fi
   if [[ -n "${THREAD_URL:-}" ]]; then
     printf '%s\n' "$THREAD_URL"
@@ -172,5 +194,5 @@ fi
 
 mkdir -p "$(dirname "$THREAD_FILE")"
 printf '%s\n' "$new_url" > "$THREAD_FILE"
-log "THREAD_CREATED=${new_url}"
+log "THREAD_CREATED=1 url=${new_url}"
 printf '%s\n' "$new_url"
