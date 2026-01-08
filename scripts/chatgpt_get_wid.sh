@@ -185,9 +185,6 @@ list_paid_candidates() {
     if title_is_excluded "$title"; then
       continue
     fi
-    if ! title_has_strong_hint "$title"; then
-      continue
-    fi
     printf "%s\t%s\t%s\n" "$wid" "$pid" "$title"
   done
 }
@@ -499,8 +496,7 @@ if [[ -f "${PIN_FILE}" ]]; then
         paid)
           if cmdline_is_chrome "$pin_cmd" && \
              ! cmdline_has_user_data_dir "$pin_cmd" "$FREE_PROFILE_DIR" && \
-             ! title_is_excluded "${TITLE_PIN:-}" && \
-             title_has_strong_hint "${TITLE_PIN:-$TITLE_INCLUDE}"; then
+             ! title_is_excluded "${TITLE_PIN:-}"; then
             pin_ok=1
           fi
           ;;

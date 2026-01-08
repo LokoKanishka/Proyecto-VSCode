@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
+THREAD_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_test_thread.sh"
 
 CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
 if [[ "${CHATGPT_TARGET}" != "paid" ]]; then
@@ -120,6 +121,14 @@ for _ in $(seq 1 "$TIMEOUT_S"); do
     log "PAID_CHATGPT_WID=${chat_wid}"
     printf 'PAID_CHATGPT_WID=%s\n' "$chat_wid"
     printf 'PAID_CHATGPT_PID=%s\n' "$PAID_PID"
+    if [[ -x "$THREAD_ENSURE" ]]; then
+      if ! CHATGPT_PAID_ENSURE_CALLER=1 "$THREAD_ENSURE" >/dev/null 2>&1; then
+        log "ERROR: ensure_test_thread failed"
+        echo "ERROR: ensure_test_thread failed" >&2
+        echo "PAID_ENSURE_LOG=$LOG_PATH" >&2
+        exit 5
+      fi
+    fi
     exit 0
   fi
   sleep 1

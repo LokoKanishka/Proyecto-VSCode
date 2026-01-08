@@ -79,8 +79,8 @@ if [[ "${TARGET}" != "free" ]]; then
   fi
   TITLE1="$(get_title "${WID1}")"
   if [[ "${TARGET}" == "paid" ]]; then
-    if [[ "${TITLE1}" != *"ChatGPT"* ]]; then
-      echo "ERROR: paid title does not include ChatGPT: ${TITLE1}" >&2
+    if [[ "${TITLE1}" == *"V.S.Code"* ]]; then
+      echo "ERROR: paid WID title contains V.S.Code: ${TITLE1}" >&2
       exit 1
     fi
     pid="$(get_pid_by_wid "${WID1}")"

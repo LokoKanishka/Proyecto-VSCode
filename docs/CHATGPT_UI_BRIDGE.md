@@ -72,3 +72,10 @@ En `CHATGPT_TARGET=paid`, el bridge no usa perfil dedicado:
 - Busca un Chrome “no-free” y **navega automáticamente** a `chatgpt.com` si no hay tab abierta.
 - Esto crea chats de prueba en la **cuenta paga** (aceptado en esta fase).
 - Script: `scripts/chatgpt_paid_ensure_chatgpt.sh`.
+
+### Thread fijo de pruebas (paid)
+
+- Archivo: `~/.cache/lucy_chatgpt_paid_test_thread.url`
+- Script: `scripts/chatgpt_paid_ensure_test_thread.sh`
+- En paid, cada ask verifica que la URL actual **coincida** con el thread de pruebas.
+- Si no coincide, intenta navegar al thread; si falla, aborta con `WRONG_THREAD` y deja forenses.

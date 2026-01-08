@@ -16,6 +16,8 @@ SEND="$ROOT/scripts/chatgpt_ui_send_x11.sh"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
 DISP="$ROOT/scripts/x11_dispatcher.py"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
+PAID_THREAD_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_test_thread.sh"
+PAID_GET_URL="$ROOT/scripts/chatgpt_paid_get_url.sh"
 CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
 DEFAULT_FREE_DIR="$HOME/.cache/lucy_chrome_chatgpt_free"
 CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$DEFAULT_FREE_DIR}}"
@@ -55,6 +57,7 @@ LAST_LINE_SEEN=""
 LINE_STABLE_COUNT=0
 COPY_MODE_DEFAULT="${LUCY_COPY_MODE_DEFAULT:-auto}"
 COPY_MODE_FALLBACK="${LUCY_COPY_MODE_FALLBACK:-messages}"
+PAID_THREAD_FILE="${CHATGPT_PAID_TEST_THREAD_FILE:-$HOME/.cache/lucy_chatgpt_paid_test_thread.url}"
 
 now_ms() {
   local ms
@@ -347,6 +350,43 @@ fi
 export CHATGPT_WID_HEX="$WID"
 export WID TITLE
 
+if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+  thread_url=""
+  if [[ -x "$PAID_THREAD_ENSURE" ]]; then
+    thread_url="$("$PAID_THREAD_ENSURE" 2>/dev/null || true)"
+  elif [[ -f "$PAID_THREAD_FILE" ]]; then
+    thread_url="$(head -n 1 "$PAID_THREAD_FILE" | tr -d '\r')"
+  fi
+  if [[ -z "${thread_url:-}" ]]; then
+    echo "ERROR: missing paid thread URL" >&2
+    fail_exit "PAID_THREAD_MISSING" 3
+  fi
+  cur_url=""
+  if [[ -x "$PAID_GET_URL" ]]; then
+    cur_url="$("$PAID_GET_URL" "$WID" 2>/dev/null || true)"
+  fi
+  if [[ "${cur_url}" != "${thread_url}" ]]; then
+    if [[ -x "$PAID_THREAD_ENSURE" ]]; then
+      "$PAID_THREAD_ENSURE" >/dev/null 2>&1 || true
+    fi
+    if [[ -x "$PAID_GET_URL" ]]; then
+      cur_url="$("$PAID_GET_URL" "$WID" 2>/dev/null || true)"
+    fi
+  fi
+  if [[ "${cur_url}" != "${thread_url}" ]]; then
+    {
+      printf '%s\n' "${cur_url}"
+    } > "$LUCY_ASK_TMPDIR/url.txt" 2>/dev/null || true
+    {
+      printf '%s\n' "${thread_url}"
+    } > "$LUCY_ASK_TMPDIR/thread_url.txt" 2>/dev/null || true
+    "$HOST_EXEC" "wmctrl -lp" > "$LUCY_ASK_TMPDIR/wmctrl_lp.txt" 2>/dev/null || true
+    printf '%s\n' "${WID}" > "$LUCY_ASK_TMPDIR/active_wid.txt" 2>/dev/null || true
+    echo "ERROR: WRONG_THREAD expected=${thread_url} got=${cur_url}" >&2
+    fail_exit "WRONG_THREAD" 3
+  fi
+fi
+
 TS="$(date +%s)"
 RID="$(( (RANDOM % 90000) + 10000 ))"
 TOKEN="${TS}_${RID}"
@@ -432,6 +472,11 @@ NEWCHAT_X="${LUCY_CHATGPT_NEWCHAT_X:-0.08}"
 NEWCHAT_Y="${LUCY_CHATGPT_NEWCHAT_Y:-0.12}"
 NEWCHAT_ATTEMPTED=0
 NEWCHAT_OK=0
+
+if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+  AUTO_CHAT=0
+  NEWCHAT_ATTEMPTS=0
+fi
 
 auto_chat_prepare() {
   if [[ "${AUTO_CHAT}" -ne 1 ]]; then
