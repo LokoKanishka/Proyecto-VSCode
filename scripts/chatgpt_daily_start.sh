@@ -3,6 +3,11 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+if [[ -f "$ROOT/scripts/chatgpt_profile_free_env.sh" ]]; then
+  # shellcheck source=/dev/null
+  . "$ROOT/scripts/chatgpt_profile_free_env.sh"
+fi
+
 export CHATGPT_WID_PIN_ONLY=1
 "${ROOT}/scripts/chatgpt_preflight.sh"
 

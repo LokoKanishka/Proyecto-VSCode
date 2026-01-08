@@ -3,10 +3,11 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
-FILE_CALL="$ROOT/scripts/x11_file_call.sh"
+CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
 
-PROFILE_DIR="${CHATGPT_BRIDGE_PROFILE_DIR:-$HOME/.cache/lucy_chatgpt_bridge_profile}"
+PROFILE_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}}"
 URL="${CHATGPT_BRIDGE_URL:-https://chatgpt.com}"
+CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 
 # Si ya existe una ventana bridge (detectada por perfil), listo.
 if wid="$("$GET_WID" 2>/dev/null)"; then
@@ -15,7 +16,15 @@ if wid="$("$GET_WID" 2>/dev/null)"; then
 fi
 
 # Si no existe, la lanzamos en HOST con perfil separado.
-"$FILE_CALL" "bash -lc 'mkdir -p "$PROFILE_DIR"; nohup google-chrome --user-data-dir="$PROFILE_DIR" --no-first-run --no-default-browser-check --new-window "$URL" >/tmp/lucy_bridge_chrome.log 2>&1 & echo LAUNCHED'" >/dev/null
+if [[ ! -x "$CHROME_OPEN" ]]; then
+  echo "bridge_ensure: ERROR missing chatgpt_chrome_open.sh" 1>&2
+  exit 1
+fi
+
+CHATGPT_OPEN_URL="$URL" \
+  CHATGPT_CHROME_USER_DATA_DIR="$PROFILE_DIR" \
+  CHATGPT_BRIDGE_CLASS="$CHATGPT_BRIDGE_CLASS" \
+  "$CHROME_OPEN" >/dev/null 2>&1 || true
 
 # Esperar a que aparezca el WID bridge.
 for _ in $(seq 1 60); do

@@ -1,78 +1,62 @@
-# ChatGPT UI Bridge (X11) — WID seguro + smoketest
+# ChatGPT UI Bridge (X11) — perfil dedicado + guardrails
 
-Este módulo permite que Lucy “hable” con ChatGPT vía UI (X11) sin pegarle nunca a la ventana equivocada.
+Este módulo permite que Lucy “hable” con ChatGPT vía UI (X11) **sin tocar la cuenta paga**.
 
 ## Idea clave
 
-- **Solo** se interactúa con la **ventana puente** (Chrome `--app`) cuya `WM_CLASS` empieza con:
-  - `chatgpt.com.*`
+- El bridge usa **un Chrome dedicado** con `--user-data-dir` propio (perfil free).
+- Se valida por **WM_COMMAND** + `--user-data-dir` (no solo por título/WM_CLASS).
+- Si el perfil no matchea, **se aborta** antes de tipear.
 
-Eso evita tocar la ventana “ChatGPT - V.S.Code - Google Chrome” u otras pestañas.
+Variables clave:
+- `CHATGPT_CHROME_USER_DATA_DIR` (default `~/.cache/lucy_chrome_chatgpt_free`)
+- `CHATGPT_PROFILE_NAME` (default `free`)
+- `CHATGPT_WID_PIN_FILE` (default `~/.cache/lucy_chatgpt_wid_pin_free`)
+- `CHATGPT_BRIDGE_CLASS` (default `lucy-chatgpt-bridge`)
+
+Helper recomendado:
+- `source ./scripts/chatgpt_profile_free_env.sh`
 
 ## Scripts
 
-### 1) `scripts/chatgpt_get_wid.sh`
-Selector **seguro** del WID:
+### 1) `scripts/chatgpt_chrome_open.sh`
+**Único punto de apertura** de Chrome para el bridge:
+- Siempre usa `--user-data-dir` del perfil free.
+- Usa `--class "${CHATGPT_BRIDGE_CLASS}"`.
+- Se ejecuta en el host vía `x11_host_exec.sh`.
 
-- Primero respeta overrides:
-  - `LUCY_CHATGPT_WID_HEX=0x...`
-  - `CHATGPT_WID_HEX=0x...`
-- Si no hay overrides, busca **únicamente** `WM_CLASS` `chatgpt.com.*`
-- Si no existe, falla con código `2`
-- Recovery multi-Chrome:
-  - Si el pin apunta a WID inválido, intenta una pista fuerte en el título.
-  - Si hay ambigüedad, abre una ventana nueva de ChatGPT y repinea esa.
-  - Evita títulos con “V.S.Code / Visual Studio Code”.
+### 2) `scripts/chatgpt_get_wid.sh`
+Selector seguro del WID:
+- Si hay pin válido, lo reutiliza (y lo re-escribe).
+- Si el pin es inválido, hace recovery **sin foco**.
+- **Nunca** selecciona ventanas fuera del perfil (`WM_COMMAND` + `user-data-dir`).
+- Si no hay ventana, abre una nueva con `chatgpt_chrome_open.sh`.
 
-### 2) `scripts/chatgpt_bridge_ensure.sh`
-Asegura que exista la ventana puente:
-
+### 3) `scripts/chatgpt_bridge_ensure.sh`
+Asegura que exista la ventana bridge:
 - Si ya está abierta, devuelve el WID.
-- Si no está, abre:
-  - `google-chrome --profile-directory=Default --app="https://chatgpt.com/"`
-- Espera hasta ~15s a que aparezca `WM_CLASS chatgpt.com.*` y devuelve el WID.
+- Si no, abre con `chatgpt_chrome_open.sh`.
 
-### 3) `scripts/chatgpt_ui_ask_x11.sh`
-Hace la pregunta por UI (pega prompt + Enter) y espera `LUCY_ANSWER_...`:
+### 4) `scripts/chatgpt_ui_ask_x11.sh`
+Hace la pregunta por UI y espera `LUCY_ANSWER_...`:
+- Rechaza WIDs que **no** matcheen el perfil (`PROFILE_GUARD_TRIPPED`).
+- Deja forenses en `LUCY_ASK_TMPDIR` si falla.
 
-- Si no se pasó `CHATGPT_WID_HEX`, intenta:
-  1) `chatgpt_bridge_ensure.sh`
-  2) si no existe, `chatgpt_get_wid.sh`
-- Variables:
-  - `ASK_TIMEOUT` (default 75)
-  - `CHATGPT_TIMEOUT_SEC` (alias del anterior)
+## Dummy harness (sin tocar ChatGPT real)
 
-### 4) `lucy_agents/voice_actions.py` → `_ask_chatgpt_ui()`
-Integra el ask UI desde Python. Si no hay WID explícito, lo resuelve con el selector seguro.
+Para validar el pipeline X11 (type → enter → copy → parse) sin generar chats:
 
-## Smoketest E2E
+- HTML: `diagnostics/ui_dummy_chat.html`
+- Verify: `scripts/verify_ui_dummy_pipe.sh`
 
-Script:
-- `scripts/chatgpt_ui_smoketest.sh`
-
-Qué verifica:
-- Detecta ventanas ChatGPT existentes
-- Asegura/abre la ventana puente
-- Ejecuta `ask_x11` **dos veces**
-- Loguea a `/tmp/lucy_chatgpt_ui_smoketest_YYYYMMDD_HHMMSS.log`
-- El botón rojo `./scripts/verify_a5_all.sh` incluye `verify_web_search_searxng.sh`.
-
-Ejecutar:
-```bash
-./scripts/chatgpt_ui_smoketest.sh
-```
-
-Éxito esperado:
-
-* `RC=0`
-* `ASK #1` y `ASK #2` devuelven `OK`
-* La ventana puente queda viva y la de “V.S.Code” también
+Esto abre el dummy con el **mismo perfil** y valida que el parse funcione.
 
 ## Troubleshooting rápido
 
-* “ERROR: no encontré la ventana PUENTE …”
+* “ERROR: PROFILE_GUARD_TRIPPED”:
+  - Asegurate de haber logueado el **perfil free** en el Chrome bridge.
+  - Usá `scripts/chatgpt_profile_free_env.sh` antes de correr verifies.
 
-  * Corré:
-
-    * `./scripts/chatgpt_bridge_ensure.sh`
-  * Logueate en la ventana puente (perfil Default) si fuese necesario.
+* “ERROR: no encuentro ventana ChatGPT en el perfil ...”:
+  - Corré `./scripts/chatgpt_bridge_ensure.sh`
+  - Si no aparece, abrí manualmente ChatGPT en el perfil free.

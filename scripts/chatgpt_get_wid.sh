@@ -8,10 +8,19 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
-PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin}"
+CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
+PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"
+CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}}"
+PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${PROFILE_NAME}}"
+CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
 TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-}"
 CHATGPT_OPEN_URL="${CHATGPT_OPEN_URL:-https://chat.openai.com/}"
+PROFILE_LOCK=0
+if [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:-}" ]]; then
+  PROFILE_LOCK=1
+  printf 'PROFILE_LOCK=1 user_data_dir=%s\n' "$CHATGPT_CHROME_USER_DATA_DIR" >&2
+fi
 
 dbg() {
   if [[ "${CHATGPT_WID_DEBUG:-0}" == "1" ]]; then
@@ -32,6 +41,15 @@ get_wmctrl() {
 
 get_wmctrl_lx() {
   "$HOST_EXEC" 'wmctrl -lx' 2>/dev/null || true
+}
+
+get_wmctrl_lp() {
+  "$HOST_EXEC" 'wmctrl -lp' 2>/dev/null || true
+}
+
+get_wm_command_by_wid() {
+  local wid="$1"
+  "$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true
 }
 
 get_stack_order() {
@@ -97,29 +115,38 @@ title_has_strong_hint() {
 }
 
 list_chrome_candidates() {
-  get_wmctrl_lx | awk '
+  get_wmctrl_lp | awk '
     {
       wid=$1;
-      klass=$3;
+      pid=$3;
       title="";
       for(i=5;i<=NF;i++){ title = title (i==5 ? "" : " ") $i }
-      if(tolower(klass) !~ /(google-chrome|chromium)/) next;
-      printf "%s\t%s\n", wid, title
+      printf "%s\t%s\t%s\n", wid, pid, title
     }
-  ' | while IFS=$'\t' read -r wid title; do
+  ' | while IFS=$'\t' read -r wid pid title; do
     [[ -z "${wid:-}" ]] && continue
+    cmd="$(get_cmdline_by_pid "$pid")"
+    if ! cmdline_is_chrome "$cmd"; then
+      continue
+    fi
+    if ! cmdline_matches_profile "$cmd"; then
+      continue
+    fi
+    if ! wm_command_matches_profile "$wid"; then
+      continue
+    fi
     if title_is_excluded "$title"; then
       continue
     fi
-    printf "%s\t%s\n" "$wid" "$title"
+    printf "%s\t%s\t%s\n" "$wid" "$pid" "$title"
   done
 }
 
 list_strong_candidates() {
-  list_chrome_candidates | while IFS=$'\t' read -r wid title; do
+  list_chrome_candidates | while IFS=$'\t' read -r wid pid title; do
     [[ -z "${wid:-}" ]] && continue
     if title_has_strong_hint "$title"; then
-      printf "%s\t%s\n" "$wid" "$title"
+      printf "%s\t%s\t%s\n" "$wid" "$pid" "$title"
     fi
   done
 }
@@ -140,17 +167,90 @@ get_title_by_wid() {
   awk -v w="$wid" '$1==w { $1=""; $2=""; $3=""; sub(/^ +/, ""); print; exit }' <<< "$wins"
 }
 
+get_pid_by_wid() {
+  local wid="$1"
+  get_wmctrl_lp | awk -v w="$wid" '$1==w {print $3; exit}'
+}
+
+get_cmdline_by_pid() {
+  local pid="$1"
+  [[ "${pid:-}" =~ ^[0-9]+$ ]] || return 1
+  "$HOST_EXEC" "bash -lc 'tr \"\\0\" \" \" < /proc/${pid}/cmdline 2>/dev/null'" || true
+}
+
+cmdline_is_chrome() {
+  local cmd="$1"
+  [[ -n "${cmd:-}" ]] || return 1
+  local cmd_lc
+  cmd_lc="${cmd,,}"
+  if [[ "$cmd_lc" == *"google-chrome"* ]] || [[ "$cmd_lc" == *"chromium"* ]] || [[ "$cmd_lc" == *"chrome/chrome"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+cmdline_matches_profile() {
+  local cmd="$1"
+  if [[ "${PROFILE_LOCK}" -ne 1 ]]; then
+    return 0
+  fi
+  [[ -n "${cmd:-}" ]] || return 1
+  if [[ "${cmd}" == *"--user-data-dir=${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
+    return 0
+  fi
+  if [[ "${cmd}" == *"--user-data-dir ${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+wm_command_matches_profile() {
+  if [[ "${PROFILE_LOCK}" -ne 1 ]]; then
+    return 0
+  fi
+  local wid="$1"
+  local cmd
+  cmd="$(get_wm_command_by_wid "$wid")"
+  [[ -n "${cmd:-}" ]] || return 1
+  if [[ "${cmd}" == *"--user-data-dir=${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
+    return 0
+  fi
+  if [[ "${cmd}" == *"--user-data-dir ${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+log_profile_choice() {
+  local wid="$1"
+  local pid cmd cmd_ok
+  if [[ "${PROFILE_LOCK}" -ne 1 ]]; then
+    return 0
+  fi
+  pid="$(get_pid_by_wid "$wid")"
+  cmd="$(get_cmdline_by_pid "$pid")"
+  cmd_ok=0
+  if cmdline_matches_profile "$cmd"; then
+    cmd_ok=1
+  fi
+  printf 'WID_CHOSEN=%s PID=%s CMD_OK=%s\n' "$wid" "$pid" "$cmd_ok" >&2
+}
+
 wid_is_chrome() {
   local wid="$1"
-  local klass=""
-  klass="$(get_wmctrl_lx | awk -v w="$wid" '$1==w {print $3; exit}')"
-  [[ -n "${klass:-}" ]] || return 1
-  case "${klass,,}" in
-    *google-chrome*|*chromium*)
-      return 0
-      ;;
-  esac
-  return 1
+  local pid cmd
+  pid="$(get_pid_by_wid "$wid")"
+  cmd="$(get_cmdline_by_pid "$pid")"
+  if ! cmdline_is_chrome "$cmd"; then
+    return 1
+  fi
+  if ! cmdline_matches_profile "$cmd"; then
+    return 1
+  fi
+  if ! wm_command_matches_profile "$wid"; then
+    return 1
+  fi
+  return 0
 }
 
 wid_exists() {
@@ -172,7 +272,7 @@ choose_wid() {
 
   # Build map wid -> title for fast membership checks
   declare -A cand_title=()
-  while IFS=$'\t' read -r wid title; do
+  while IFS=$'\t' read -r wid _pid title; do
     [[ -z "${wid:-}" ]] && continue
     cand_title["$wid"]="$title"
   done <<< "$candidates"
@@ -229,7 +329,7 @@ choose_latest_wid() {
   local max_wid=""
   local max_title=""
   local dec
-  while IFS=$'\t' read -r wid title; do
+  while IFS=$'\t' read -r wid _pid title; do
     [[ -z "${wid:-}" ]] && continue
     dec="$(printf "%d" "$wid" 2>/dev/null || echo -1)"
     if [[ "$dec" -gt "$max_dec" ]]; then
@@ -247,19 +347,25 @@ choose_latest_wid() {
 filter_new_candidates() {
   local before="$1"
   local candidates="$2"
-  local wid title
-  while IFS=$'\t' read -r wid title; do
+  local wid _pid title
+  while IFS=$'\t' read -r wid _pid title; do
     [[ -z "${wid:-}" ]] && continue
     if grep -Fxq "${wid}" <<< "${before}"; then
       continue
     fi
-    printf '%s\t%s\n' "$wid" "$title"
+    printf '%s\t%s\t%s\n' "$wid" "$_pid" "$title"
   done <<< "$candidates"
 }
 
 open_chatgpt_window() {
-  "$HOST_EXEC" "bash -lc 'google-chrome --new-window \"${CHATGPT_OPEN_URL}\" >/dev/null 2>&1 & disown'" \
-    >/dev/null 2>&1 || true
+  if [[ ! -x "$CHROME_OPEN" ]]; then
+    echo "ERROR: missing chatgpt_chrome_open.sh" >&2
+    return 1
+  fi
+  CHATGPT_OPEN_URL="${CHATGPT_OPEN_URL}" \
+    CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR}" \
+    CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS}" \
+    "$CHROME_OPEN" >/dev/null 2>&1 || true
 }
 
 open_chatgpt_and_pick_new() {
@@ -287,19 +393,39 @@ PIN_RECOVER_NEEDS_WRITE=0
 if [[ -f "${PIN_FILE}" ]]; then
   PIN_WID="$(read_pin_wid "$PIN_FILE" || true)"
   if [[ -n "${PIN_WID:-}" ]]; then
-    if wid_exists "$PIN_WID" && wid_is_chrome "$PIN_WID"; then
+    pin_reason=""
+    pin_cmd_ok=0
+    pin_pid=""
+    if wid_exists "$PIN_WID"; then
+      pin_pid="$(get_pid_by_wid "$PIN_WID")"
+      pin_cmd="$(get_cmdline_by_pid "$pin_pid")"
+      if cmdline_is_chrome "$pin_cmd" && cmdline_matches_profile "$pin_cmd"; then
+        pin_cmd_ok=1
+      fi
       TITLE_PIN="$(get_title_by_wid "$PIN_WID")"
-      if ! title_is_excluded "${TITLE_PIN:-}"; then
+      if [[ "${pin_cmd_ok}" -eq 1 ]] && wm_command_matches_profile "$PIN_WID" && ! title_is_excluded "${TITLE_PIN:-}"; then
         if [[ -z "${TITLE_PIN:-}" ]]; then
           TITLE_PIN="${TITLE_INCLUDE}"
         fi
         write_pin "$PIN_WID" "$TITLE_PIN"
+        log_profile_choice "$PIN_WID"
         dbg "WID_CHOSEN=${PIN_WID} TITLE=${TITLE_PIN}"
         printf '%s\n' "$PIN_WID"
         exit 0
       fi
+      if [[ "${pin_cmd_ok}" -ne 1 ]]; then
+        pin_reason="PROFILE_MISMATCH"
+      elif ! wm_command_matches_profile "$PIN_WID"; then
+        pin_reason="WM_COMMAND_MISMATCH"
+      elif title_is_excluded "${TITLE_PIN:-}"; then
+        pin_reason="TITLE_EXCLUDED"
+      else
+        pin_reason="PIN_INVALID"
+      fi
+    else
+      pin_reason="WID_MISSING"
     fi
-    echo "PIN_INVALID=1 old_wid=${PIN_WID}" >&2
+    echo "PIN_INVALID=1 old_wid=${PIN_WID} reason=${pin_reason} pid=${pin_pid:-}" >&2
     if [[ "${CHATGPT_WID_PIN_ONLY:-0}" -eq 1 ]]; then
       echo "ERROR: PIN_INVALID WID=${PIN_WID}" >&2
       exit 3
@@ -314,7 +440,8 @@ if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
   strong_count="$(printf '%s\n' "$STRONG_CANDIDATES" | awk 'NF{c++} END{print c+0}')"
   RECOVER_WID=""
   if [[ "${strong_count}" -eq 1 ]]; then
-    RECOVER_WID="$(printf '%s\n' "$STRONG_CANDIDATES" | head -n 1 | cut -f1)"
+    strong_line="$(printf '%s\n' "$STRONG_CANDIDATES" | head -n 1)"
+    RECOVER_WID="$(cut -f1 <<< "$strong_line")"
   else
     if [[ "${CHATGPT_GET_WID_NOOPEN:-0}" -eq 1 ]]; then
       echo "ERROR: PIN_INVALID and recovery needs new window (CHATGPT_GET_WID_NOOPEN=1)" >&2
@@ -333,6 +460,7 @@ if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
     TITLE_RECOVER="${TITLE_INCLUDE}"
   fi
   write_pin "$RECOVER_WID" "$TITLE_RECOVER"
+  log_profile_choice "$RECOVER_WID"
   echo "PIN_RECOVERED=1 new_wid=${RECOVER_WID}" >&2
   printf '%s\n' "$RECOVER_WID"
   exit 0
@@ -341,6 +469,9 @@ fi
 # 1) Selección normal
 CANDIDATES="$(list_chrome_candidates)"
 WID="$(choose_wid "$CANDIDATES" "$(get_active_wid)")"
+if [[ -n "${WID:-}" ]]; then
+  log_profile_choice "$WID"
+fi
 
 # 2) Si no hay ventana Chrome, abrir ChatGPT y esperar (si no está deshabilitado)
 if [[ -z "${WID:-}" ]]; then
@@ -349,10 +480,17 @@ if [[ -z "${WID:-}" ]]; then
     exit 3
   fi
   WID="$(open_chatgpt_and_pick_new || true)"
+  if [[ -n "${WID:-}" ]]; then
+    log_profile_choice "$WID"
+  fi
 fi
 
 if [[ -z "${WID:-}" ]]; then
-  echo "ERROR: no encuentro ventana ChatGPT en Chrome. Abrí ChatGPT y reintentá." >&2
+  if [[ "${PROFILE_LOCK}" -eq 1 ]]; then
+    echo "ERROR: no encuentro ventana ChatGPT en el perfil ${CHATGPT_CHROME_USER_DATA_DIR}. Abrí ChatGPT y reintentá." >&2
+  else
+    echo "ERROR: no encuentro ventana ChatGPT en Chrome. Abrí ChatGPT y reintentá." >&2
+  fi
   exit 3
 fi
 

@@ -28,6 +28,10 @@ docker compose -f infra/searxng/docker-compose.yml logs -f
 ./scripts/local_services_up.sh
 ```
 
+Nota:
+- En sandbox sin Docker, el script usa `scripts/host_docker.sh` para ejecutar
+  `docker compose` en el host vía `x11_host_exec.sh`.
+
 Variables útiles:
 - `SEARXNG_URL` (default `http://127.0.0.1:8080`)
 - `SEARXNG_COMPOSE_FILE` (default `infra/searxng/docker-compose.yml`)

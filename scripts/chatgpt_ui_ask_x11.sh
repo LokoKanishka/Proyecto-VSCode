@@ -16,6 +16,11 @@ SEND="$ROOT/scripts/chatgpt_ui_send_x11.sh"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
 DISP="$ROOT/scripts/x11_dispatcher.py"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
+CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}}"
+PROFILE_LOCK=0
+if [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:-}" ]]; then
+  PROFILE_LOCK=1
+fi
 
 PROMPT="${1:-}"
 if [[ -z "${PROMPT:-}" ]]; then
@@ -43,6 +48,172 @@ COPY_SECONDARY_PATH=""
 COPY_BEST_PATH=""
 LAST_LINE_SEEN=""
 LINE_STABLE_COUNT=0
+
+now_ms() {
+  local ms
+  ms="$(date +%s%3N 2>/dev/null || true)"
+  if ! [[ "${ms}" =~ ^[0-9]+$ ]]; then
+    ms=$(( $(date +%s) * 1000 ))
+  fi
+  printf '%s' "${ms}"
+}
+
+get_active_wid() {
+  local raw
+  raw="$("$HOST_EXEC" 'xprop -root _NET_ACTIVE_WINDOW' 2>/dev/null \
+    | sed -n 's/.*\(0x[0-9a-fA-F]\+\).*/\1/p' | head -n 1)"
+  if [[ -n "${raw:-}" ]]; then
+    printf '0x%08x\n' "$((raw))"
+  fi
+}
+
+get_wid_title() {
+  local wid="$1"
+  if [[ -x "$HOST_EXEC" ]]; then
+    "$HOST_EXEC" "wmctrl -l | awk '\$1==\"${wid}\" { \$1=\"\"; \$2=\"\"; \$3=\"\"; sub(/^ +/, \"\"); print; exit }'" 2>/dev/null || true
+  fi
+}
+
+get_wm_command_by_wid() {
+  local wid="$1"
+  if [[ -x "$HOST_EXEC" ]]; then
+    "$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true
+  fi
+}
+
+profile_guard_ok() {
+  if [[ "${PROFILE_LOCK}" -ne 1 ]]; then
+    return 0
+  fi
+  local wid="$1"
+  local cmd
+  cmd="$(get_wm_command_by_wid "$wid")"
+  [[ -n "${cmd:-}" ]] || return 1
+  if [[ "${cmd}" == *"--user-data-dir=${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
+    return 0
+  fi
+  if [[ "${cmd}" == *"--user-data-dir ${CHATGPT_CHROME_USER_DATA_DIR}"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+resolve_wid() {
+  # 1) env
+  if [[ -n "${CHATGPT_WID_HEX:-}" ]]; then
+    printf '%s\n' "$CHATGPT_WID_HEX"
+    return 0
+  fi
+
+  # 2) selector estable (ya usa host_exec en este entorno)
+  local w=""
+  w="$("$GET_WID" 2>/dev/null || true)"
+  if [[ -n "${w:-}" ]]; then
+    printf '%s\n' "$w"
+    return 0
+  fi
+
+  return 0
+}
+
+write_meta() {
+  if [[ "${META_WRITTEN}" -eq 1 ]] || [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
+    return 0
+  fi
+  local active_wid active_title
+  active_wid="$(get_active_wid || true)"
+  active_title="$(get_wid_title "${active_wid:-}" 2>/dev/null || true)"
+  {
+    echo "WID=${WID:-}"
+    echo "TITLE=${TITLE:-}"
+    echo "ACTIVE_WID=${active_wid:-}"
+    echo "ACTIVE_TITLE=${active_title:-}"
+  } > "$LUCY_ASK_TMPDIR/meta.txt"
+  META_WRITTEN=1
+}
+
+write_summary() {
+  if [[ "${SUMMARY_WRITTEN}" -eq 1 ]] || [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
+    return 0
+  fi
+  if [[ -z "${END_MS:-}" ]]; then
+    END_MS="$(now_ms)"
+  fi
+  if [[ -z "${START_MS:-}" ]]; then
+    START_MS="${END_MS}"
+  fi
+  ELAPSED_MS=$(( END_MS - START_MS ))
+  if [[ "${ELAPSED_MS}" -lt 0 ]]; then
+    ELAPSED_MS=0
+  fi
+  export START_MS END_MS ELAPSED_MS
+  python3 - "$LUCY_ASK_TMPDIR/summary.json" <<'PY'
+import json
+import os
+import sys
+
+out = sys.argv[1]
+def env(key, default=""):
+    return os.environ.get(key, default)
+
+data = {
+    "token": env("TOKEN", ""),
+    "wid": env("WID", ""),
+    "title": env("TITLE", ""),
+    "start_ms": int(env("START_MS", "0") or 0),
+    "end_ms": int(env("END_MS", "0") or 0),
+    "elapsed_ms": int(env("ELAPSED_MS", "0") or 0),
+    "rc": int(env("ASK_RC", "1") or 1),
+    "status": env("ASK_STATUS", "fail"),
+    "reason": env("FAIL_REASON", ""),
+    "step": "ask",
+    "answer_line": env("ANSWER_LINE", ""),
+    "copy_primary": env("COPY_PRIMARY_PATH", ""),
+    "copy_secondary": env("COPY_SECONDARY_PATH", ""),
+    "copy_best": env("COPY_BEST_PATH", ""),
+}
+
+with open(out, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=True)
+PY
+  SUMMARY_WRITTEN=1
+}
+
+capture_screenshot() {
+  if [[ -z "${LUCY_ASK_TMPDIR:-}" ]] || [[ -z "${WID:-}" ]]; then
+    return 0
+  fi
+  local out err path
+  out="$(mktemp /tmp/lucy_ask_shot_out.XXXX.txt)"
+  err="$(mktemp /tmp/lucy_ask_shot_err.XXXX.txt)"
+  python3 -u "$DISP" screenshot "$WID" >"$out" 2>"$err" || true
+  path="$(sed -n 's/^PATH[[:space:]]\+\([^[:space:]]\+\).*/\1/p' "$out" | head -n 1)"
+  if [[ -n "${path:-}" ]] && [[ -f "${path}" ]]; then
+    cp -f "$path" "$LUCY_ASK_TMPDIR/screenshot.png" 2>/dev/null || true
+    FAIL_SHOT_PATH="$path"
+  fi
+  rm -f "$out" "$err" 2>/dev/null || true
+}
+
+capture_failure_context() {
+  capture_screenshot
+  if [[ -n "${TMP:-}" ]]; then
+    store_best_copy "$TMP"
+  fi
+  write_meta
+  write_summary
+}
+
+fail_exit() {
+  local reason="$1"
+  local rc="${2:-1}"
+  FAIL_REASON="$reason"
+  ASK_RC="$rc"
+  ASK_STATUS="fail"
+  export ASK_RC ASK_STATUS FAIL_REASON ANSWER_LINE COPY_PRIMARY_PATH COPY_SECONDARY_PATH COPY_BEST_PATH
+  capture_failure_context || true
+  exit "$rc"
+}
 
 announce_tmpdir() {
   if [[ "${TMPDIR_ANNOUNCED}" -ne 1 ]]; then
@@ -125,6 +296,10 @@ if [[ "${TITLE}" == *"V.S.Code"* ]]; then
     echo "ERROR: BAD_WID_VSCODE WID=${WID} TITLE=${TITLE}" >&2
     fail_exit "BAD_WID_VSCODE" 3
   fi
+fi
+if ! profile_guard_ok "$WID"; then
+  echo "ERROR: PROFILE_GUARD_TRIPPED WID=${WID}" >&2
+  fail_exit "PROFILE_GUARD_TRIPPED" 3
 fi
 export CHATGPT_WID_HEX="$WID"
 export WID TITLE
@@ -341,123 +516,6 @@ hash_file() {
     return 0
   fi
   cksum "$f" | awk '{print $1}'
-}
-
-now_ms() {
-  local ms
-  ms="$(date +%s%3N 2>/dev/null || true)"
-  if ! [[ "${ms}" =~ ^[0-9]+$ ]]; then
-    ms=$(( $(date +%s) * 1000 ))
-  fi
-  printf '%s' "${ms}"
-}
-
-get_active_wid() {
-  local raw
-  raw="$("$HOST_EXEC" 'xprop -root _NET_ACTIVE_WINDOW' 2>/dev/null \
-    | sed -n 's/.*\(0x[0-9a-fA-F]\+\).*/\1/p' | head -n 1)"
-  if [[ -n "${raw:-}" ]]; then
-    printf '0x%08x\n' "$((raw))"
-  fi
-}
-
-write_meta() {
-  if [[ "${META_WRITTEN}" -eq 1 ]] || [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
-    return 0
-  fi
-  local active_wid active_title
-  active_wid="$(get_active_wid || true)"
-  active_title="$(get_wid_title "${active_wid:-}" 2>/dev/null || true)"
-  {
-    echo "WID=${WID:-}"
-    echo "TITLE=${TITLE:-}"
-    echo "ACTIVE_WID=${active_wid:-}"
-    echo "ACTIVE_TITLE=${active_title:-}"
-  } > "$LUCY_ASK_TMPDIR/meta.txt"
-  META_WRITTEN=1
-}
-
-write_summary() {
-  if [[ "${SUMMARY_WRITTEN}" -eq 1 ]] || [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
-    return 0
-  fi
-  if [[ -z "${END_MS:-}" ]]; then
-    END_MS="$(now_ms)"
-  fi
-  if [[ -z "${START_MS:-}" ]]; then
-    START_MS="${END_MS}"
-  fi
-  ELAPSED_MS=$(( END_MS - START_MS ))
-  if [[ "${ELAPSED_MS}" -lt 0 ]]; then
-    ELAPSED_MS=0
-  fi
-  export START_MS END_MS ELAPSED_MS
-  python3 - "$LUCY_ASK_TMPDIR/summary.json" <<'PY'
-import json
-import os
-import sys
-
-out = sys.argv[1]
-def env(key, default=""):
-    return os.environ.get(key, default)
-
-data = {
-    "token": env("TOKEN", ""),
-    "wid": env("WID", ""),
-    "title": env("TITLE", ""),
-    "start_ms": int(env("START_MS", "0") or 0),
-    "end_ms": int(env("END_MS", "0") or 0),
-    "elapsed_ms": int(env("ELAPSED_MS", "0") or 0),
-    "rc": int(env("ASK_RC", "1") or 1),
-    "status": env("ASK_STATUS", "fail"),
-    "reason": env("FAIL_REASON", ""),
-    "step": "ask",
-    "answer_line": env("ANSWER_LINE", ""),
-    "copy_primary": env("COPY_PRIMARY_PATH", ""),
-    "copy_secondary": env("COPY_SECONDARY_PATH", ""),
-    "copy_best": env("COPY_BEST_PATH", ""),
-}
-
-with open(out, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=True)
-PY
-  SUMMARY_WRITTEN=1
-}
-
-capture_screenshot() {
-  if [[ -z "${LUCY_ASK_TMPDIR:-}" ]] || [[ -z "${WID:-}" ]]; then
-    return 0
-  fi
-  local out err path
-  out="$(mktemp /tmp/lucy_ask_shot_out.XXXX.txt)"
-  err="$(mktemp /tmp/lucy_ask_shot_err.XXXX.txt)"
-  python3 -u "$DISP" screenshot "$WID" >"$out" 2>"$err" || true
-  path="$(sed -n 's/^PATH[[:space:]]\+\([^[:space:]]\+\).*/\1/p' "$out" | head -n 1)"
-  if [[ -n "${path:-}" ]] && [[ -f "${path}" ]]; then
-    cp -f "$path" "$LUCY_ASK_TMPDIR/screenshot.png" 2>/dev/null || true
-    FAIL_SHOT_PATH="$path"
-  fi
-  rm -f "$out" "$err" 2>/dev/null || true
-}
-
-capture_failure_context() {
-  capture_screenshot
-  if [[ -n "${TMP:-}" ]]; then
-    store_best_copy "$TMP"
-  fi
-  write_meta
-  write_summary
-}
-
-fail_exit() {
-  local reason="$1"
-  local rc="${2:-1}"
-  FAIL_REASON="$reason"
-  ASK_RC="$rc"
-  ASK_STATUS="fail"
-  export ASK_RC ASK_STATUS FAIL_REASON ANSWER_LINE COPY_PRIMARY_PATH COPY_SECONDARY_PATH COPY_BEST_PATH
-  capture_failure_context || true
-  exit "$rc"
 }
 
 START_MS="$(now_ms)"

@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+HOST_DOCKER="$ROOT/scripts/host_docker.sh"
 SEARXNG_URL="${SEARXNG_URL:-http://127.0.0.1:8080}"
 SEARXNG_COMPOSE_FILE="${SEARXNG_COMPOSE_FILE:-infra/searxng/docker-compose.yml}"
 SEARXNG_HEALTH_TIMEOUT_SEC="${SEARXNG_HEALTH_TIMEOUT_SEC:-30}"
@@ -21,7 +22,7 @@ ensure_searxng_up() {
   fi
 
   echo "WARN: SearxNG no está activo. Intentando levantarlo..." >&2
-  if ! docker compose -f "${SEARXNG_COMPOSE_FILE}" up -d; then
+  if ! "$HOST_DOCKER" compose -f "${SEARXNG_COMPOSE_FILE}" up -d; then
     echo "ERROR: no se pudo ejecutar docker compose up -d" >&2
     exit 3
   fi
@@ -34,8 +35,8 @@ ensure_searxng_up() {
   done
 
   echo "ERROR: SearxNG no está activo. Levantalo con: docker compose -f ${SEARXNG_COMPOSE_FILE} up -d" >&2
-  docker compose -f "${SEARXNG_COMPOSE_FILE}" ps || true
-  docker compose -f "${SEARXNG_COMPOSE_FILE}" logs --tail 80 || true
+  "$HOST_DOCKER" compose -f "${SEARXNG_COMPOSE_FILE}" ps || true
+  "$HOST_DOCKER" compose -f "${SEARXNG_COMPOSE_FILE}" logs --tail 80 || true
   exit 3
 }
 
