@@ -22,9 +22,31 @@ if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
   CHATGPT_CHROME_USER_DATA_DIR=""
 fi
 PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${CHATGPT_TARGET}}"
+ensure_pin_file() {
+  local f="$1"
+  local dir
+  dir="$(dirname "$f")"
+  mkdir -p "$dir" 2>/dev/null || true
+  if [[ -e "$f" ]]; then
+    dd if=/dev/null of="$f" 2>/dev/null || return 1
+  else
+    local tmp
+    tmp="$(mktemp "$dir/.pinwrite.XXXX" 2>/dev/null)" || return 1
+    rm -f "$tmp" 2>/dev/null || true
+  fi
+  return 0
+}
+if ! ensure_pin_file "$PIN_FILE"; then
+  PIN_FILE="/tmp/lucy_chatgpt_wid_pin_${CHATGPT_TARGET}"
+  mkdir -p "$(dirname "$PIN_FILE")" 2>/dev/null || true
+  echo "WARN: PIN_FILE not writable, using ${PIN_FILE}" >&2
+fi
+export CHATGPT_WID_PIN_FILE="$PIN_FILE"
 CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 if [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-LUCY Dummy Chat}"
+elif [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+  TITLE_INCLUDE=""
 else
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
 fi
@@ -36,9 +58,14 @@ if [[ "${CHATGPT_TARGET}" == "free" ]] && [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:
   printf 'PROFILE_LOCK=1 user_data_dir=%s\n' "$CHATGPT_CHROME_USER_DATA_DIR" >&2
 fi
 
+DBG_COUNT=0
+DBG_MAX="${CHATGPT_WID_DEBUG_MAX:-12}"
 dbg() {
   if [[ "${CHATGPT_WID_DEBUG:-0}" == "1" ]]; then
-    echo "$*" >&2
+    DBG_COUNT=$((DBG_COUNT + 1))
+    if [[ "${DBG_COUNT}" -le "${DBG_MAX}" ]]; then
+      echo "$*" >&2
+    fi
   fi
   return 0
 }
@@ -319,7 +346,7 @@ log_profile_choice() {
   if cmdline_matches_profile "$cmd"; then
     cmd_ok=1
   fi
-  printf 'WID_CHOSEN=%s PID=%s CMD_OK=%s\n' "$wid" "$pid" "$cmd_ok" >&2
+  dbg "WID_CHOSEN=${wid} PID=${pid} CMD_OK=${cmd_ok}"
 }
 
 wid_is_chrome() {

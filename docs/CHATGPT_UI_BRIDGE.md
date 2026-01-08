@@ -79,3 +79,21 @@ En `CHATGPT_TARGET=paid`, el bridge no usa perfil dedicado:
 - Script: `scripts/chatgpt_paid_ensure_test_thread.sh`
 - En paid, cada ask verifica que la URL actual **coincida** con el thread de pruebas.
 - Si no coincide, intenta navegar al thread; si falla, aborta con `WRONG_THREAD` y deja forenses.
+
+### Preflight one-shot (paid)
+
+- Script: `scripts/chatgpt_paid_preflight_one_shot.sh`
+- Hace: asegurar ChatGPT abierto, asegurar thread fijo, pin y validación de URL.
+- Si falla, deja `FORENSICS_DIR` y un log en `/tmp/paid_preflight_one_shot.log`.
+
+## Botón rojo A7
+
+- Script: `scripts/verify_a7_all.sh`
+- Ejecuta: dummy UI, web search y `verify_a6_all.sh` en paid dos veces.
+- Si falla, lista los 3 forenses más recientes del día.
+
+## Limpieza de /tmp
+
+- Script: `scripts/lucy_tmp_gc.sh`
+- Borra forenses viejos (default >7 días) y runs viejos (>3 días).
+- Modo dry-run: `LUCY_GC_DRYRUN=1 ./scripts/lucy_tmp_gc.sh`

@@ -6,7 +6,8 @@ HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
 
-export CHATGPT_TARGET="${CHATGPT_TARGET:-dummy}"
+export CHATGPT_TARGET="dummy"
+export CHATGPT_PROFILE_NAME="dummy"
 PROFILE_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}"
 export CHATGPT_CHROME_USER_DATA_DIR="$PROFILE_DIR"
 export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"
@@ -164,10 +165,18 @@ xdotool key --window \"\$WID_DEC\" Return
 '" >/dev/null 2>&1 || true
 sleep 0.8
 
-LUCY_COPY_MODE=input CHATGPT_WID_HEX="$dummy_wid" "$COPY" \
-  >/tmp/verify_ui_dummy_pipe.out 2>/tmp/verify_ui_dummy_pipe.err || true
+ok=0
+for _ in 1 2 3; do
+  LUCY_COPY_MODE=input CHATGPT_WID_HEX="$dummy_wid" "$COPY" \
+    >/tmp/verify_ui_dummy_pipe.out 2>/tmp/verify_ui_dummy_pipe.err || true
+  if grep -q "^LUCY_ANSWER_${TOKEN}: " /tmp/verify_ui_dummy_pipe.out; then
+    ok=1
+    break
+  fi
+  sleep 0.6
+done
 
-if ! grep -q "^LUCY_ANSWER_${TOKEN}: " /tmp/verify_ui_dummy_pipe.out; then
+if [[ "$ok" -ne 1 ]]; then
   echo "ERROR: dummy pipe did not return answer line" >&2
   cat /tmp/verify_ui_dummy_pipe.err >&2 || true
   exit 1

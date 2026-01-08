@@ -14,18 +14,37 @@ if [[ "${CHATGPT_TARGET}" != "paid" ]]; then
   exit 2
 fi
 
-THREAD_FILE="${CHATGPT_PAID_TEST_THREAD_FILE:-$HOME/.cache/lucy_chatgpt_paid_test_thread.url}"
-MARKER_MSG="${CHATGPT_PAID_THREAD_MARKER:-LUCY_TEST_THREAD_DO_NOT_DELETE}"
-BASE_URL="${CHATGPT_PAID_THREAD_BASE_URL:-https://chatgpt.com/}"
-OPEN_NEW_TAB="${CHATGPT_PAID_OPEN_NEW_TAB:-1}"
 LOG_PATH="${CHATGPT_PAID_THREAD_LOG:-/tmp/paid_ensure_thread.log}"
-
 mkdir -p "$(dirname "$LOG_PATH")"
 : >"$LOG_PATH"
 
 log() {
   printf '%s\n' "$*" >>"$LOG_PATH"
 }
+
+THREAD_FILE="${CHATGPT_PAID_TEST_THREAD_FILE:-$HOME/.cache/lucy_chatgpt_paid_test_thread.url}"
+ensure_thread_file() {
+  local f="$1"
+  local dir
+  dir="$(dirname "$f")"
+  mkdir -p "$dir" 2>/dev/null || true
+  if [[ -e "$f" ]]; then
+    dd if=/dev/null of="$f" 2>/dev/null || return 1
+  else
+    local tmp
+    tmp="$(mktemp "$dir/.threadwrite.XXXX" 2>/dev/null)" || return 1
+    rm -f "$tmp" 2>/dev/null || true
+  fi
+  return 0
+}
+if ! ensure_thread_file "$THREAD_FILE"; then
+  THREAD_FILE="/tmp/lucy_chatgpt_paid_test_thread.url"
+  mkdir -p "$(dirname "$THREAD_FILE")" 2>/dev/null || true
+  log "WARN: THREAD_FILE not writable, using ${THREAD_FILE}"
+fi
+MARKER_MSG="${CHATGPT_PAID_THREAD_MARKER:-LUCY_TEST_THREAD_DO_NOT_DELETE}"
+BASE_URL="${CHATGPT_PAID_THREAD_BASE_URL:-https://chatgpt.com/}"
+OPEN_NEW_TAB="${CHATGPT_PAID_OPEN_NEW_TAB:-0}"
 
 dump_forensics() {
   local dir
@@ -68,9 +87,22 @@ valid_thread_url() {
 }
 
 ensure_paid_window() {
+  local wid=""
+  if [[ -n "${PAID_CHATGPT_WID:-}" ]]; then
+    wid="${PAID_CHATGPT_WID}"
+    if [[ -n "${wid:-}" ]]; then
+      printf '%s\n' "$wid"
+      return 0
+    fi
+  fi
   if [[ "${CHATGPT_PAID_ENSURE_CALLER:-0}" -ne 1 ]]; then
     if [[ -x "$PAID_ENSURE" ]]; then
-      "$PAID_ENSURE" >/dev/null 2>&1 || true
+      ensure_out="$("$PAID_ENSURE" 2>/dev/null || true)"
+      wid="$(printf '%s\n' "$ensure_out" | awk -F= '/PAID_CHATGPT_WID=/{print $2}' | tail -n 1)"
+      if [[ -n "${wid:-}" ]]; then
+        printf '%s\n' "$wid"
+        return 0
+      fi
     fi
   fi
   "$GET_WID" 2>/dev/null || true
@@ -103,14 +135,15 @@ if [[ -n "${THREAD_URL:-}" ]]; then
     cur_url="$("$GET_URL" "$WID_HEX" 2>/dev/null || true)"
   fi
   if [[ "${cur_url}" != "${THREAD_URL}" ]]; then
-    log "ERROR: thread URL mismatch cur=${cur_url} expected=${THREAD_URL}"
+    log "WARN: thread URL mismatch cur=${cur_url} expected=${THREAD_URL}"
     dump_forensics "${cur_url}" "${THREAD_URL}" "${WID_HEX}"
-    echo "ERROR: thread URL mismatch" >&2
-    echo "PAID_THREAD_LOG=$LOG_PATH" >&2
-    exit 4
+    rm -f "$THREAD_FILE" 2>/dev/null || true
+    THREAD_URL=""
   fi
-  printf '%s\n' "$THREAD_URL"
-  exit 0
+  if [[ -n "${THREAD_URL:-}" ]]; then
+    printf '%s\n' "$THREAD_URL"
+    exit 0
+  fi
 fi
 
 # Crear thread de pruebas

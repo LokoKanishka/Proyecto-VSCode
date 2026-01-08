@@ -224,6 +224,21 @@ if [[ -n "${tmpdir:-}" ]] && [[ -d "${tmpdir}" ]]; then
   elif [[ -f "${tmpdir}/copy_1.stderr" ]]; then
     cp -f "${tmpdir}/copy_1.stderr" "${FORENSICS_DIR}/copy.stderr" 2>/dev/null || true
   fi
+  if [[ -f "${tmpdir}/meta.txt" ]]; then
+    cp -f "${tmpdir}/meta.txt" "${FORENSICS_DIR}/meta.txt" 2>/dev/null || true
+  fi
+  if [[ -f "${tmpdir}/url.txt" ]]; then
+    cp -f "${tmpdir}/url.txt" "${FORENSICS_DIR}/url.txt" 2>/dev/null || true
+  fi
+  if [[ -f "${tmpdir}/thread_url.txt" ]]; then
+    cp -f "${tmpdir}/thread_url.txt" "${FORENSICS_DIR}/thread_url.txt" 2>/dev/null || true
+  fi
+  if [[ -f "${tmpdir}/wmctrl_lp.txt" ]]; then
+    cp -f "${tmpdir}/wmctrl_lp.txt" "${FORENSICS_DIR}/wmctrl_lp.txt" 2>/dev/null || true
+  fi
+  if [[ -f "${tmpdir}/active_wid.txt" ]]; then
+    cp -f "${tmpdir}/active_wid.txt" "${FORENSICS_DIR}/active_wid.txt" 2>/dev/null || true
+  fi
   if [[ -f "${tmpdir}/summary.json" ]]; then
     cp -f "${tmpdir}/summary.json" "${FORENSICS_DIR}/summary.json" 2>/dev/null || true
   fi

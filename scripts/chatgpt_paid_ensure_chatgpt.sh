@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
+CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
 THREAD_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_test_thread.sh"
 
 CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
@@ -15,6 +16,7 @@ DEFAULT_FREE_DIR="$HOME/.cache/lucy_chrome_chatgpt_free"
 FREE_DIR="${CHATGPT_FREE_PROFILE_DIR:-${CHATGPT_CHROME_USER_DATA_DIR:-$DEFAULT_FREE_DIR}}"
 PAID_PID_HINT="${CHATGPT_PAID_PID_HINT:-}"
 TIMEOUT_S="${CHATGPT_ENSURE_TIMEOUT_S:-40}"
+ALLOW_OPEN="${CHATGPT_PAID_ALLOW_OPEN:-1}"
 LOG_PATH="${CHATGPT_PAID_ENSURE_LOG:-/tmp/paid_ensure_chatgpt.log}"
 
 log() {
@@ -86,12 +88,22 @@ rm -f "$host_script" 2>/dev/null || true
 PAID_PID="$(awk -F= '/^PID=/{print $2}' <<< "$paid_info" | tail -n 1)"
 BASE_WID="$(awk -F= '/^WID=/{print $2}' <<< "$paid_info" | tail -n 1)"
 if [[ -z "${PAID_PID:-}" ]]; then
-  log "ERROR: no paid PID found"
-  log "paid_info:"
-  log "$paid_info"
-  echo "ERROR: no paid PID found" >&2
-  echo "PAID_ENSURE_LOG=$LOG_PATH" >&2
-  exit 3
+  if [[ "${ALLOW_OPEN}" -eq 1 ]] && [[ -x "$CHROME_OPEN" ]]; then
+    log "WARN: no paid PID found, opening new Chrome"
+    CHATGPT_CHROME_USER_DATA_DIR="" CHATGPT_BRIDGE_CLASS="" CHATGPT_OPEN_URL="https://chatgpt.com/" "$CHROME_OPEN" >/dev/null 2>&1 || true
+    sleep 1.2
+    paid_info="$("$HOST_EXEC" "bash -lc 'FREE_DIR=${free_q} PID_HINT=${hint_q} ${host_script}'" 2>/dev/null || true)"
+    PAID_PID="$(awk -F= '/^PID=/{print $2}' <<< "$paid_info" | tail -n 1)"
+    BASE_WID="$(awk -F= '/^WID=/{print $2}' <<< "$paid_info" | tail -n 1)"
+  fi
+  if [[ -z "${PAID_PID:-}" ]]; then
+    log "ERROR: no paid PID found"
+    log "paid_info:"
+    log "$paid_info"
+    echo "ERROR: no paid PID found" >&2
+    echo "PAID_ENSURE_LOG=$LOG_PATH" >&2
+    exit 3
+  fi
 fi
 
 if [[ -z "${BASE_WID:-}" ]]; then
@@ -122,7 +134,7 @@ for _ in $(seq 1 "$TIMEOUT_S"); do
     printf 'PAID_CHATGPT_WID=%s\n' "$chat_wid"
     printf 'PAID_CHATGPT_PID=%s\n' "$PAID_PID"
     if [[ -x "$THREAD_ENSURE" ]]; then
-      if ! CHATGPT_PAID_ENSURE_CALLER=1 "$THREAD_ENSURE" >/dev/null 2>&1; then
+      if ! CHATGPT_PAID_ENSURE_CALLER=1 PAID_CHATGPT_WID="$chat_wid" PAID_CHATGPT_PID="$PAID_PID" "$THREAD_ENSURE" >/dev/null 2>&1; then
         log "ERROR: ensure_test_thread failed"
         echo "ERROR: ensure_test_thread failed" >&2
         echo "PAID_ENSURE_LOG=$LOG_PATH" >&2

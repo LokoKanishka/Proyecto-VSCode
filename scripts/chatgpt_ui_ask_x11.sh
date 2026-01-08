@@ -44,6 +44,7 @@ TMP_MSG=""
 TMPDIR_ANNOUNCED=0
 SUMMARY_WRITTEN=0
 META_WRITTEN=0
+COMMON_WRITTEN=0
 ASK_RC=1
 ASK_STATUS="fail"
 FAIL_REASON=""
@@ -58,6 +59,14 @@ LINE_STABLE_COUNT=0
 COPY_MODE_DEFAULT="${LUCY_COPY_MODE_DEFAULT:-auto}"
 COPY_MODE_FALLBACK="${LUCY_COPY_MODE_FALLBACK:-messages}"
 PAID_THREAD_FILE="${CHATGPT_PAID_TEST_THREAD_FILE:-$HOME/.cache/lucy_chatgpt_paid_test_thread.url}"
+if [[ ! -r "${PAID_THREAD_FILE}" ]]; then
+  if [[ -r "/tmp/lucy_chatgpt_paid_test_thread.url" ]]; then
+    PAID_THREAD_FILE="/tmp/lucy_chatgpt_paid_test_thread.url"
+  fi
+fi
+PAID_THREAD_URL=""
+PAID_CUR_URL=""
+PAID_PID=""
 
 now_ms() {
   local ms
@@ -166,16 +175,54 @@ write_meta() {
   if [[ "${META_WRITTEN}" -eq 1 ]] || [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
     return 0
   fi
-  local active_wid active_title
+  local active_wid active_title pid now
   active_wid="$(get_active_wid || true)"
   active_title="$(get_wid_title "${active_wid:-}" 2>/dev/null || true)"
+  pid="$(get_pid_by_wid "${WID:-}" 2>/dev/null || true)"
+  now="$(now_ms)"
   {
     echo "WID=${WID:-}"
+    echo "PID=${pid:-}"
     echo "TITLE=${TITLE:-}"
+    echo "TARGET=${CHATGPT_TARGET:-}"
+    echo "THREAD_URL=${PAID_THREAD_URL:-}"
+    echo "URL_CURRENT=${PAID_CUR_URL:-}"
+    echo "COPY_MODE_DEFAULT=${COPY_MODE_DEFAULT:-}"
+    echo "COPY_MODE_FALLBACK=${COPY_MODE_FALLBACK:-}"
+    echo "START_MS=${START_MS:-}"
+    echo "NOW_MS=${now:-}"
     echo "ACTIVE_WID=${active_wid:-}"
     echo "ACTIVE_TITLE=${active_title:-}"
   } > "$LUCY_ASK_TMPDIR/meta.txt"
   META_WRITTEN=1
+}
+
+write_common_forensics() {
+  if [[ "${COMMON_WRITTEN}" -eq 1 ]] || [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
+    return 0
+  fi
+  local active_wid
+  write_meta || true
+  if [[ -n "${PAID_CUR_URL:-}" ]]; then
+    printf '%s\n' "${PAID_CUR_URL}" > "$LUCY_ASK_TMPDIR/url.txt" 2>/dev/null || true
+  fi
+  if [[ -n "${PAID_THREAD_URL:-}" ]]; then
+    printf '%s\n' "${PAID_THREAD_URL}" > "$LUCY_ASK_TMPDIR/thread_url.txt" 2>/dev/null || true
+  fi
+  if [[ -x "$HOST_EXEC" ]]; then
+    "$HOST_EXEC" "wmctrl -lp" > "$LUCY_ASK_TMPDIR/wmctrl_lp.txt" 2>/dev/null || true
+  fi
+  active_wid="$(get_active_wid || true)"
+  if [[ -n "${active_wid:-}" ]]; then
+    printf '%s\n' "${active_wid}" > "$LUCY_ASK_TMPDIR/active_wid.txt" 2>/dev/null || true
+  fi
+  if [[ ! -f "$LUCY_ASK_TMPDIR/copy.txt" ]]; then
+    : > "$LUCY_ASK_TMPDIR/copy.txt"
+  fi
+  if [[ ! -f "$LUCY_ASK_TMPDIR/copy.stderr" ]]; then
+    : > "$LUCY_ASK_TMPDIR/copy.stderr"
+  fi
+  COMMON_WRITTEN=1
 }
 
 write_summary() {
@@ -246,6 +293,7 @@ capture_failure_context() {
   if [[ -n "${TMP:-}" ]]; then
     store_best_copy "$TMP"
   fi
+  write_common_forensics || true
   write_meta
   write_summary
 }
@@ -281,6 +329,7 @@ cleanup() {
   if [[ "${ASK_STATUS}" != "ok" ]] && [[ "${SUMMARY_WRITTEN}" -ne 1 ]]; then
     capture_failure_context || true
   else
+    write_common_forensics || true
     write_meta || true
     write_summary || true
   fi
@@ -361,6 +410,7 @@ if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
     echo "ERROR: missing paid thread URL" >&2
     fail_exit "PAID_THREAD_MISSING" 3
   fi
+  PAID_THREAD_URL="${thread_url}"
   cur_url=""
   if [[ -x "$PAID_GET_URL" ]]; then
     cur_url="$("$PAID_GET_URL" "$WID" 2>/dev/null || true)"
@@ -373,15 +423,9 @@ if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
       cur_url="$("$PAID_GET_URL" "$WID" 2>/dev/null || true)"
     fi
   fi
+  PAID_CUR_URL="${cur_url}"
+  write_common_forensics || true
   if [[ "${cur_url}" != "${thread_url}" ]]; then
-    {
-      printf '%s\n' "${cur_url}"
-    } > "$LUCY_ASK_TMPDIR/url.txt" 2>/dev/null || true
-    {
-      printf '%s\n' "${thread_url}"
-    } > "$LUCY_ASK_TMPDIR/thread_url.txt" 2>/dev/null || true
-    "$HOST_EXEC" "wmctrl -lp" > "$LUCY_ASK_TMPDIR/wmctrl_lp.txt" 2>/dev/null || true
-    printf '%s\n' "${WID}" > "$LUCY_ASK_TMPDIR/active_wid.txt" 2>/dev/null || true
     echo "ERROR: WRONG_THREAD expected=${thread_url} got=${cur_url}" >&2
     fail_exit "WRONG_THREAD" 3
   fi
@@ -559,7 +603,11 @@ nudge_input() {
   # Best-effort: no debe matar el ask si falla
   python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
   # click en zona input (abajo-centro)
-  python3 -u "$DISP" click "$WID" "0.55" "0.92" >/dev/null 2>/dev/null || true
+  local nx ny
+  nx="${CHATGPT_INPUT_CLICK_X:-0.55}"
+  ny="${CHATGPT_INPUT_CLICK_Y:-0.95}"
+  python3 -u "$DISP" click "$WID" "$nx" "$ny" >/dev/null 2>/dev/null || true
+  python3 -u "$DISP" send_keys "$WID" "Escape" >/dev/null 2>/dev/null || true
   python3 -u "$DISP" send_keys "$WID" "End" >/dev/null 2>/dev/null || true
   sleep 0.3
 }

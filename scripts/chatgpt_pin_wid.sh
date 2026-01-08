@@ -12,9 +12,30 @@ if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
   CHATGPT_CHROME_USER_DATA_DIR=""
 fi
 PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${CHATGPT_TARGET}}"
+ensure_pin_file() {
+  local f="$1"
+  local dir
+  dir="$(dirname "$f")"
+  mkdir -p "$dir" 2>/dev/null || true
+  if [[ -e "$f" ]]; then
+    dd if=/dev/null of="$f" 2>/dev/null || return 1
+  else
+    local tmp
+    tmp="$(mktemp "$dir/.pinwrite.XXXX" 2>/dev/null)" || return 1
+    rm -f "$tmp" 2>/dev/null || true
+  fi
+  return 0
+}
+if ! ensure_pin_file "$PIN_FILE"; then
+  PIN_FILE="/tmp/lucy_chatgpt_wid_pin_${CHATGPT_TARGET}"
+  mkdir -p "$(dirname "$PIN_FILE")" 2>/dev/null || true
+  echo "WARN: PIN_FILE not writable, using ${PIN_FILE}" >&2
+fi
 export CHATGPT_WID_PIN_FILE="$PIN_FILE"
 if [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-LUCY Dummy Chat}"
+elif [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+  TITLE_INCLUDE=""
 else
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
 fi
@@ -82,13 +103,20 @@ wm_command_matches_profile() {
   return 1
 }
 
-wid="$(get_active_wid)"
+wid="${CHATGPT_WID_HEX:-}"
+if [[ -z "${wid:-}" ]]; then
+  wid="$(get_active_wid)"
+fi
 if [[ -z "${wid:-}" ]]; then
   echo "ERROR: no active window detected" >&2
   exit 1
 fi
 
 title="$(get_title "$wid")"
+if [[ -z "${title:-}" ]]; then
+  echo "ERROR: window not found for WID=${wid}" >&2
+  exit 1
+fi
 if [[ -n "${TITLE_INCLUDE}" ]] && [[ "${title}" != *"${TITLE_INCLUDE}"* ]]; then
   if [[ "${PROFILE_LOCK}" -eq 1 ]]; then
     echo "WARN: title does not include ChatGPT (TITLE='${title}')" >&2
@@ -116,7 +144,6 @@ if [[ "${PROFILE_LOCK}" -eq 1 ]]; then
   fi
 fi
 
-mkdir -p "$(dirname "$PIN_FILE")"
 {
   echo "$wid"
   echo "TITLE=$title"

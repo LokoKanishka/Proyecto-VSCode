@@ -38,6 +38,7 @@ eval \"\$geo\" || true
 px=\$(( WIDTH * 55 / 100 ))
 py=\$(( HEIGHT * 92 / 100 ))
 xdotool mousemove --window \"\$WID_DEC\" \"\$px\" \"\$py\" click 1 2>/dev/null || true
+xdotool key --window \"\$WID_DEC\" Escape 2>/dev/null || true
 '" >/dev/null 2>/dev/null || true
 fi
 
