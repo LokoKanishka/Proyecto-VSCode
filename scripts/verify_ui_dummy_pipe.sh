@@ -6,6 +6,7 @@ HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
 
+export CHATGPT_TARGET="${CHATGPT_TARGET:-dummy}"
 PROFILE_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}"
 export CHATGPT_CHROME_USER_DATA_DIR="$PROFILE_DIR"
 export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"

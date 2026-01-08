@@ -14,8 +14,9 @@ say() {
 say "A3 BASELINE"
 ./scripts/verify_a3_all.sh
 
+TARGET="${CHATGPT_TARGET:-paid}"
 PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"
-PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${PROFILE_NAME}}"
+PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${TARGET}}"
 if [[ -f "${PIN_FILE}" ]]; then
   export CHATGPT_WID_PIN_ONLY=1
   echo "PIN_FILE=${PIN_FILE}"

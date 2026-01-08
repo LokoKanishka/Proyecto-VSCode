@@ -5,7 +5,9 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
+TARGET="${CHATGPT_TARGET:-free}"
 PROFILE_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}"
+export CHATGPT_TARGET="${TARGET}"
 export CHATGPT_CHROME_USER_DATA_DIR="$PROFILE_DIR"
 export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"
 export CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
@@ -68,6 +70,34 @@ cmdline_has_user_data() {
   fi
   return 1
 }
+
+if [[ "${TARGET}" != "free" ]]; then
+  WID1="$($GET_WID)"
+  if ! check_wid "${WID1}"; then
+    echo "ERROR: invalid WID format: ${WID1}" >&2
+    exit 1
+  fi
+  TITLE1="$(get_title "${WID1}")"
+  if [[ "${TARGET}" == "paid" ]]; then
+    if [[ "${TITLE1}" != *"ChatGPT"* ]]; then
+      echo "ERROR: paid title does not include ChatGPT: ${TITLE1}" >&2
+      exit 1
+    fi
+    pid="$(get_pid_by_wid "${WID1}")"
+    cmd="$(get_cmdline_by_pid "${pid}")"
+    if cmdline_has_user_data "${cmd}" "$PROFILE_DIR"; then
+      echo "ERROR: paid WID is in free profile: ${WID1}" >&2
+      exit 1
+    fi
+  else
+    if [[ "${TITLE1}" != *"LUCY Dummy Chat"* ]]; then
+      echo "ERROR: dummy title mismatch: ${TITLE1}" >&2
+      exit 1
+    fi
+  fi
+  echo "VERIFY_CHATGPT_GET_WID_OK"
+  exit 0
+fi
 
 wm_command_has_user_data() {
   local wid="$1"

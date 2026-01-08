@@ -2,8 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export CHATGPT_TARGET="${CHATGPT_TARGET:-free}"
+TARGET="${CHATGPT_TARGET:-paid}"
 PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"
-PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${PROFILE_NAME}}"
+PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${TARGET}}"
 
 if [[ ! -f "${PIN_FILE}" ]]; then
   echo "ERROR: PIN_FILE_MISSING ${PIN_FILE}" >&2

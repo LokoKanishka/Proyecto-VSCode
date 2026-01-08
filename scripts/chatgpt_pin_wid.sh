@@ -4,15 +4,24 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 
+CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
 PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"
-CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}}"
-PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${PROFILE_NAME}}"
+DEFAULT_FREE_DIR="$HOME/.cache/lucy_chrome_chatgpt_free"
+CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$DEFAULT_FREE_DIR}}"
+if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+  CHATGPT_CHROME_USER_DATA_DIR=""
+fi
+PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${CHATGPT_TARGET}}"
 export CHATGPT_WID_PIN_FILE="$PIN_FILE"
-TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
+if [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
+  TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-LUCY Dummy Chat}"
+else
+  TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
+fi
 TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-V.S.Code}"
 CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 PROFILE_LOCK=0
-if [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:-}" ]]; then
+if [[ "${CHATGPT_TARGET}" == "free" ]] && [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:-}" ]]; then
   PROFILE_LOCK=1
   printf 'PROFILE_LOCK=1 user_data_dir=%s\n' "$CHATGPT_CHROME_USER_DATA_DIR" >&2
 fi

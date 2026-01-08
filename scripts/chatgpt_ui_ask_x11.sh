@@ -16,10 +16,15 @@ SEND="$ROOT/scripts/chatgpt_ui_send_x11.sh"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
 DISP="$ROOT/scripts/x11_dispatcher.py"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
-CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}}"
+CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
+DEFAULT_FREE_DIR="$HOME/.cache/lucy_chrome_chatgpt_free"
+CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$DEFAULT_FREE_DIR}}"
 PROFILE_LOCK=0
-if [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:-}" ]]; then
+if [[ "${CHATGPT_TARGET}" == "free" ]] && [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:-}" ]]; then
   PROFILE_LOCK=1
+fi
+if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+  CHATGPT_CHROME_USER_DATA_DIR=""
 fi
 
 PROMPT="${1:-}"
@@ -76,6 +81,16 @@ get_wid_title() {
   fi
 }
 
+wid_exists() {
+  local wid="$1"
+  [[ -n "${wid:-}" ]] || return 1
+  if [[ -x "$HOST_EXEC" ]]; then
+    "$HOST_EXEC" "wmctrl -l | awk '\$1==\"${wid}\" {found=1} END{exit !found}'" >/dev/null 2>&1
+    return $?
+  fi
+  return 0
+}
+
 get_wm_command_by_wid() {
   local wid="$1"
   if [[ -x "$HOST_EXEC" ]]; then
@@ -104,6 +119,9 @@ get_cmdline_by_pid() {
 }
 
 profile_guard_ok() {
+  if [[ "${CHATGPT_TARGET}" != "free" ]]; then
+    return 0
+  fi
   if [[ "${PROFILE_LOCK}" -ne 1 ]]; then
     return 0
   fi
@@ -432,6 +450,12 @@ auto_chat_prepare() {
 # Optional: move to a technical chat before sending.
 auto_chat_prepare
 
+# Start timer early so failure paths can compute elapsed time.
+if [[ -z "${START_MS:-}" ]]; then
+  START_MS="$(now_ms)"
+  export START_MS
+fi
+
 # hard clear input before sending (A3.12 stability)
 if [[ "${CHATGPT_CLEAR_INPUT_BEFORE_SEND:-1}" -eq 1 ]] && [[ -x "$ROOT/scripts/chatgpt_clear_input_x11.sh" ]]; then
   "$ROOT/scripts/chatgpt_clear_input_x11.sh" >/dev/null 2>/dev/null || true
@@ -454,18 +478,8 @@ if [[ "$SENT_OK" -ne 1 ]]; then
   if [[ "${AUTO_CHAT}" -eq 1 ]]; then
     printf 'NEWCHAT_OK=0\n' >&2
   fi
-  FAIL_REASON="SEND_NOT_PUBLISHED"
-  ASK_RC=4
-  ASK_STATUS="fail"
-  END_MS="$(now_ms)"
-  ELAPSED_MS=$(( END_MS - START_MS ))
-  if [[ "${ELAPSED_MS}" -lt 0 ]]; then
-    ELAPSED_MS=0
-  fi
-  export ASK_RC ASK_STATUS ANSWER_LINE END_MS ELAPSED_MS COPY_PRIMARY_PATH COPY_SECONDARY_PATH COPY_BEST_PATH FAIL_REASON
-  capture_failure_context || true
   echo "ERROR: el ASK no llegó a publicarse en el chat (no vi LUCY_REQ_${TOKEN}:)." >&2
-  exit 4
+  fail_exit "SEND_NOT_PUBLISHED" 4
 fi
 if [[ "${AUTO_CHAT}" -eq 1 ]]; then
   if [[ "${SENT_OK}" -eq 1 ]] && [[ "${NEWCHAT_ATTEMPTED}" -eq 1 ]]; then
@@ -592,6 +606,10 @@ watchdog_start() {
 
 for _ in $(seq 1 "$MAX_POLLS"); do
   i=$((i+1))
+  if ! wid_exists "$WID"; then
+    echo "ERROR: WID desaparecido durante ask WID=${WID}" >&2
+    fail_exit "WID_MISSING_DURING_ASK" 3
+  fi
   copy_chat_to "$TMP" "1" "$COPY_MODE_DEFAULT"
   COPY_PRIMARY_PATH="$TMP"
   if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then

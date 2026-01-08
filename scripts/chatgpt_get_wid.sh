@@ -9,15 +9,29 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
+PAID_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_chatgpt.sh"
+CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
 PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"
-CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}}"
-PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${PROFILE_NAME}}"
+DEFAULT_FREE_DIR="$HOME/.cache/lucy_chrome_chatgpt_free"
+CHATGPT_CHROME_USER_DATA_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$DEFAULT_FREE_DIR}}"
+FREE_PROFILE_DIR="${CHATGPT_FREE_PROFILE_DIR:-${CHATGPT_CHROME_USER_DATA_DIR:-$DEFAULT_FREE_DIR}}"
+if [[ -z "${FREE_PROFILE_DIR:-}" ]]; then
+  FREE_PROFILE_DIR="$DEFAULT_FREE_DIR"
+fi
+if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+  CHATGPT_CHROME_USER_DATA_DIR=""
+fi
+PIN_FILE="${CHATGPT_WID_PIN_FILE:-$HOME/.cache/lucy_chatgpt_wid_pin_${CHATGPT_TARGET}}"
 CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
-TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
+if [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
+  TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-LUCY Dummy Chat}"
+else
+  TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
+fi
 TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-}"
 CHATGPT_OPEN_URL="${CHATGPT_OPEN_URL:-https://chat.openai.com/}"
 PROFILE_LOCK=0
-if [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:-}" ]]; then
+if [[ "${CHATGPT_TARGET}" == "free" ]] && [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:-}" ]]; then
   PROFILE_LOCK=1
   printf 'PROFILE_LOCK=1 user_data_dir=%s\n' "$CHATGPT_CHROME_USER_DATA_DIR" >&2
 fi
@@ -104,6 +118,9 @@ title_is_excluded() {
     exc_lc="$(printf '%s' "${TITLE_EXCLUDE}" | tr '[:upper:]' '[:lower:]')"
     [[ "${title_lc}" == *"${exc_lc}"* ]] && return 0
   fi
+  if [[ "${CHATGPT_TARGET}" == "paid" ]] && [[ "${title_lc}" == *"lucy dummy chat"* ]]; then
+    return 0
+  fi
   [[ "${title_lc}" == *"v.s.code"* ]] && return 0
   [[ "${title_lc}" == *"visual studio code"* ]] && return 0
   return 1
@@ -141,6 +158,56 @@ list_chrome_candidates() {
       continue
     fi
     if title_is_excluded "$title"; then
+      continue
+    fi
+    printf "%s\t%s\t%s\n" "$wid" "$pid" "$title"
+  done
+}
+
+list_paid_candidates() {
+  get_wmctrl_lp | awk '
+    {
+      wid=$1;
+      pid=$3;
+      title="";
+      for(i=5;i<=NF;i++){ title = title (i==5 ? "" : " ") $i }
+      printf "%s\t%s\t%s\n", wid, pid, title
+    }
+  ' | while IFS=$'\t' read -r wid pid title; do
+    [[ -z "${wid:-}" ]] && continue
+    cmd="$(get_cmdline_by_pid "$pid")"
+    if ! cmdline_is_chrome "$cmd"; then
+      continue
+    fi
+    if cmdline_has_user_data_dir "$cmd" "$FREE_PROFILE_DIR"; then
+      continue
+    fi
+    if title_is_excluded "$title"; then
+      continue
+    fi
+    if ! title_has_strong_hint "$title"; then
+      continue
+    fi
+    printf "%s\t%s\t%s\n" "$wid" "$pid" "$title"
+  done
+}
+
+list_dummy_candidates() {
+  get_wmctrl_lp | awk '
+    {
+      wid=$1;
+      pid=$3;
+      title="";
+      for(i=5;i<=NF;i++){ title = title (i==5 ? "" : " ") $i }
+      printf "%s\t%s\t%s\n", wid, pid, title
+    }
+  ' | while IFS=$'\t' read -r wid pid title; do
+    [[ -z "${wid:-}" ]] && continue
+    if [[ "${title}" != *"LUCY Dummy Chat"* ]]; then
+      continue
+    fi
+    cmd="$(get_cmdline_by_pid "$pid")"
+    if ! cmdline_is_chrome "$cmd"; then
       continue
     fi
     printf "%s\t%s\t%s\n" "$wid" "$pid" "$title"
@@ -189,6 +256,20 @@ cmdline_is_chrome() {
   local cmd_lc
   cmd_lc="${cmd,,}"
   if [[ "$cmd_lc" == *"google-chrome"* ]] || [[ "$cmd_lc" == *"chromium"* ]] || [[ "$cmd_lc" == *"chrome/chrome"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+cmdline_has_user_data_dir() {
+  local cmd="$1"
+  local dir="$2"
+  [[ -n "${cmd:-}" ]] || return 1
+  [[ -n "${dir:-}" ]] || return 1
+  if [[ "${cmd}" == *"--user-data-dir=${dir}"* ]]; then
+    return 0
+  fi
+  if [[ "${cmd}" == *"--user-data-dir ${dir}"* ]]; then
     return 0
   fi
   return 1
@@ -402,16 +483,35 @@ if [[ -f "${PIN_FILE}" ]]; then
   PIN_WID="$(read_pin_wid "$PIN_FILE" || true)"
   if [[ -n "${PIN_WID:-}" ]]; then
     pin_reason=""
-    pin_cmd_ok=0
     pin_pid=""
     if wid_exists "$PIN_WID"; then
       pin_pid="$(get_pid_by_wid "$PIN_WID")"
       pin_cmd="$(get_cmdline_by_pid "$pin_pid")"
-      if cmdline_is_chrome "$pin_cmd" && cmdline_matches_profile "$pin_cmd"; then
-        pin_cmd_ok=1
-      fi
       TITLE_PIN="$(get_title_by_wid "$PIN_WID")"
-      if [[ "${pin_cmd_ok}" -eq 1 ]] && wm_command_matches_profile "$PIN_WID" && ! title_is_excluded "${TITLE_PIN:-}"; then
+      pin_ok=0
+      case "${CHATGPT_TARGET}" in
+        free)
+          if cmdline_is_chrome "$pin_cmd" && cmdline_matches_profile "$pin_cmd" && \
+             wm_command_matches_profile "$PIN_WID" && ! title_is_excluded "${TITLE_PIN:-}"; then
+            pin_ok=1
+          fi
+          ;;
+        paid)
+          if cmdline_is_chrome "$pin_cmd" && \
+             ! cmdline_has_user_data_dir "$pin_cmd" "$FREE_PROFILE_DIR" && \
+             ! title_is_excluded "${TITLE_PIN:-}" && \
+             title_has_strong_hint "${TITLE_PIN:-$TITLE_INCLUDE}"; then
+            pin_ok=1
+          fi
+          ;;
+        dummy)
+          if cmdline_is_chrome "$pin_cmd" && [[ "${TITLE_PIN:-}" == *"LUCY Dummy Chat"* ]]; then
+            pin_ok=1
+          fi
+          ;;
+      esac
+
+      if [[ "${pin_ok}" -eq 1 ]]; then
         if [[ -z "${TITLE_PIN:-}" ]]; then
           TITLE_PIN="${TITLE_INCLUDE}"
         fi
@@ -421,10 +521,14 @@ if [[ -f "${PIN_FILE}" ]]; then
         printf '%s\n' "$PIN_WID"
         exit 0
       fi
-      if [[ "${pin_cmd_ok}" -ne 1 ]]; then
+      if ! cmdline_is_chrome "$pin_cmd"; then
+        pin_reason="NOT_CHROME"
+      elif [[ "${CHATGPT_TARGET}" == "free" ]] && ! cmdline_matches_profile "$pin_cmd"; then
         pin_reason="PROFILE_MISMATCH"
-      elif ! wm_command_matches_profile "$PIN_WID"; then
+      elif [[ "${CHATGPT_TARGET}" == "free" ]] && ! wm_command_matches_profile "$PIN_WID"; then
         pin_reason="WM_COMMAND_MISMATCH"
+      elif [[ "${CHATGPT_TARGET}" == "paid" ]] && cmdline_has_user_data_dir "$pin_cmd" "$FREE_PROFILE_DIR"; then
+        pin_reason="PROFILE_MISMATCH"
       elif title_is_excluded "${TITLE_PIN:-}"; then
         pin_reason="TITLE_EXCLUDED"
       else
@@ -435,8 +539,11 @@ if [[ -f "${PIN_FILE}" ]]; then
     fi
     echo "PIN_INVALID=1 old_wid=${PIN_WID} reason=${pin_reason} pid=${pin_pid:-}" >&2
     if [[ "${CHATGPT_WID_PIN_ONLY:-0}" -eq 1 ]]; then
-      echo "ERROR: PIN_INVALID WID=${PIN_WID}" >&2
-      exit 3
+      if [[ "${PROFILE_LOCK}" -ne 1 ]]; then
+        echo "ERROR: PIN_INVALID WID=${PIN_WID}" >&2
+        exit 3
+      fi
+      echo "WARN: PIN_INVALID with PROFILE_LOCK=1, attempting recovery" >&2
     fi
     rm -f "$PIN_FILE" 2>/dev/null || true
     PIN_RECOVER_NEEDS_WRITE=1
@@ -444,13 +551,35 @@ if [[ -f "${PIN_FILE}" ]]; then
 fi
 
 if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
-  STRONG_CANDIDATES="$(list_strong_candidates)"
+  if [[ "${CHATGPT_TARGET}" == "free" ]]; then
+    STRONG_CANDIDATES="$(list_strong_candidates)"
+  elif [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+    STRONG_CANDIDATES="$(list_paid_candidates)"
+  else
+    STRONG_CANDIDATES="$(list_dummy_candidates)"
+  fi
   strong_count="$(printf '%s\n' "$STRONG_CANDIDATES" | awk 'NF{c++} END{print c+0}')"
   RECOVER_WID=""
-  if [[ "${strong_count}" -eq 1 ]]; then
-    strong_line="$(printf '%s\n' "$STRONG_CANDIDATES" | head -n 1)"
-    RECOVER_WID="$(cut -f1 <<< "$strong_line")"
+  if [[ "${strong_count}" -ge 1 ]]; then
+    if [[ "${strong_count}" -eq 1 ]]; then
+      strong_line="$(printf '%s\n' "$STRONG_CANDIDATES" | head -n 1)"
+      RECOVER_WID="$(cut -f1 <<< "$strong_line")"
+    else
+      RECOVER_WID="$(choose_latest_wid "$STRONG_CANDIDATES")"
+    fi
   else
+    if [[ "${CHATGPT_TARGET}" == "paid" ]] || [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
+      if [[ "${CHATGPT_TARGET}" == "paid" ]] && [[ -x "$PAID_ENSURE" ]]; then
+        if "$PAID_ENSURE" >/dev/null 2>&1; then
+          STRONG_CANDIDATES="$(list_paid_candidates)"
+          RECOVER_WID="$(choose_latest_wid "$STRONG_CANDIDATES")"
+        fi
+      fi
+      if [[ -z "${RECOVER_WID:-}" ]]; then
+        echo "ERROR: PIN_INVALID and no candidates for target=${CHATGPT_TARGET}" >&2
+        exit 3
+      fi
+    fi
     if [[ "${CHATGPT_GET_WID_NOOPEN:-0}" -eq 1 ]]; then
       echo "ERROR: PIN_INVALID and recovery needs new window (CHATGPT_GET_WID_NOOPEN=1)" >&2
       exit 3
@@ -475,7 +604,13 @@ if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
 fi
 
 # 1) Selección normal
-CANDIDATES="$(list_chrome_candidates)"
+if [[ "${CHATGPT_TARGET}" == "free" ]]; then
+  CANDIDATES="$(list_chrome_candidates)"
+elif [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+  CANDIDATES="$(list_paid_candidates)"
+else
+  CANDIDATES="$(list_dummy_candidates)"
+fi
 WID="$(choose_wid "$CANDIDATES" "$(get_active_wid)")"
 if [[ -n "${WID:-}" ]]; then
   log_profile_choice "$WID"
@@ -483,13 +618,29 @@ fi
 
 # 2) Si no hay ventana Chrome, abrir ChatGPT y esperar (si no está deshabilitado)
 if [[ -z "${WID:-}" ]]; then
-  if [[ "${CHATGPT_GET_WID_NOOPEN:-0}" -eq 1 ]]; then
-    echo "ERROR: NO_CANDIDATE_WID" >&2
+  if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+    if [[ -x "$PAID_ENSURE" ]]; then
+      "$PAID_ENSURE" >/dev/null 2>&1 || true
+      CANDIDATES="$(list_paid_candidates)"
+      WID="$(choose_wid "$CANDIDATES" "$(get_active_wid)")"
+      [[ -n "${WID:-}" ]] && log_profile_choice "$WID"
+    fi
+    if [[ -z "${WID:-}" ]]; then
+      echo "ERROR: NO_CANDIDATE_WID target=${CHATGPT_TARGET}" >&2
+      exit 3
+    fi
+  elif [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
+    echo "ERROR: NO_CANDIDATE_WID target=${CHATGPT_TARGET}" >&2
     exit 3
-  fi
-  WID="$(open_chatgpt_and_pick_new || true)"
-  if [[ -n "${WID:-}" ]]; then
-    log_profile_choice "$WID"
+  else
+    if [[ "${CHATGPT_GET_WID_NOOPEN:-0}" -eq 1 ]]; then
+      echo "ERROR: NO_CANDIDATE_WID" >&2
+      exit 3
+    fi
+    WID="$(open_chatgpt_and_pick_new || true)"
+    if [[ -n "${WID:-}" ]]; then
+      log_profile_choice "$WID"
+    fi
   fi
 fi
 
