@@ -11,4 +11,4 @@ cd "${PROJECT_ROOT}"
 source ".venv-lucy-voz/bin/activate"
 
 # Ejecutar el CLI de Lucy Web Agent con todos los argumentos que lleguen
-python "scripts/lucy_web_agent_cli.py" "$@"
+python "lucy_agents/web_agent_cli.py" "$@"

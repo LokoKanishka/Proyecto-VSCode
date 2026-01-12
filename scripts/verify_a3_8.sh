@@ -10,7 +10,7 @@ if [[ -z "${WID:-}" ]]; then
 fi
 
 rm -f /tmp/a3_8_out.txt /tmp/a3_8_err.txt || true
-python3 -u ./scripts/x11_dispatcher.py screenshot "$WID" > /tmp/a3_8_out.txt 2> /tmp/a3_8_err.txt || true
+python3 -u ./lucy_agents/x11_dispatcher.py screenshot "$WID" > /tmp/a3_8_out.txt 2> /tmp/a3_8_err.txt || true
 
 if ! grep -q '^PATH ' /tmp/a3_8_out.txt; then
   echo "VERIFY_A3_8_FAIL: no PATH (WID=$WID)"

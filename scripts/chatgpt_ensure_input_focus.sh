@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
-DISP="$ROOT/scripts/x11_dispatcher.py"
+DISP="$ROOT/lucy_agents/x11_dispatcher.py"
 
 WID_HEX="${1:-${CHATGPT_WID_HEX:-}}"
 if [[ -z "${WID_HEX:-}" ]]; then

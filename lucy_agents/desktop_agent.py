@@ -86,8 +86,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    _log(f"script entry, argv={sys.argv!r}")
-
     if len(argv) >= 2 and argv[0] == "-c":
         # Todo lo que sigue a -c lo tratamos como un único comando
         command_str = " ".join(argv[1:])

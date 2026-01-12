@@ -17,4 +17,4 @@ else
     exit 1
 fi
 
-python scripts/lucy_voice_web_agent_voice.py "$@"
+python lucy_agents/voice_web_agent.py "$@"

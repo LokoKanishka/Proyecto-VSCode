@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-DISPATCHER="$ROOT/scripts/x11_dispatcher.py"
+DISPATCHER="$ROOT/lucy_agents/x11_dispatcher.py"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 
 FILE="${1:-}"

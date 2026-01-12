@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 REQ_ACCESS="$ROOT/scripts/x11_require_access.sh"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
-DISP="$ROOT/scripts/x11_dispatcher.py"
+DISP="$ROOT/lucy_agents/x11_dispatcher.py"
 ENSURE_FOCUS="$ROOT/scripts/chatgpt_ensure_input_focus.sh"
 
 if [[ -x "$REQ_ACCESS" ]]; then

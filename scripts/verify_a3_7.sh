@@ -3,7 +3,7 @@ set -euo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/scripts/_verify_common.sh"
 
 rm -f /tmp/a3_7_out.txt /tmp/a3_7_err.txt || true
-python3 -u ./scripts/x11_dispatcher.py screenshot root > /tmp/a3_7_out.txt 2> /tmp/a3_7_err.txt || true
+python3 -u ./lucy_agents/x11_dispatcher.py screenshot root > /tmp/a3_7_out.txt 2> /tmp/a3_7_err.txt || true
 
 if ! grep -q '^PATH ' /tmp/a3_7_out.txt; then
   echo "VERIFY_A3_7_FAIL: no PATH"

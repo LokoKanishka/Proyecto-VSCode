@@ -9,8 +9,8 @@ PY="$ROOT/.venv-lucy-voz/bin/python3"
 echo "== py_compile =="
 "$PY" -m py_compile \
   lucy_agents/voice_actions.py \
-  scripts/audit_trazabilidad.py \
-  scripts/lucy_voice_modular_node_filtered.py \
+  lucy_tools/audit_trazabilidad.py \
+  lucy_agents/voice_modular_node.py \
   external/nodo-de-voz-modular-de-lucy/tts.py
 
 echo

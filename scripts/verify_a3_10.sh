@@ -11,8 +11,8 @@ fi
 
 TXT="LUCY_A3_10_SMOKE_$(date +%H%M%S)"
 
-python3 -u ./scripts/x11_dispatcher.py focus_window "$WID" >/tmp/a3_10_focus_out.txt 2>/tmp/a3_10_focus_err.txt || true
-python3 -u ./scripts/x11_dispatcher.py type_text "$WID" "$TXT" >/tmp/a3_10_type_out.txt 2>/tmp/a3_10_type_err.txt || true
+python3 -u ./lucy_agents/x11_dispatcher.py focus_window "$WID" >/tmp/a3_10_focus_out.txt 2>/tmp/a3_10_focus_err.txt || true
+python3 -u ./lucy_agents/x11_dispatcher.py type_text "$WID" "$TXT" >/tmp/a3_10_type_out.txt 2>/tmp/a3_10_type_err.txt || true
 
 ./scripts/chatgpt_clear_input_x11.sh
 

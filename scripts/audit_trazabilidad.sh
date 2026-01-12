@@ -6,7 +6,7 @@ cd "$ROOT"
 
 mkdir -p reports docs
 
-python3 scripts/audit_trazabilidad.py \
+python3 lucy_tools/audit_trazabilidad.py \
   --roots scripts lucy_agents external/nodo-de-voz-modular-de-lucy \
   --out-md docs/AUDIT_TRAZABILIDAD.md \
   --out-json reports/audit_trazabilidad.json

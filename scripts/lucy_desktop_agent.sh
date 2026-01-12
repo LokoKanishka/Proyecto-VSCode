@@ -17,4 +17,4 @@ else
 fi
 
 # Ejecutar el agente de escritorio (modo interactivo por defecto)
-python scripts/lucy_desktop_agent.py "$@"
+python lucy_agents/desktop_agent.py "$@"

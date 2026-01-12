@@ -10,7 +10,7 @@ source "$ROOT/scripts/_verify_common.sh"
 ASK="$ROOT/scripts/chatgpt_ui_ask_x11.sh"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
-DISP="$ROOT/scripts/x11_dispatcher.py"
+DISP="$ROOT/lucy_agents/x11_dispatcher.py"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
 
 command -v timeout >/dev/null 2>&1 || { echo "ERROR: falta 'timeout' (coreutils)" >&2; exit 2; }
