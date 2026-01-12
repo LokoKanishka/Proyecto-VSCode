@@ -5,7 +5,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 REQ_ACCESS="$ROOT/scripts/x11_require_access.sh"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 DISP="$ROOT/scripts/x11_dispatcher.py"
-HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
+ENSURE_FOCUS="$ROOT/scripts/chatgpt_ensure_input_focus.sh"
 
 if [[ -x "$REQ_ACCESS" ]]; then
   "$REQ_ACCESS" >/dev/null 2>&1
@@ -23,24 +23,8 @@ export CHATGPT_WID_HEX="$WID"
 
 python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
 
-# click en zona input (abajo-centro) usando host xdotool, como copy/ask
-if [[ -x "$HOST_EXEC" ]]; then
-  "$HOST_EXEC" "bash -lc '
-set -euo pipefail
-WID_HEX=\"$WID\"
-WID_DEC=\$(printf \"%d\" \"\$WID_HEX\")
-wmctrl -ia \"\$WID_HEX\" 2>/dev/null || true
-xdotool windowactivate --sync \"\$WID_DEC\" 2>/dev/null || true
-geo=\$(xdotool getwindowgeometry --shell \"\$WID_DEC\" 2>/dev/null || true)
-eval \"\$geo\" || true
-: \${WIDTH:=1200}
-: \${HEIGHT:=900}
-xdotool key --window \"\$WID_DEC\" Escape 2>/dev/null || true
-xdotool key --window \"\$WID_DEC\" Escape 2>/dev/null || true
-px=\$(( WIDTH * 62 / 100 ))
-py=\$(( HEIGHT * 92 / 100 ))
-xdotool mousemove --window \"\$WID_DEC\" \"\$px\" \"\$py\" click 1 2>/dev/null || true
-'" >/dev/null 2>/dev/null || true
+if [[ -x "$ENSURE_FOCUS" ]]; then
+  "$ENSURE_FOCUS" "$WID" >/dev/null 2>/dev/null || true
 fi
 
 python3 -u "$DISP" send_keys "$WID" "ctrl+a" >/dev/null 2>/dev/null || true

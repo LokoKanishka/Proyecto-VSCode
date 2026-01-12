@@ -46,5 +46,20 @@ fi
 [ -n "${CHATGPT_WID_HEX:-}" ] || { echo "ERROR: no hay CHATGPT_WID_HEX"; exit 2; }
 
 CHATGPT_WID_HEX="$CHATGPT_WID_HEX" "${REPO_ROOT}/scripts/chatgpt_focus_paste.sh" "$MSG" >/dev/null
-xdotool key --window "$((CHATGPT_WID_HEX))" Return
+
+# Phase 4 extension: robust send trigger
+# Evitamos el dispatcher (que hace wmctrl -R) para no perder el foco interno del input.
+# Ya aseguramos foco en chatgpt_focus_paste.sh -> chatgpt_ensure_input_focus.sh.
+WID_HEX="${CHATGPT_WID_HEX}"
+WID_DEC="$((WID_HEX))"
+
+# Margen generoso para que el paste se procese por el DOM de la UI
+sleep 0.8
+
+# Enviamos Return directamente a la ventana activa
+xdotool key --window "$WID_DEC" --clearmodifiers Return
+sleep 0.2
+# Enviamos un segundo Return opcional por si el primero fue ignorado por "loading state"
+# xdotool key --window "$WID_DEC" --clearmodifiers Return
+
 echo "SENT_OK"

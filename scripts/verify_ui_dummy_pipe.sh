@@ -166,8 +166,10 @@ xdotool key --window \"\$WID_DEC\" Return
 sleep 0.8
 
 ok=0
+copy_mode="${LUCY_COPY_MODE_DUMMY:-auto}"
 for _ in 1 2 3; do
-  LUCY_COPY_MODE=input CHATGPT_WID_HEX="$dummy_wid" "$COPY" \
+  CHATGPT_INPUT_FOCUS_Y_OFFSET="${CHATGPT_INPUT_FOCUS_Y_OFFSET_DUMMY:-150}" \
+  LUCY_COPY_MODE="$copy_mode" CHATGPT_WID_HEX="$dummy_wid" "$COPY" \
     >/tmp/verify_ui_dummy_pipe.out 2>/tmp/verify_ui_dummy_pipe.err || true
   if grep -q "^LUCY_ANSWER_${TOKEN}: " /tmp/verify_ui_dummy_pipe.out; then
     ok=1

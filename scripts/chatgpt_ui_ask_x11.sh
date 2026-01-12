@@ -16,6 +16,7 @@ SEND="$ROOT/scripts/chatgpt_ui_send_x11.sh"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
 DISP="$ROOT/scripts/x11_dispatcher.py"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
+ENSURE_FOCUS="$ROOT/scripts/chatgpt_ensure_input_focus.sh"
 PAID_THREAD_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_test_thread.sh"
 PAID_GET_URL="$ROOT/scripts/chatgpt_paid_get_url.sh"
 CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
@@ -56,8 +57,10 @@ COPY_SECONDARY_PATH=""
 COPY_BEST_PATH=""
 LAST_LINE_SEEN=""
 LINE_STABLE_COUNT=0
-COPY_MODE_DEFAULT="${LUCY_COPY_MODE_DEFAULT:-auto}"
+COPY_MODE_DEFAULT="${LUCY_COPY_MODE_DEFAULT:-messages}"
 COPY_MODE_FALLBACK="${LUCY_COPY_MODE_FALLBACK:-messages}"
+FOCUS_MAX_ATTEMPTS="${CHATGPT_FOCUS_MAX_ATTEMPTS:-4}"
+FOCUS_MAX_SECONDS="${CHATGPT_FOCUS_MAX_SECONDS:-8}"
 PAID_THREAD_FILE="${CHATGPT_PAID_TEST_THREAD_FILE:-}"
 if [[ -z "${PAID_THREAD_FILE}" ]]; then
   PAID_THREAD_FILE="$HOME/.cache/lucy_chatgpt_paid_test_thread.url"
@@ -202,7 +205,7 @@ write_common_forensics() {
   if [[ "${COMMON_WRITTEN}" -eq 1 ]] || [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
     return 0
   fi
-  local active_wid
+  local active_wid active_title
   write_meta || true
   if [[ -n "${PAID_CUR_URL:-}" ]]; then
     printf '%s\n' "${PAID_CUR_URL}" > "$LUCY_ASK_TMPDIR/url.txt" 2>/dev/null || true
@@ -216,6 +219,10 @@ write_common_forensics() {
   active_wid="$(get_active_wid || true)"
   if [[ -n "${active_wid:-}" ]]; then
     printf '%s\n' "${active_wid}" > "$LUCY_ASK_TMPDIR/active_wid.txt" 2>/dev/null || true
+    active_title="$(get_wid_title "${active_wid}" 2>/dev/null || true)"
+    if [[ -n "${active_title:-}" ]]; then
+      printf '%s\n' "${active_title}" > "$LUCY_ASK_TMPDIR/active_title.txt" 2>/dev/null || true
+    fi
   fi
   if [[ ! -f "$LUCY_ASK_TMPDIR/copy.txt" ]]; then
     : > "$LUCY_ASK_TMPDIR/copy.txt"
@@ -289,12 +296,98 @@ capture_screenshot() {
   rm -f "$out" "$err" 2>/dev/null || true
 }
 
+capture_clipboard() {
+  if [[ -z "${LUCY_ASK_TMPDIR:-}" ]] || [[ ! -x "$HOST_EXEC" ]]; then
+    return 0
+  fi
+  local clip
+  clip="$("$HOST_EXEC" "bash -lc 'timeout 2s xclip -selection clipboard -o 2>/dev/null || timeout 2s xsel --clipboard --output 2>/dev/null || true'")"
+  printf '%s' "$clip" | head -c 200 > "$LUCY_ASK_TMPDIR/clipboard.txt" 2>/dev/null || true
+}
+
+write_dynamic_forensics() {
+  if [[ -z "${LUCY_ASK_TMPDIR:-}" ]]; then
+    return 0
+  fi
+  local active_wid active_title
+  active_wid="$(get_active_wid || true)"
+  if [[ -n "${active_wid:-}" ]]; then
+    printf '%s\n' "${active_wid}" > "$LUCY_ASK_TMPDIR/active_wid.txt" 2>/dev/null || true
+    active_title="$(get_wid_title "${active_wid}" 2>/dev/null || true)"
+    if [[ -n "${active_title:-}" ]]; then
+      printf '%s\n' "${active_title}" > "$LUCY_ASK_TMPDIR/active_title.txt" 2>/dev/null || true
+    fi
+  fi
+  if [[ -x "$HOST_EXEC" ]]; then
+    "$HOST_EXEC" "wmctrl -lp" > "$LUCY_ASK_TMPDIR/wmctrl_lp.txt" 2>/dev/null || true
+  fi
+}
+
+ensure_input_focus() {
+  if [[ ! -x "$ENSURE_FOCUS" ]]; then
+    return 0
+  fi
+  local out rc
+  if out="$(FOCUS_LOG_DIR="$LUCY_ASK_TMPDIR" CHATGPT_INPUT_FOCUS_MAX_TRIES="$FOCUS_MAX_ATTEMPTS" \
+    timeout "${FOCUS_MAX_SECONDS}s" "$ENSURE_FOCUS" "$WID" 2>&1)"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
+    printf '%s\n' "$out" > "$LUCY_ASK_TMPDIR/focus_probe_result.txt" 2>/dev/null || true
+  fi
+  return "$rc"
+}
+
+ensure_thread_ok() {
+  if [[ "${CHATGPT_TARGET}" != "paid" ]]; then
+    return 0
+  fi
+  local thread_url cur_url
+  if [[ -x "$PAID_THREAD_ENSURE" ]]; then
+    if ! thread_url="$(CHATGPT_PAID_THREAD_STRICT=1 "$PAID_THREAD_ENSURE" 2>/dev/null)"; then
+      return 1
+    fi
+  elif [[ -f "$PAID_THREAD_FILE" ]]; then
+    thread_url="$(head -n 1 "$PAID_THREAD_FILE" | tr -d '\r')"
+  fi
+  if [[ -z "${thread_url:-}" ]]; then
+    return 1
+  fi
+  if [[ -x "$PAID_GET_URL" ]]; then
+    cur_url="$("$PAID_GET_URL" "$WID" 2>/dev/null || true)"
+  fi
+  if [[ "${cur_url:-}" != "${thread_url:-}" ]]; then
+    return 1
+  fi
+  PAID_THREAD_URL="${thread_url}"
+  PAID_CUR_URL="${cur_url}"
+  return 0
+}
+
+STALL_FORENSICS_WRITTEN=0
+capture_stall_forensics() {
+  if [[ "${STALL_FORENSICS_WRITTEN}" -eq 1 ]]; then
+    return 0
+  fi
+  write_common_forensics || true
+  write_dynamic_forensics || true
+  capture_screenshot || true
+  capture_clipboard || true
+  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]] && [[ ! -f "$LUCY_ASK_TMPDIR/focus_probe_result.txt" ]]; then
+    printf '%s\n' "FOCUS_PROBE_RESULT=missing" > "$LUCY_ASK_TMPDIR/focus_probe_result.txt" 2>/dev/null || true
+  fi
+  STALL_FORENSICS_WRITTEN=1
+}
+
 capture_failure_context() {
   capture_screenshot
   if [[ -n "${TMP:-}" ]]; then
     store_best_copy "$TMP"
   fi
   write_common_forensics || true
+  write_dynamic_forensics || true
   write_meta
   write_summary
 }
@@ -552,30 +645,58 @@ if [[ "${CHATGPT_CLEAR_INPUT_BEFORE_SEND:-1}" -eq 1 ]] && [[ -x "$ROOT/scripts/c
 fi
 
 
-# 1) SEND + verificar que el REQ aparece
+# 1) SEND + verificar que el REQ aparece (desde messages, NO input)
 SENT_OK=0
-for attempt in 1 2 3; do
+# Se intenta enviar el prompt. Máximo 1 re-send (2 intentos totales de publicación)
+for send_attempt in 1 2; do
   "$SEND" "$MSG" >/dev/null 2>/dev/null || true
-  sleep 0.9
-  copy_chat_to "$TMP"
-  if chat_has "$TMP" "LUCY_REQ_${TOKEN}:"; then
-    SENT_OK=1
-    break
+  
+  # Wait for ChatGPT to finish thinking/responding
+  sleep 4
+  
+  # Verificamos desde messages para estar seguros de que se publicó.
+  # "Sighted" verification: loop reading until we see bytes or timeout.
+  # This prevents "blind" re-sends when the copy mechanism is just glitching.
+  valid_bytes=0
+  for read_attempt in 1 2 3; do
+    copy_chat_to "$TMP" "pub_check_${send_attempt}_${read_attempt}" "messages"
+    if [[ -s "$TMP" ]]; then
+      valid_bytes=1
+      break
+    fi
+    printf 'WARN: read attempt %s returned 0 bytes, re-reading...\n' "$read_attempt" >&2
+    if [[ -x "$ROOT/scripts/chatgpt_click_messages_zone.sh" ]]; then
+      "$ROOT/scripts/chatgpt_click_messages_zone.sh" "$WID" >/dev/null 2>/dev/null || true
+    fi
+    sleep 1.0
+  done
+
+  # Now we have a "best effort" view of the chat.
+  if [[ "$valid_bytes" -eq 1 ]]; then
+    if chat_has "$TMP" "LUCY_REQ_${TOKEN}:"; then
+      SENT_OK=1
+      break
+    else
+      printf 'WARN: REQ not found in valid chat history (attempt %s), retrying send...\n' "$send_attempt" >&2
+    fi
+  else
+    printf 'ERROR: could not read chat history after multiple attempts (blind). Retrying send anyway...\n' >&2
   fi
 done
 
 if [[ "$SENT_OK" -ne 1 ]]; then
+  # Forensics extra para E_NO_SEND
+  printf 'ERROR: E_NO_SEND - publication failed after 2 attempts. REQ not seen in messages history.\n' >&2
   if [[ "${AUTO_CHAT}" -eq 1 ]]; then
     printf 'NEWCHAT_OK=0\n' >&2
   fi
-  echo "ERROR: el ASK no llegó a publicarse en el chat (no vi LUCY_REQ_${TOKEN}:)." >&2
-  fail_exit "SEND_NOT_PUBLISHED" 4
-fi
-if [[ "${AUTO_CHAT}" -eq 1 ]]; then
-  if [[ "${SENT_OK}" -eq 1 ]] && [[ "${NEWCHAT_ATTEMPTED}" -eq 1 ]]; then
-    NEWCHAT_OK=1
+  # Verificamos si quedó en el input para confirmar diagnóstico
+  copy_chat_to "$TMP" "final_input_check" "input"
+  if chat_has "$TMP" "LUCY_REQ_${TOKEN}:"; then
+     printf 'INFO: REQ was found lingering in INPUT field (confirmed NO_SEND).\n' >&2
   fi
-  printf 'NEWCHAT_OK=%s\n' "${NEWCHAT_OK}" >&2
+  capture_screenshot
+  fail_exit "E_NO_SEND" 4
 fi
 
 # 2) Esperar respuesta
@@ -602,13 +723,17 @@ RESEND_AFTER_RELOAD="${CHATGPT_ASK_RESEND_AFTER_RELOAD:-1}"
 
 nudge_input() {
   # Best-effort: no debe matar el ask si falla
+  if [[ -x "$ENSURE_FOCUS" ]]; then
+    CHATGPT_INPUT_FOCUS_MAX_TRIES="$FOCUS_MAX_ATTEMPTS" FOCUS_LOG_DIR="$LUCY_ASK_TMPDIR" \
+      timeout "${FOCUS_MAX_SECONDS}s" "$ENSURE_FOCUS" "$WID" >/dev/null 2>/dev/null || true
+    return 0
+  fi
   python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
-  # click en zona input (abajo-centro)
   local nx ny
   python3 -u "$DISP" send_keys "$WID" "Escape" >/dev/null 2>/dev/null || true
   python3 -u "$DISP" send_keys "$WID" "Escape" >/dev/null 2>/dev/null || true
-  nx="${CHATGPT_INPUT_CLICK_X:-0.62}"
-  ny="${CHATGPT_INPUT_CLICK_Y:-0.95}"
+  nx="${CHATGPT_INPUT_CLICK_X:-0.70}"
+  ny="${CHATGPT_INPUT_CLICK_Y:-0.80}"
   python3 -u "$DISP" click "$WID" "$nx" "$ny" >/dev/null 2>/dev/null || true
   python3 -u "$DISP" send_keys "$WID" "End" >/dev/null 2>/dev/null || true
   sleep 0.3
@@ -676,11 +801,31 @@ watchdog_step() {
       WATCHDOG_WAIT=1
       ;;
     RELOAD)
+      if ! ensure_thread_ok; then
+        write_dynamic_forensics || true
+        capture_clipboard || true
+        fail_exit "THREAD_UNSTABLE" 5
+      fi
+      if ! ensure_input_focus; then
+        write_dynamic_forensics || true
+        capture_clipboard || true
+        fail_exit "FOCUS_UNSTABLE" 5
+      fi
       reload_ui
       WATCHDOG_LAST_STEP="RELOAD"
       WATCHDOG_WAIT=0
       ;;
     RESEND)
+      if ! ensure_thread_ok; then
+        write_dynamic_forensics || true
+        capture_clipboard || true
+        fail_exit "THREAD_UNSTABLE" 5
+      fi
+      if ! ensure_input_focus; then
+        write_dynamic_forensics || true
+        capture_clipboard || true
+        fail_exit "FOCUS_UNSTABLE" 5
+      fi
       resend_msg
       WATCHDOG_LAST_STEP="RESEND"
       WATCHDOG_ACTIVE=0
@@ -765,6 +910,7 @@ for _ in $(seq 1 "$MAX_POLLS"); do
   if [[ "${progress}" -eq 1 ]]; then
     stall_count=0
     stall_start_ms=0
+    STALL_FORENSICS_WRITTEN=0
   else
     stall_count=$((stall_count + 1))
     if [[ "${stall_start_ms}" -eq 0 ]]; then
@@ -792,6 +938,7 @@ for _ in $(seq 1 "$MAX_POLLS"); do
   stall_ms_threshold=$(( STALL_POLLS * POLL_SEC * 1000 ))
   if [[ "${stall_count}" -ge "${STALL_POLLS}" ]] || [[ "${stall_elapsed_ms}" -ge "${stall_ms_threshold}" ]]; then
     printf 'STALL_DETECTED polls=%s seconds=%s\n' "$stall_count" "$((stall_count * POLL_SEC))" >&2
+    capture_stall_forensics || true
     if [[ "${WATCHDOG_ACTIVE}" -ne 1 ]]; then
       watchdog_start "STALL"
       watchdog_skip_decrement=1

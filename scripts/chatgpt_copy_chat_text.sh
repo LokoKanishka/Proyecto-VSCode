@@ -15,91 +15,218 @@ if [[ -z "${WID_HEX:-}" ]]; then
 fi
 
 COPY_MODE="${LUCY_COPY_MODE:-auto}"
-COPY_MODE_Q="$(printf '%q' "${COPY_MODE}")"
+COPY_MESSAGES_ATTEMPTS="${LUCY_COPY_MESSAGES_ATTEMPTS:-3}"
+COPY_INPUT_ATTEMPTS="${LUCY_COPY_INPUT_ATTEMPTS:-2}"
+COPY_INPUT_PROBE="${LUCY_COPY_INPUT_PROBE:-0}"
+ENSURE_FOCUS="$ROOT/scripts/chatgpt_ensure_input_focus.sh"
+CLICK_MESSAGES="$ROOT/scripts/chatgpt_click_messages_zone.sh"
 
-out="$("$HOST_EXEC" "bash -lc '
-set -euo pipefail
-WID_HEX=\"$WID_HEX\"
-WID_DEC=\$(printf \"%d\" \"\$WID_HEX\")
+WID_DEC="$(printf "%d" "$WID_HEX" 2>/dev/null || echo 0)"
+if [[ "${WID_DEC}" -le 0 ]]; then
+  echo "ERROR: WID invalido: ${WID_HEX}" >&2
+  exit 3
+fi
 
-wmctrl -ia \"\$WID_HEX\" 2>/dev/null || true
-xdotool windowactivate --sync \"\$WID_DEC\" 2>/dev/null || true
-sleep 0.18
-
-# cerrar overlays
-xdotool key --clearmodifiers Escape 2>/dev/null || true
-sleep 0.06
-
-geo=\$(xdotool getwindowgeometry --shell \"\$WID_DEC\" 2>/dev/null || true)
-eval \"\$geo\" || true
-: \${WIDTH:=1200}
-: \${HEIGHT:=900}
-
-copy_at() {
-  local px=\"\$1\" py=\"\$2\"
-  xdotool mousemove --window \"\$WID_DEC\" \"\$px\" \"\$py\" click 1 2>/dev/null || true
-  sleep 0.10
-  xdotool key --clearmodifiers ctrl+a 2>/dev/null || true
-  sleep 0.06
-  xdotool key --clearmodifiers ctrl+c 2>/dev/null || true
-  sleep 0.20
-
-  local t=\"\"
-  # leer clipboard (60 intentos cortos)
-  for _ in \$(seq 1 60); do
-    t=\$(timeout 2s xclip -selection clipboard -o 2>/dev/null || true)
-    if [[ -n \"\$t\" ]]; then break; fi
-    t=\$(timeout 2s xsel --clipboard --output 2>/dev/null || true)
-    if [[ -n \"\$t\" ]]; then break; fi
-    sleep 0.06
-  done
-
-  printf \"%s\" \"\$t\"
-}
+geo="$("$HOST_EXEC" "xdotool getwindowgeometry --shell ${WID_DEC}" 2>/dev/null || true)"
+eval "$geo" || true
+: "${WIDTH:=1200}"
+: "${HEIGHT:=900}"
 
 bytes_len() {
-  local t=\"\$1\"
-  printf \"%s\" \"\$t\" | wc -c | tr -d \" \\n\"
+  local t="$1"
+  printf "%s" "$t" | wc -c | tr -d " \n"
 }
 
-# zonas: input (abajo-centro) y mensajes (medio-centro)
-input_x=\$(( WIDTH * 50 / 100 ))
-input_y=\$(( HEIGHT * 92 / 100 ))
-msg_x=\$(( WIDTH * 50 / 100 ))
-msg_y=\$(( HEIGHT * 55 / 100 ))
+copy_backoff() {
+  case "$1" in
+    1) printf '0.08' ;;
+    2) printf '0.15' ;;
+    *) printf '0.25' ;;
+  esac
+}
 
-txt1=\"\$(copy_at \"\$input_x\" \"\$input_y\")\"
-bytes1=\"\$(bytes_len \"\$txt1\")\"
-txt2=\"\$(copy_at \"\$msg_x\" \"\$msg_y\")\"
-bytes2=\"\$(bytes_len \"\$txt2\")\"
+messages_click_params() {
+  local attempt="$1"
+  local y_pct=35
+  case "$attempt" in
+    2) y_pct=30 ;;
+    3) y_pct=40 ;;
+  esac
+  local jitter=$(( (attempt - 1) * 4 ))
+  printf '%s %s\n' "$y_pct" "$jitter"
+}
 
-mode=${COPY_MODE_Q}
-chosen=\"input\"
-best=\"\$txt1\"
-bestBytes=\"\$bytes1\"
-if [[ \"\$mode\" == \"messages\" ]]; then
-  chosen=\"messages\"
-  best=\"\$txt2\"
-  bestBytes=\"\$bytes2\"
-elif [[ \"\$mode\" == \"input\" ]]; then
-  chosen=\"input\"
-  best=\"\$txt1\"
-  bestBytes=\"\$bytes1\"
+copy_at() {
+  local px="$1" py="$2"
+  # Phase 4 (v6): Fix variable names (use local WID_HEX/DEC)
+  local cmd="PX='${px}' PY='${py}' WID_HEX='${WID_HEX}' WID_DEC='${WID_DEC}'; "
+  cmd+="set -euo pipefail; "
+  cmd+="wmctrl -ia \"\$WID_HEX\" 2>/dev/null || true; "
+  cmd+="xdotool windowactivate --sync \"\$WID_DEC\" 2>/dev/null || true; "
+  cmd+="sleep 0.15; "
+  cmd+="xdotool key --clearmodifiers Escape 2>/dev/null || true; "
+  cmd+="xdotool mousemove --window \"\$WID_DEC\" \"\$PX\" \"\$PY\" click 1 2>/dev/null || true; "
+  cmd+="sleep 0.10; "
+  cmd+="xdotool key --clearmodifiers ctrl+a 2>/dev/null || true; "
+  cmd+="sleep 0.10; "
+  cmd+="xdotool key --clearmodifiers ctrl+c 2>/dev/null || true; "
+  cmd+="sleep 0.20; "
+  cmd+="t=''; "
+  cmd+="for i in \$(seq 1 15); do "
+  cmd+="  t=\$(timeout 2s xclip -selection clipboard -o 2>/dev/null || true); "
+  cmd+="  [[ -n \"\$t\" ]] && break; "
+  cmd+="  t=\$(timeout 2s xsel --clipboard --output 2>/dev/null || true); "
+  cmd+="  [[ -n \"\$t\" ]] && break; "
+  cmd+="  sleep 0.08; "
+  cmd+="done; "
+  cmd+="printf '%s' \"\$t\""
+
+  "$HOST_EXEC" "$cmd"
+}
+
+copy_messages() {
+  local t=""
+  local bytes=0
+  local attempt=1
+  local method="click"
+  local y_pct=35
+  local jitter=0
+  while [[ "$attempt" -le "$COPY_MESSAGES_ATTEMPTS" ]]; do
+    read -r y_pct jitter < <(messages_click_params "$attempt")
+    if [[ -x "$CLICK_MESSAGES" ]]; then
+      t="$(CHATGPT_MESSAGES_CLICK_Y_PCT="$y_pct" CHATGPT_MESSAGES_CLICK_JITTER_PX="$jitter" CHATGPT_WID_HEX="$WID_HEX" "$CLICK_MESSAGES" 2>/dev/null || true)"
+      method="click"
+    else
+      local mx my
+      mx=$(( WIDTH * 55 / 100 ))
+      my=$(( HEIGHT * y_pct / 100 ))
+      t="$(copy_at "$mx" "$my")"
+      method="coords"
+    fi
+    bytes="$(bytes_len "$t")"
+    if [[ "$bytes" -gt 0 ]]; then
+      break
+    fi
+    # Phase 4 meta
+    printf '__LUCY_COPY_META__ COPY_MESSAGES_ATTEMPT_%s_BYTES=0\n' "$attempt" >&2
+    sleep "$(copy_backoff "$attempt")"
+    attempt=$((attempt + 1))
+  done
+  local attempts_used="$attempt"
+  if [[ "$bytes" -eq 0 ]] && [[ "$attempt" -gt 1 ]]; then
+    attempts_used=$((attempt - 1))
+  fi
+  printf '__LUCY_COPY_META__ COPY_MESSAGES_ATTEMPTS=%s COPY_MESSAGES_METHOD=%s COPY_MESSAGES_BYTES=%s\n' \
+    "$attempts_used" "$method" "$bytes" >&2
+  if [[ "$bytes" -eq 0 ]]; then
+    printf '__LUCY_COPY_META__ COPY_MESSAGES_EMPTY=1\n' >&2
+  fi
+  printf '%s' "$t"
+}
+
+copy_input_safe() {
+  local ix iy
+  ix=$(( WIDTH * 70 / 100 ))
+  iy=$(( HEIGHT - 220 ))
+  copy_at "$ix" "$iy"
+}
+
+copy_input_probe() {
+  local t=""
+  if [[ -x "$ENSURE_FOCUS" ]]; then
+    if t="$(FOCUS_RETURN_COPY=1 CHATGPT_WID_HEX="$WID_HEX" "$ENSURE_FOCUS" 2>/dev/null)"; then
+      printf '__LUCY_COPY_META__ COPY_INPUT_PROBE_USED=1\n' >&2
+    else
+      printf '__LUCY_COPY_META__ COPY_INPUT_FOCUS_FAIL=1\n' >&2
+      t=""
+    fi
+  else
+    t=""
+  fi
+  printf '%s' "$t"
+}
+
+copy_input() {
+  local t=""
+  local bytes=0
+  local attempt=1
+  while [[ "$attempt" -le "$COPY_INPUT_ATTEMPTS" ]]; do
+    t="$(copy_input_safe)"
+    bytes="$(bytes_len "$t")"
+    if [[ "$bytes" -gt 0 ]]; then
+      break
+    fi
+    # Phase 4 meta
+    printf '__LUCY_COPY_META__ COPY_INPUT_ATTEMPT_%s_BYTES=0\n' "$attempt" >&2
+    sleep "$(copy_backoff "$attempt")"
+    attempt=$((attempt + 1))
+  done
+  if [[ "$bytes" -eq 0 ]] && [[ "$COPY_INPUT_PROBE" -eq 1 ]]; then
+    t="$(copy_input_probe)"
+    bytes="$(bytes_len "$t")"
+  fi
+  local attempts_used="$attempt"
+  if [[ "$bytes" -eq 0 ]] && [[ "$attempt" -gt 1 ]]; then
+    attempts_used=$((attempt - 1))
+  fi
+  printf '__LUCY_COPY_META__ COPY_INPUT_ATTEMPTS=%s COPY_INPUT_BYTES=%s\n' \
+    "$attempts_used" "$bytes" >&2
+  if [[ "$bytes" -eq 0 ]]; then
+    printf '__LUCY_COPY_META__ COPY_INPUT_EMPTY=1\n' >&2
+  fi
+  printf '%s' "$t"
+}
+
+txt1=""
+txt2=""
+bytes1=0
+bytes2=0
+mode="${COPY_MODE}"
+chosen="messages"
+best=""
+bestBytes=0
+
+if [[ "$mode" == "messages" ]]; then
+  txt2="$(copy_messages)"
+  bytes2="$(bytes_len "$txt2")"
+  chosen="messages"
+  best="$txt2"
+  bestBytes="$bytes2"
+elif [[ "$mode" == "input" ]]; then
+  txt1="$(copy_input)"
+  bytes1="$(bytes_len "$txt1")"
+  chosen="input"
+  best="$txt1"
+  bestBytes="$bytes1"
 else
-  if [[ \"\$bytes2\" -gt \"\$bytes1\" ]]; then
-    chosen=\"messages\"
-    best=\"\$txt2\"
-    bestBytes=\"\$bytes2\"
+  txt1="$(copy_input)"
+  bytes1="$(bytes_len "$txt1")"
+  txt2="$(copy_messages)"
+  bytes2="$(bytes_len "$txt2")"
+  chosen="input"
+  best="$txt1"
+  bestBytes="$bytes1"
+  if [[ "$bytes2" -gt "$bytes1" ]]; then
+    chosen="messages"
+    best="$txt2"
+    bestBytes="$bytes2"
   fi
 fi
 
-printf \"__LUCY_COPY_META__ COPY_BYTES_1=%s COPY_BYTES_2=%s COPY_CHOSEN=%s COPY_BYTES=%s COPY_MODE=%s\\n\" \"\$bytes1\" \"\$bytes2\" \"\$chosen\" \"\$bestBytes\" \"\$mode\"
-if [[ \"\$bestBytes\" -lt 200 ]]; then
-  printf \"__LUCY_COPY_META__ COPY_WEAK=1\\n\"
+if [[ "$mode" == "messages" ]] && [[ "$bestBytes" -eq 0 ]]; then
+  printf '__LUCY_COPY_META__ COPY_BYTES_1=%s COPY_BYTES_2=%s COPY_CHOSEN=%s COPY_BYTES=%s COPY_MODE=%s\n' \
+    "$bytes1" "$bytes2" "$chosen" "$bestBytes" "$mode" >&2
+  printf 'ERROR: COPY_MESSAGES_ZERO\n' >&2
+  exit 4
 fi
 
-printf \"%s\" \"\$best\"
-'")"
+printf '__LUCY_COPY_META__ COPY_BYTES_1=%s COPY_BYTES_2=%s COPY_CHOSEN=%s COPY_BYTES=%s COPY_MODE=%s\n' \
+  "$bytes1" "$bytes2" "$chosen" "$bestBytes" "$mode" >&2
+if [[ "$bestBytes" -lt 200 ]]; then
+  printf '__LUCY_COPY_META__ COPY_WEAK=1\n' >&2
+fi
+
+out="$best"
 
 meta_lines="$(printf '%s\n' "$out" | sed -n 's/^__LUCY_COPY_META__ //p')"
 if [[ -n "${meta_lines:-}" ]]; then
