@@ -59,3 +59,8 @@ __pycache__/
 logs/
 /scripts/_attic/
 diagnostics/
+
+# local scratch / ad-hoc scripts
+test_copy.sh
+test_copy_messages.sh
+type_draft.sh
