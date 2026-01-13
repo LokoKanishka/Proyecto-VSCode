@@ -57,7 +57,9 @@ def _handle(conn: socket.socket) -> None:
         if "XAUTHORITY" not in env:
             uid = os.getuid()
             cand = f"/run/user/{uid}/gdm/Xauthority"
-            env["XAUTHORITY"] = cand if os.path.exists(cand) else os.path.expanduser("~/.Xauthority")
+            env["XAUTHORITY"] = (
+                cand if os.path.exists(cand) else os.path.expanduser("~/.Xauthority")
+            )
 
         p = subprocess.run(
             ["/bin/bash", "-lc", cmd],

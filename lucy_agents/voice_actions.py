@@ -151,11 +151,12 @@ def _ask_chatgpt_ui(question: str) -> tuple[bool, str]:
 # 1. Modelo de planificación
 # =========================
 
+
 @dataclass
 class PlannedAction:
-    tool: str          # por ahora siempre "desktop"
-    command: str       # comando para el Desktop Agent
-    description: str   # para logs humanos (opcional)
+    tool: str  # por ahora siempre "desktop"
+    command: str  # comando para el Desktop Agent
+    description: str  # para logs humanos (opcional)
 
 
 # Motor recordado para búsquedas posteriores ("ahora busca X")
@@ -212,6 +213,8 @@ def _fix_common_stt_aliases(q: str) -> str:
     fixed = re.sub(r"\bn[uú]mero\s+audio\b", "número áureo", fixed, flags=re.I)
 
     return fixed
+
+
 def _clean_query(q: str) -> str:
     """Limpia la query de muletillas y espacios."""
     q = q.strip()
@@ -296,26 +299,27 @@ def _extract_chatgpt_query(text: str) -> str:
     patterns = [
         # Caso crítico 1: "preguntale/consultale a chatgpt: X"
         r"(?:pregunt[aá]le|preguntale|consult[aá]le|consultale|averigu[aá]le|averigual[eé])"
-        + sep + r"(?:a\s+)?chat\s*gpt\b" + sep + r"(.+)$",
-
+        + sep
+        + r"(?:a\s+)?chat\s*gpt\b"
+        + sep
+        + r"(.+)$",
         # Caso crítico 2: "buscá/preguntá/consultá en chatgpt X"
         r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
-        + sep + r"(?:en\s+)?chat\s*gpt\b" + sep + r"(.+)$",
-
+        + sep
+        + r"(?:en\s+)?chat\s*gpt\b"
+        + sep
+        + r"(.+)$",
         # "abrí chatgpt y buscá/preguntá X"
         r"(?:abr[ií]|abre|abrir)\s+chat\s*gpt\b.*?(?:y\s+)?"
         r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
         r"(?:me|melo|mela|nos|lo|la|le)?" + sep + r"(.+)$",
-
         # "buscá/preguntá X en chatgpt"
         r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
         r"(?:me|melo|mela|nos|lo|la|le)?" + sep + r"(.+?)\s+(?:en\s+)?chat\s*gpt\b",
-
         # "en chatgpt buscá/preguntá X"
         r"(?:en\s+)?chat\s*gpt\b.*?"
         r"(?:busc[aá](?:r)?|busqu(?:e|es|en)|pregunt[aá](?:r)?|consult[aá](?:r)?|averigu[aá](?:r)?)"
         r"(?:me|melo|mela|nos|lo|la|le)?" + sep + r"(.+)$",
-
         # Fallback voz: "chatgpt, X" / "chat gpt X" (sin verbo)
         r"(?:^|\b)chat\s*gpt\b" + sep + r"(.+)$",
     ]
@@ -395,6 +399,7 @@ def _extract_web_query(t: str) -> str:
     q = _postprocess_extracted_query(t, q)
     return q
 
+
 def _has_search_verb(t: str) -> bool:
     """
     Detecta variantes simples de 'buscar':
@@ -473,12 +478,17 @@ def _extract_query_for_engine(t: str, engine: str) -> str:
         return _postprocess_extracted_query(t, q)
 
     return ""
+
+
 def _extract_google_query(t: str) -> str:
     """
     Extrae la query pensada para Google justo después de 'busc...'
     y antes de 'en google' si aparece.
     """
-    m = re.search(r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+google\b|$)", t)
+    m = re.search(
+        r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+google\b|$)",
+        t,
+    )
     if not m:
         return ""
     q = _clean_query(m.group(1))
@@ -508,7 +518,8 @@ def is_complex_youtube_request(text: str) -> bool:
         return False
 
     has_content = any(
-        w in t for w in ["entrevista", "programa", "charla", "capítulo", "capitulo", "especial", "video"]
+        w in t
+        for w in ["entrevista", "programa", "charla", "capítulo", "capitulo", "especial", "video"]
     )
     if not has_content:
         return False
@@ -569,7 +580,16 @@ def is_complex_youtube_request(text: str) -> bool:
         return False
 
     mention_youtube = "youtube" in t or "video" in t
-    content_words = ["entrevista", "programa", "especial", "mano a mano", "charla", "capítulo", "capitulo", "episodio"]
+    content_words = [
+        "entrevista",
+        "programa",
+        "especial",
+        "mano a mano",
+        "charla",
+        "capítulo",
+        "capitulo",
+        "episodio",
+    ]
     play_words = [
         "poné",
         "pone",
@@ -615,7 +635,10 @@ def _augment_searxng_query_for_summary(q: str) -> str:
 
     # Si ya trae contexto, no tocamos.
     lowered = q.lower()
-    if any(w in lowered for w in ("radio", "podcast", "programa", "episodio", "capitulo", "capítulo", "streaming")):
+    if any(
+        w in lowered
+        for w in ("radio", "podcast", "programa", "episodio", "capitulo", "capítulo", "streaming")
+    ):
         return q
 
     # Entrecomillamos si no viene entre comillas (mejora precisión para nombres).
@@ -702,7 +725,7 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
             searx_query = _extract_web_query(t) or _extract_query_after_buscar(t)
 
     if searx_query:
-        if ('contame' in t) or ('breve' in t) or ('resum' in t):
+        if ("contame" in t) or ("breve" in t) or ("resum" in t):
             searx_query = _augment_searxng_query_for_summary(searx_query)
         url = _build_searxng_search_url(searx_query)
         actions.append(
@@ -751,7 +774,7 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
         or re.search(r"\bvs\s*code\b", t)
         or re.search(r"\bcode\b", t)
     )
-    wants_project = ("proyecto" in t and "lucy" in t)
+    wants_project = "proyecto" in t and "lucy" in t
     wants_open = bool(re.search(r"\b(abri|abrí|abre|abrir)\b", t))
 
     if wants_open and (wants_vscode or wants_project):
@@ -782,6 +805,7 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
 # =========================
 # 3. Orquestador público
 # =========================
+
 
 def _wants_playback(text: str) -> bool:
     """Heurística simple para pedidos de reproducción/play."""
@@ -891,8 +915,21 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
         )
         return _ask_chatgpt_ui(chatgpt_query)
 
-    if any(neg in lowered for neg in ("no la reproduzcas", "no lo reproduzcas", "sin reproducir", "solo abrí la búsqueda", "solo abre la busqueda", "solo abre la búsqueda")):
-        print("[LucyVoiceActions] Pedido de YouTube con 'no reproducir'; se usa plan de escritorio simple.", flush=True)
+    if any(
+        neg in lowered
+        for neg in (
+            "no la reproduzcas",
+            "no lo reproduzcas",
+            "sin reproducir",
+            "solo abrí la búsqueda",
+            "solo abre la busqueda",
+            "solo abre la búsqueda",
+        )
+    ):
+        print(
+            "[LucyVoiceActions] Pedido de YouTube con 'no reproducir'; se usa plan de escritorio simple.",
+            flush=True,
+        )
     elif is_complex_youtube_request(text):
         print(
             "[LucyVoiceActions] Pedido complejo de YouTube; se delega al LLM/web_agent.",
@@ -960,7 +997,9 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
             cmd = f"xdg-open {video_url}"
             rc = run_desktop_command(cmd)
             print(f"[LucyVoiceActions] Resultado (desktop) {cmd!r}: {rc}", flush=True)
-            if isinstance(video_url, str) and video_url.startswith("https://www.youtube.com/results?search_query="):
+            if isinstance(video_url, str) and video_url.startswith(
+                "https://www.youtube.com/results?search_query="
+            ):
                 spoken = "No encontré una entrevista exacta, pero te abrí la búsqueda en YouTube para que elijas."
             else:
                 spoken = "Te abrí la búsqueda y además un video en YouTube. Debería estar reproduciéndose en otra pestaña."

@@ -7,13 +7,14 @@ if not IPC_DIR:
     sys.exit(2)
 
 IPC = pathlib.Path(IPC_DIR)
-INBOX  = IPC / "inbox"
+INBOX = IPC / "inbox"
 OUTBOX = IPC / "outbox"
 PAYLOADS = IPC / "payloads"
 for d in (INBOX, OUTBOX, PAYLOADS):
     d.mkdir(parents=True, exist_ok=True)
 
 LOG = IPC / "agent.log"
+
 
 def log(msg: str):
     try:
@@ -22,8 +23,10 @@ def log(msg: str):
     except Exception:
         pass
 
+
 # Timeout por request (segundos)
 DEFAULT_TIMEOUT = float(os.environ.get("X11_FILE_AGENT_TIMEOUT", "6"))
+
 
 # IMPORTANTÍSIMO: evitar recursión.
 # Si el agent hereda X11_FILE_IPC_DIR, cualquier x11_run.sh vuelve a llamar x11_file_call.sh.
@@ -66,6 +69,7 @@ def run_cmd(cmd: str, timeout_s: float):
             pass
         return 124, ""
 
+
 def parse_req(path: pathlib.Path):
     # req_<ts>_<rand>.txt  → res_<ts>_<rand>.txt
     m = re.match(r"req_(\d+)_([0-9]+)\.txt$", path.name)
@@ -74,6 +78,7 @@ def parse_req(path: pathlib.Path):
     ts, rid = m.group(1), m.group(2)
     res = OUTBOX / f"res_{ts}_{rid}.txt"
     return ts, rid, res
+
 
 log(f"x11_file_agent: IPC={IPC}")
 log(f"x11_file_agent: inbox={INBOX}")

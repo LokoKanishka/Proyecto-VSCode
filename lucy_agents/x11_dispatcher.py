@@ -19,6 +19,7 @@ from typing import Callable, List, Optional, Tuple
 _DEBUG = os.environ.get("LUCY_DISPATCHER_DEBUG") == "1"
 _DEBUG_LOG = os.environ.get("LUCY_DISPATCHER_DEBUG_LOG", "/tmp/lucy_dispatcher_debug.log")
 
+
 def _d(msg: str):
     if not _DEBUG:
         return
@@ -29,10 +30,10 @@ def _d(msg: str):
         pass
 
 
-
 # =========================
 # Errores controlados
 # =========================
+
 
 class LucyError(Exception):
     code = "E_EXEC_FAIL"
@@ -57,6 +58,7 @@ class Timeout(LucyError):
 # =========================
 # Timeout duro (dispatcher)
 # =========================
+
 
 def _timeout_handler(signum, frame):
     raise Timeout()
@@ -199,7 +201,7 @@ def _build_screenshot_cmd(target: str, out_path: str) -> str:
         "    fi",
         "  fi",
         "elif command -v xwd >/dev/null 2>&1; then",
-        '  if command -v convert >/dev/null 2>&1; then',
+        "  if command -v convert >/dev/null 2>&1; then",
         '    if [ "$TARGET" = "root" ]; then',
         '      xwd -root -silent | convert xwd:- "$OUT"',
         "    else",
@@ -371,6 +373,7 @@ DISPATCH_TABLE: dict[str, Callable[..., object]] = {
 # Parsing
 # =========================
 
+
 def parse_request(line: str) -> Tuple[Optional[str], str]:
     line = line.strip()
     if not line:
@@ -389,6 +392,7 @@ def parse_request(line: str) -> Tuple[Optional[str], str]:
 # =========================
 # Dispatcher principal
 # =========================
+
 
 def main():
     try:

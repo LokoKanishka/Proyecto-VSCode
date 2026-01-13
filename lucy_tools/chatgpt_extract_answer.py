@@ -21,7 +21,12 @@ for ln in lines:
     # descartar placeholders del prompt
     if not val:
         continue
-    if val.startswith("<") or "tu respuesta" in low or "una sola línea" in low or "una sola linea" in low:
+    if (
+        val.startswith("<")
+        or "tu respuesta" in low
+        or "una sola línea" in low
+        or "una sola linea" in low
+    ):
         continue
 
     best = f"{label}: {val}"

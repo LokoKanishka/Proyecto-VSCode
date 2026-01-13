@@ -50,7 +50,10 @@ ACTION_SPECS: dict[str, dict[str, Any]] = {
         "notes": "offline parser",
     },
     "web_search": {
-        "payload": {"required": ["query"], "optional": ["num_results", "language", "safesearch", "time_range"]},
+        "payload": {
+            "required": ["query"],
+            "optional": ["num_results", "language", "safesearch", "time_range"],
+        },
         "returns": {
             "query": "str",
             "engine": "searxng",

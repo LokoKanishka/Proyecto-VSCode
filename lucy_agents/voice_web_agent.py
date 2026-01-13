@@ -73,9 +73,12 @@ def normalize_text(text: str) -> str:
 
 
 def is_sleep_command(text_norm: str) -> bool:
-    return ("lucy dormi" in text_norm) or ("lucy dormite" in text_norm) or (
-        text_norm == "dormi"
-    ) or (text_norm == "dormite")
+    return (
+        ("lucy dormi" in text_norm)
+        or ("lucy dormite" in text_norm)
+        or (text_norm == "dormi")
+        or (text_norm == "dormite")
+    )
 
 
 def is_read_command(text_norm: str) -> bool:
@@ -121,7 +124,7 @@ def is_read_command(text_norm: str) -> bool:
             "leeme",
             "lea",
             "leas",
-            "lees",   # por si dice "lees esto"
+            "lees",  # por si dice "lees esto"
         )
     )
     has_object = any(
@@ -144,8 +147,7 @@ def wants_web_search(text_norm: str) -> bool:
     """Devuelve True si la frase suena a 'buscar en la web'."""
     has_where = any(k in text_norm for k in ("web", "internet", "google"))
     has_verb = any(
-        v in text_norm
-        for v in ("busca", "buscá", "buscar", "buscame", "buscarme", "buscando")
+        v in text_norm for v in ("busca", "buscá", "buscar", "buscame", "buscarme", "buscando")
     )
     return has_where and has_verb
 
@@ -304,7 +306,14 @@ def main() -> None:
                 try:
                     answer = run_web_research(
                         task=task,
-                        model_id=(None if (os.getenv("LUCY_WEB_NO_LLM","").strip().lower() in ("1","true","yes","on")) else WEB_MODEL_ID),
+                        model_id=(
+                            None
+                            if (
+                                os.getenv("LUCY_WEB_NO_LLM", "").strip().lower()
+                                in ("1", "true", "yes", "on")
+                            )
+                            else WEB_MODEL_ID
+                        ),
                         max_results=8,
                         verbosity=1,
                     )

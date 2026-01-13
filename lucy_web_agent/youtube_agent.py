@@ -10,7 +10,15 @@ def _log(msg: str) -> None:
     print(f"[LucyWebAgent] {msg}", flush=True)
 
 
-KEYWORD_BONUS = ("entrevista", "programa", "capitulo", "capítulo", "especial", "mano a mano", "charla")
+KEYWORD_BONUS = (
+    "entrevista",
+    "programa",
+    "capitulo",
+    "capítulo",
+    "especial",
+    "mano a mano",
+    "charla",
+)
 STOPWORDS = {
     "de",
     "del",
@@ -189,7 +197,9 @@ def find_youtube_video_url(
             entries = [data]
 
         if not entries:
-            _log(f"[LucyWebAgent] Sin resultados de yt-dlp para query='{cleaned_query}', channel_hint='{channel_hint}'")
+            _log(
+                f"[LucyWebAgent] Sin resultados de yt-dlp para query='{cleaned_query}', channel_hint='{channel_hint}'"
+            )
             return None
 
         strong_tokens = _strong_query_tokens(cleaned_query)
@@ -216,7 +226,9 @@ def find_youtube_video_url(
 
         _log(f"[LucyWebAgent] Tokens fuertes (query): {strong_tokens}")
         _log(f"[LucyWebAgent] Tokens débiles (query): {weak_tokens}")
-        _log(f"[LucyWebAgent] Puntajes candidatos: {[(e.get('title'), s, nm) for e, s, nm in scored]}")
+        _log(
+            f"[LucyWebAgent] Puntajes candidatos: {[(e.get('title'), s, nm) for e, s, nm in scored]}"
+        )
 
         # Selección por política
         candidate = None
@@ -239,7 +251,9 @@ def find_youtube_video_url(
                 candidate = acceptable[0][0]
 
         if not candidate:
-            _log(f"[LucyWebAgent] Sin candidato suficientemente claro, devolviendo search_url genérica: {search_url}")
+            _log(
+                f"[LucyWebAgent] Sin candidato suficientemente claro, devolviendo search_url genérica: {search_url}"
+            )
             return search_url
         video_url: str | None = None
         if candidate.get("webpage_url"):

@@ -23,7 +23,9 @@ def main() -> int:
     ap.add_argument("query", help="Search query")
     ap.add_argument(
         "--url",
-        default=os.environ.get("SEARXNG_URL") or os.environ.get("LUCY_SEARXNG_URL") or "http://127.0.0.1:8080",
+        default=os.environ.get("SEARXNG_URL")
+        or os.environ.get("LUCY_SEARXNG_URL")
+        or "http://127.0.0.1:8080",
         help="Base URL of SearXNG (default: env SEARXNG_URL/LUCY_SEARXNG_URL or http://127.0.0.1:8080)",
     )
     ap.add_argument("--language", default="es-AR")
@@ -80,4 +82,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -60,9 +60,7 @@ def main() -> None:
 
     model_label = args.model_id or DEFAULT_OLLAMA_MODEL_ID
 
-    print(
-        "╭──────────────── Lucy Web Agent ────────────────╮"
-    )
+    print("╭──────────────── Lucy Web Agent ────────────────╮")
     print(f"│  Modelo: {model_label:<33}│")
     print(f"│  Top K web: {args.max_results:<27}│")
     print("╰────────────────────────────────────────────────╯\n")

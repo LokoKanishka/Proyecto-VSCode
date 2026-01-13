@@ -243,15 +243,11 @@ def scan_shell_like(path: Path, text: str) -> List[Finding]:
                 or "1> /dev/null" in stripped
             )
             suppress_stderr = (
-                "&>" in stripped
-                or "2>/dev/null" in stripped
-                or "2> /dev/null" in stripped
+                "&>" in stripped or "2>/dev/null" in stripped or "2> /dev/null" in stripped
             )
 
             risk = "ALTA"
-            detail = (
-                "Redirección a /dev/null: se pierden logs. Ideal: dejar salida o redirigir a archivo de log."
-            )
+            detail = "Redirección a /dev/null: se pierden logs. Ideal: dejar salida o redirigir a archivo de log."
 
             # Casos comunes y normalmente aceptables (ruido bajo para trazabilidad).
             if re.search(r"\b(command\s+-v|type\s+-P|hash)\b", stripped):
@@ -287,9 +283,8 @@ def scan_js_ts(path: Path, text: str) -> List[Finding]:
     findings: List[Finding] = []
     for i, line in enumerate(text.splitlines(), start=1):
         l = line.strip()
-        if (
-            ("child_process" in l or "spawn(" in l or "exec(" in l or "execSync(" in l)
-            and ("stdio" in l or "ignore" in l)
+        if ("child_process" in l or "spawn(" in l or "exec(" in l or "execSync(" in l) and (
+            "stdio" in l or "ignore" in l
         ):
             risk = "MEDIA" if "ignore" not in l else "ALTA"
             findings.append(
@@ -327,7 +322,9 @@ def iter_files(roots: List[Path]) -> List[Path]:
     return out
 
 
-def write_markdown(md_path: Path, roots: List[str], files_scanned: int, findings: List[Finding]) -> None:
+def write_markdown(
+    md_path: Path, roots: List[str], files_scanned: int, findings: List[Finding]
+) -> None:
     md_path.parent.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -355,9 +352,7 @@ def write_markdown(md_path: Path, roots: List[str], files_scanned: int, findings
         lines.append("_No se detectaron silenciamientos evidentes a nivel heurístico._\n")
     else:
         for f in altas:
-            lines.append(
-                f"- `{f.file}:{f.line}` **{f.kind}** — {f.detail}\n  - `{f.snippet}`\n"
-            )
+            lines.append(f"- `{f.file}:{f.line}` **{f.kind}** — {f.detail}\n  - `{f.snippet}`\n")
 
     lines.append("\n## Hallazgos a revisar (MEDIA)\n\n")
     medias = [f for f in findings_sorted if f.risk == "MEDIA"]
@@ -365,9 +360,7 @@ def write_markdown(md_path: Path, roots: List[str], files_scanned: int, findings
         lines.append("_Nada para revisar en media según heurística._\n")
     else:
         for f in medias:
-            lines.append(
-                f"- `{f.file}:{f.line}` **{f.kind}** — {f.detail}\n  - `{f.snippet}`\n"
-            )
+            lines.append(f"- `{f.file}:{f.line}` **{f.kind}** — {f.detail}\n  - `{f.snippet}`\n")
 
     lines.append("\n## Hallazgos informativos (BAJA)\n\n")
     bajas = [f for f in findings_sorted if f.risk == "BAJA"]

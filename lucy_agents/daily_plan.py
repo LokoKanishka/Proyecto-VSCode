@@ -73,7 +73,9 @@ def get_base_plan(date_str: str | None, max_chars: int = 2500) -> Tuple[str, str
     return _trim_text(text, max_chars), "OFFLINE"
 
 
-def build_chatgpt_prompt(base_plan: str, date_str: str | None, prompt_hint: str, max_chars: int) -> str:
+def build_chatgpt_prompt(
+    base_plan: str, date_str: str | None, prompt_hint: str, max_chars: int
+) -> str:
     date_value = date_str or _today_str()
     hint_block = f"Hint: {prompt_hint}\n" if prompt_hint else ""
     prompt = (

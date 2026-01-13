@@ -54,13 +54,13 @@ def _insert_guard_before_stt_log(source: str) -> str:
     match = pattern.search(source)
     if not match:
         raise SystemExit(
-            "No pude encontrar la línea de log `_log(f\"[LucyVoice] STT text: {text!r}\")` para insertar el guard."
+            'No pude encontrar la línea de log `_log(f"[LucyVoice] STT text: {text!r}")` para insertar el guard.'
         )
 
     indent = match.group("indent")
     guard = (
         f"{indent}if _lucy_is_junk_stt(text):\n"
-        f"{indent}    _log(f\"[LucyVoice] STT junk ignorado: {{text!r}}\")\n"
+        f'{indent}    _log(f"[LucyVoice] STT junk ignorado: {{text!r}}")\n'
         f"{indent}    continue\n"
     )
 
@@ -79,7 +79,10 @@ def main() -> int:
             source = _insert_helper_after_imports(source)
             source = _insert_guard_before_stt_log(source)
         except Exception as exc:
-            print(f"[{MARKER}] WARN: no se pudo aplicar el filtro ({exc}); ejecutando sin filtro.", file=sys.stderr)
+            print(
+                f"[{MARKER}] WARN: no se pudo aplicar el filtro ({exc}); ejecutando sin filtro.",
+                file=sys.stderr,
+            )
             source = app_path.read_text(encoding="utf-8", errors="replace")
 
     # Simular `python app.py`: asegurar que el directorio de app.py esté en sys.path

@@ -1,0 +1,22 @@
+[tool.black]
+line-length = 100
+target-version = ['py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.git
+  | \.venv
+  | \.venv-lucy-voz
+  | \.venv-lucy-ui
+  | \.venv-web
+  | legacy
+  | archive
+  | external
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100

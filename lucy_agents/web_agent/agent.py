@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 
 from ddgs import DDGS
 import ollama
+
 try:
     import yaml  # type: ignore
 except Exception:
@@ -72,7 +73,9 @@ def build_context_from_results(results: List[SearchResult], fetched: List[Fetche
         extracted = fetched_by_url.get(r.url)
         extract_text = ""
         if extracted:
-            extract_text = textwrap.shorten(extracted.text.replace("\n", " "), width=600, placeholder="...")
+            extract_text = textwrap.shorten(
+                extracted.text.replace("\n", " "), width=600, placeholder="..."
+            )
 
         block = textwrap.dedent(
             f"""
@@ -104,7 +107,7 @@ def run_web_research(
 
     task: consigna en español, tal como la formularía la persona usuaria.
     """
-    no_llm = os.getenv('LUCY_WEB_NO_LLM','').strip().lower() in ('1','true','yes','on')
+    no_llm = os.getenv("LUCY_WEB_NO_LLM", "").strip().lower() in ("1", "true", "yes", "on")
     if no_llm:
         model = None
     else:
@@ -137,12 +140,15 @@ def run_web_research(
     if no_llm:
         out = []
         out.append("[Lucy web-agent] (NO_LLM) devolviendo resultados sin Ollama")
-        out.append("[Lucy web-agent] Proveedor: %s | resultados brutos: %d | fetch descargados: %d" % (used_provider, len(results), len(fetched)))
+        out.append(
+            "[Lucy web-agent] Proveedor: %s | resultados brutos: %d | fetch descargados: %d"
+            % (used_provider, len(results), len(fetched))
+        )
         out.append("")
         out.append("Resultados:")
         for k, r in enumerate(results[:max_results], 1):
-            title = (getattr(r, 'title', '') or '').strip()
-            url = (getattr(r, 'url', '') or '').strip()
+            title = (getattr(r, "title", "") or "").strip()
+            url = (getattr(r, "url", "") or "").strip()
             if title:
                 out.append("%d. %s | %s" % (k, title, url))
             else:
@@ -151,10 +157,10 @@ def run_web_research(
             out.append("")
             out.append("Extractos:")
             for k, pg in enumerate(fetched, 1):
-                url = (getattr(pg, 'url', '') or '').strip()
-                text = (getattr(pg, 'text', '') or getattr(pg, 'content', '') or '').strip()
+                url = (getattr(pg, "url", "") or "").strip()
+                text = (getattr(pg, "text", "") or getattr(pg, "content", "") or "").strip()
                 if text:
-                    text = ' '.join(text.split())
+                    text = " ".join(text.split())
                     out.append("[%d] %s" % (k, url))
                     out.append(text[:800])
                     out.append("")

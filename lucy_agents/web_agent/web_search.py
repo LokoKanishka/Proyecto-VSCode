@@ -94,16 +94,22 @@ def build_queries(q: str) -> List[str]:
     q_raw = q.strip()
     qlow = q_raw.lower()
 
-    is_phi = (("número áureo" in qlow) or ("numero aureo" in qlow))
+    is_phi = ("número áureo" in qlow) or ("numero aureo" in qlow)
 
-    is_def = bool(re.match(
-        r"(?i)^\s*¿?\s*(que|qué)\s+(es|son|significa)\b|^\s*(definici[oó]n|concepto)\s+de\b",
-        q_raw
-    ))
+    is_def = bool(
+        re.match(
+            r"(?i)^\s*¿?\s*(que|qué)\s+(es|son|significa)\b|^\s*(definici[oó]n|concepto)\s+de\b",
+            q_raw,
+        )
+    )
 
     # ANTI_PHI_SHORT_QUERY_BLOCK
     # Caso ultra-corto: "numero/número áureo" suele desambiguarse mejor como "proporcion aurea".
-    if is_phi and (not is_def) and re.fullmatch(r"(?i)\s*(n[uú]mero\s+áureo|numero\s+aureo|numero\s+áureo)\s*", q_raw):
+    if (
+        is_phi
+        and (not is_def)
+        and re.fullmatch(r"(?i)\s*(n[uú]mero\s+áureo|numero\s+aureo|numero\s+áureo)\s*", q_raw)
+    ):
         queries = ["proporcion aurea"]
     else:
         queries = [q_raw]
@@ -127,17 +133,25 @@ def build_queries(q: str) -> List[str]:
 
     # ANTI_PHI_SHORT_QUERY_GUARD
     # Si es exactamente "numero/número áureo", no reinyectamos ese texto como keyword (evita calendario/time).
-    if is_phi and (not is_def) and re.fullmatch(r"(?i)\s*(n[uú]mero\s+áureo|numero\s+aureo|numero\s+áureo)\s*", q_raw):
+    if (
+        is_phi
+        and (not is_def)
+        and re.fullmatch(r"(?i)\s*(n[uú]mero\s+áureo|numero\s+aureo|numero\s+áureo)\s*", q_raw)
+    ):
         kw = ""
 
     # Desambiguación: "numero aureo" pega mucho en "golden number (time)".
-    if is_def and (("número áureo" in qlow) or ("numero aureo" in qlow) or (kw.lower() in ("número áureo","numero aureo","numero áureo"))):
+    if is_def and (
+        ("número áureo" in qlow)
+        or ("numero aureo" in qlow)
+        or (kw.lower() in ("número áureo", "numero aureo", "numero áureo"))
+    ):
         kw_ascii = "proporcion aurea"
     else:
         import unicodedata
+
         kw_ascii = "".join(
-            c for c in unicodedata.normalize("NFKD", kw)
-            if not unicodedata.combining(c)
+            c for c in unicodedata.normalize("NFKD", kw) if not unicodedata.combining(c)
         )
         kw_ascii = re.sub(r"\s+", " ", kw_ascii).strip()
 
@@ -235,46 +249,53 @@ def searx_search(
 
             # LANG_FALLBACK: algunos engines se ponen en CAPTCHA/vacío según región (p.ej. es-AR).
             # Reintentamos con idioma base ('es') y luego sin language antes de usar fallbacks.
-            if not payload.get('results'):
-                base_lang = ''
+            if not payload.get("results"):
+                base_lang = ""
                 if lang:
-                    base_lang = (lang.split('-')[0] if '-' in lang else lang).strip()
+                    base_lang = (lang.split("-")[0] if "-" in lang else lang).strip()
                 # 1) Retry con idioma base (ej: 'es') si venía 'es-AR'
                 if base_lang and base_lang != lang:
                     r2 = client.post(
-                        base + '/search',
-                        data={'q': q, 'format': 'json', 'language': base_lang, 'safesearch': safesearch},
+                        base + "/search",
+                        data={
+                            "q": q,
+                            "format": "json",
+                            "language": base_lang,
+                            "safesearch": safesearch,
+                        },
                     )
                     r2.raise_for_status()
                     p2 = r2.json()
-                    if p2.get('results') or p2.get('infoboxes'):
+                    if p2.get("results") or p2.get("infoboxes"):
                         payload = p2
                 # 2) Retry sin language
-                if not payload.get('results'):
+                if not payload.get("results"):
                     r3 = client.post(
-                        base + '/search',
-                        data={'q': q, 'format': 'json', 'safesearch': safesearch},
+                        base + "/search",
+                        data={"q": q, "format": "json", "safesearch": safesearch},
                     )
                     r3.raise_for_status()
                     p3 = r3.json()
-                    if p3.get('results') or p3.get('infoboxes'):
+                    if p3.get("results") or p3.get("infoboxes"):
                         payload = p3
 
             # INFOBOX_FALLBACK: si engines externos bloquean/captcha y 'results' viene vacío,
             # usamos infoboxes (wikidata/wikipedia) como resultados mínimos.
-            if not payload.get('results'):
-                iboxes = payload.get('infoboxes') or []
+            if not payload.get("results"):
+                iboxes = payload.get("infoboxes") or []
                 fb = []
                 for ib in iboxes:
-                    content = (ib.get('content') or '').strip()
-                    for u in (ib.get('urls') or []):
-                        url = (u.get('url') or '').strip()
+                    content = (ib.get("content") or "").strip()
+                    for u in ib.get("urls") or []:
+                        url = (u.get("url") or "").strip()
                         if not url:
                             continue
-                        title = (u.get('title') or ib.get('infobox') or 'infobox').strip()
-                        fb.append({'title': title, 'url': url, 'content': content, 'engine': 'infobox'})
+                        title = (u.get("title") or ib.get("infobox") or "infobox").strip()
+                        fb.append(
+                            {"title": title, "url": url, "content": content, "engine": "infobox"}
+                        )
                 if fb:
-                    payload['results'] = fb
+                    payload["results"] = fb
 
             for item in payload.get("results", []):
                 collected.append(
@@ -304,7 +325,9 @@ def _fetch_url(url: str, timeout_s: float) -> httpx.Response:
         return resp
 
 
-def fetch_and_extract(url: str, timeout_s: float = 12.0, max_chars: int = 6000) -> Optional[FetchedPage]:
+def fetch_and_extract(
+    url: str, timeout_s: float = 12.0, max_chars: int = 6000
+) -> Optional[FetchedPage]:
     """
     Descarga una página y extrae texto en modo reader (trafilatura).
     """
@@ -351,7 +374,9 @@ def web_answer(
     used_provider = provider
     try:
         if provider.lower() == "searxng":
-            results = searx_search(queries, base_url=searxng_url, lang=lang, safesearch=safesearch, timeout_s=timeout_s)
+            results = searx_search(
+                queries, base_url=searxng_url, lang=lang, safesearch=safesearch, timeout_s=timeout_s
+            )
     except Exception:
         results = []
 
