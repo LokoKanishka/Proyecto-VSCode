@@ -1,0 +1,27 @@
+rules:
+  - name: "Chrome Leave Site"
+    window_title_regex: ".*Leave site?.*"
+    action: "enter"
+    cooldown_s: 10
+
+  - name: "Gemini Welcome"
+    window_title_regex: ".*Welcome to Gemini.*"
+    action: "escape"
+    cooldown_s: 30
+
+  - name: "ChatGPT Continue"
+    window_title_regex: ".*Continue generating.*"
+    action: "click_rel"
+    x_pct: 50
+    y_pct: 85
+    cooldown_s: 5
+  - name: "Modal Test Rule"
+    window_title_regex: ".*Modal Test Page.*"
+    action: "enter"
+    cooldown_s: 2
+
+  - name: "Generic Cookie Banner (Test)"
+    window_title_regex: ".*Cookie.*"
+    action: "tab_enter"
+    tab_count: 2
+    cooldown_s: 20
