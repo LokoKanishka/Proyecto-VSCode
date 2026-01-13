@@ -143,6 +143,32 @@ def _score_entry(entry: Dict[str, Any], channel_hint: Optional[str]) -> int:
     return score
 
 
+import shutil
+try:
+    from lucy_agents import searxng_client
+except ImportError:
+    searxng_client = None
+
+def _search_searxng_fallback(query: str) -> Optional[str]:
+    if not searxng_client:
+        _log("SearXNG client not available for fallback.")
+        return None
+    
+    searx_query = f"site:youtube.com watch {query}"
+    _log(f"Fallback: Searching SearXNG with '{searx_query}'")
+    results, errors, _ = searxng_client.search(searx_query, num_results=5)
+    
+    if errors:
+        _log(f"SearXNG errors: {errors}")
+    
+    for res in results:
+        url = res.get("url", "")
+        if "youtube.com/watch?v=" in url:
+            _log(f"Fallback: Found URL {url}")
+            return url
+            
+    return None
+
 def find_youtube_video_url(
     query: str,
     channel_hint: Optional[str] = None,
@@ -151,26 +177,23 @@ def find_youtube_video_url(
     """
     Dado un texto de búsqueda y (opcionalmente) un identificador/dica de canal,
     intenta encontrar una URL de video de YouTube que encaje.
-
-    Por ahora solo define la interfaz.
-    La implementación real podrá usar Playwright, Selenium, o un cliente HTTP.
-
-    Estrategias posibles:
-    - "latest": el video más reciente que encaje con la búsqueda.
-    - "live_or_latest": si hay vivo, usar ese; si no, el último video.
-
-    Devuelve:
-    - Una URL completa de YouTube (https://www.youtube.com/watch?v=...)
-      si tuvo éxito.
-    - None si no pudo encontrar nada aceptable.
     """
-    try:
-        cleaned_query = (query or "").strip()
-        if not cleaned_query:
-            _log("Empty query provided to find_youtube_video_url.")
-            return None
-        search_url = f"https://www.youtube.com/results?search_query={quote_plus(cleaned_query)}"
+    cleaned_query = (query or "").strip()
+    if not cleaned_query:
+        _log("Empty query provided to find_youtube_video_url.")
+        return None
+        
+    search_url = f"https://www.youtube.com/results?search_query={quote_plus(cleaned_query)}"
 
+    # 1. Check yt-dlp availability
+    if not shutil.which("yt-dlp"):
+         _log("yt-dlp not found. Trying SearXNG fallback.")
+         fallback = _search_searxng_fallback(cleaned_query)
+         if fallback:
+             return fallback
+         return search_url
+
+    try:
         search_term = cleaned_query
         cmd = [
             "yt-dlp",
@@ -182,14 +205,22 @@ def find_youtube_video_url(
         ]
         _log(f"Running yt-dlp search: {' '.join(cmd)}")
         proc = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # If yt-dlp fails, fallback immediately
         if proc.returncode != 0:
-            _log(f"yt-dlp failed (code {proc.returncode}): {proc.stderr.strip()}")
-            return None
+            _log(f"yt-dlp failed (code {proc.returncode}). Trying SearXNG fallback.")
+            fallback = _search_searxng_fallback(cleaned_query)
+            if fallback:
+                 return fallback
+            return search_url
 
         stdout = proc.stdout or ""
         if not stdout.strip():
-            _log("yt-dlp returned empty output.")
-            return None
+            _log("yt-dlp returned empty output. Trying SearXNG fallback.")
+            fallback = _search_searxng_fallback(cleaned_query)
+            if fallback:
+                 return fallback
+            return search_url
 
         data = json.loads(stdout)
         entries = data.get("entries") or []
@@ -197,14 +228,11 @@ def find_youtube_video_url(
             entries = [data]
 
         if not entries:
-            _log(
-                f"[LucyWebAgent] Sin resultados de yt-dlp para query='{cleaned_query}', channel_hint='{channel_hint}'"
-            )
-            return None
+            _log(f"[LucyWebAgent] No entries from yt-dlp. Returning generic.")
+            return search_url
 
         strong_tokens = _strong_query_tokens(cleaned_query)
         weak_tokens = [tok for tok in _tokenize(cleaned_query) if tok not in strong_tokens]
-
         channel_bonus_tokens = _tokenize(channel_hint) if channel_hint else set()
 
         scored: list[tuple[Dict[str, Any], int, int]] = []
@@ -221,65 +249,39 @@ def find_youtube_video_url(
                 channel_bonus += 2
 
             score = name_matches * 4 + weak_matches * 1 + channel_bonus
-
             scored.append((e, score, name_matches))
 
-        _log(f"[LucyWebAgent] Tokens fuertes (query): {strong_tokens}")
-        _log(f"[LucyWebAgent] Tokens débiles (query): {weak_tokens}")
-        _log(
-            f"[LucyWebAgent] Puntajes candidatos: {[(e.get('title'), s, nm) for e, s, nm in scored]}"
-        )
+        if not scored:
+             return search_url
 
-        # Selección por política
-        candidate = None
-        # Caso ideal: name_matches >= 2
-        strong_candidates = [(e, s, nm) for e, s, nm in scored if nm >= 2]
-        if strong_candidates:
-            strong_candidates.sort(key=lambda triple: (-triple[2], -triple[1]))
-            candidate = strong_candidates[0][0]
-        else:
-            # Caso aceptable: name_matches == 1 y título con palabras de formato
-            format_words = {kw for kw in _tokenize(" ".join(KEYWORD_BONUS))}
-            acceptable = []
-            for e, s, nm in scored:
-                if nm == 1:
-                    title_tokens = _tokenize(e.get("title") or "")
-                    if title_tokens & format_words:
-                        acceptable.append((e, s, nm))
-            if acceptable:
-                acceptable.sort(key=lambda triple: (-triple[1],))
-                candidate = acceptable[0][0]
+        # Sort strictly by score desc
+        scored.sort(key=lambda x: x[1], reverse=True)
+        
+        best_candidate = scored[0][0]
+        best_score = scored[0][1]
+        
+        _log(f"Selected best candidate score={best_score}: {best_candidate.get('title')}")
 
-        if not candidate:
-            _log(
-                f"[LucyWebAgent] Sin candidato suficientemente claro, devolviendo search_url genérica: {search_url}"
-            )
-            return search_url
         video_url: str | None = None
-        if candidate.get("webpage_url"):
-            video_url = candidate.get("webpage_url")
-        elif candidate.get("url"):
-            raw = candidate.get("url")
+        if best_candidate.get("webpage_url"):
+            video_url = best_candidate.get("webpage_url")
+        elif best_candidate.get("url"):
+            raw = best_candidate.get("url")
             if isinstance(raw, str) and raw.startswith(("http://", "https://")):
                 video_url = raw
             elif isinstance(raw, str) and not raw.startswith("ytsearch"):
                 video_url = f"https://www.youtube.com/watch?v={raw}"
-        elif candidate.get("id"):
-            video_url = f"https://www.youtube.com/watch?v={candidate.get('id')}"
+        elif best_candidate.get("id"):
+            video_url = f"https://www.youtube.com/watch?v={best_candidate.get('id')}"
 
         if not video_url or (isinstance(video_url, str) and video_url.startswith("ytsearch")):
-            _log("[LucyWebAgent] No hay URL directa confiable; uso búsqueda genérica.")
             return search_url
-
-        title = candidate.get("title") or "(sin título)"
-        uploader = candidate.get("uploader") or candidate.get("channel") or "(sin canal)"
-        _log(f"[LucyWebAgent] Elegí video: titulo='{title}', canal='{uploader}', url='{video_url}'")
 
         return video_url
 
     except Exception as exc:
         _log(f"Error while searching YouTube: {exc}")
-        return None
+        return search_url
 
 
 if __name__ == "__main__":

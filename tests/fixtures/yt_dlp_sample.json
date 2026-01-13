@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "id": "vid123",
+      "title": "Entrevista a Alejandro Dolina - La Venganza Ser\u00e1 Terrible",
+      "uploader": "Canal 9",
+      "channel": "Canal 9",
+      "webpage_url": "https://www.youtube.com/watch?v=vid123",
+      "url": "https://www.youtube.com/watch?v=vid123"
+    },
+    {
+      "id": "vid456",
+      "title": "Programa Completo - La Venganza",
+      "uploader": "Fan channel",
+      "channel": "Fan channel",
+      "webpage_url": "https://www.youtube.com/watch?v=vid456",
+      "url": "https://www.youtube.com/watch?v=vid456"
+    }
+  ]
+}
