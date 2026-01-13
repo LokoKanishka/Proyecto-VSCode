@@ -30,12 +30,15 @@ vad_min_utterance_ms: 1800
 silence_duration_stop: 1.0
 max_record_seconds: 10.0
 
-# Wake Word
-wakeword_threshold: 0.05
-wakeword_cooldown: 4.0
-# wakeword_model_paths: ["lucy_voice/data/wakeword/modelos/hola_lucy.onnx"]  # Custom model (disabled due to false positives)
-wakeword_model_paths: [] # Empty list uses defaults (alexa, hey_jarvis, etc)
-
+# Wake Word (ahora con soporte mejorado)
+wake_word:
+  enabled: true  # Set to false to disable wake word and use continuous listening
+  confidence_threshold: 0.5  # Adjust 0.0-1.0; lower = more sensitive
+  cooldown_seconds: 2.0  # Time after detection before listening for next wake word
+  # Model paths: empty list uses default OpenWakeWord models (hey_jarvis, alexa)
+  # To use custom model: add path like ["models/hola_lucy.onnx"]
+  model_paths: []  # Use defaults or specify custom models
+  
 # Búsqueda web
 web_search:
   provider: "searxng"
@@ -56,3 +59,20 @@ voice_modular:
   sleep_commands:
     - "lucy dormi"
     - "lucy dormí"
+  # Half-duplex mode: mute microphone during TTS playback
+  half_duplex: true
+
+# LLM Model Management
+# Current model (already configured above as ollama_model)
+# To switch models, change ollama_model value and restart Lucy
+# Example alternatives (ensure model is installed via 'ollama pull'):
+#   - "llama2:7b"      (~4 GB VRAM, faster but less capable)
+#   - "llama2:13b"     (~8 GB VRAM, balanced)
+#   - "gpt-oss:20b"    (~13 GB VRAM, current default)
+#   - "llama2:70b-q4"  (~35 GB VRAM, most capable but needs quantization)
+# 
+# For LoRA fine-tuning:
+#   1. Train LoRA adapter with your dataset
+#   2. Save as new model: ollama create my-custom-model -f Modelfile
+#   3. Set ollama_model: "my-custom-model"
+# See docs/LUCY-LLM-GPT-OSS-LORA.md for details

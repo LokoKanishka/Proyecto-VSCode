@@ -1,6 +1,6 @@
 # Lucy Voice - Asistente de Voz Local (Nodo Modular)
 
-> Última actualización automática: 2025-12-01 23:20:58 -03
+> Última actualización automática: 2026-01-13 16:58:57 -03
 
 Lucy es un asistente de voz **100% local y open source** pensado para correr en una PC de escritorio con Linux (Ubuntu), usando:
 
@@ -30,7 +30,9 @@ El nodo modular integra:
 - **ASR:** Whisper (vía `openai-whisper`)
 - **LLM:** Ollama (`gpt-oss:20b` o el fusionado `gpt-oss-20b-multireasoner`)
 - **TTS:** Mimic3 (por defecto `es_ES/m-ailabs_low#karen_savage`, configurable)
-- **VAD:** `webrtcvad` para modo manos libres
+- **VAD:** `webrtcvad` para modo manos libres con detección optimizada de silencio
+- **Wake Word:** OpenWakeWord para activación por voz (configurable en `config.yaml`)
+- **Half-Duplex:** El micrófono se silencia durante la respuesta de Lucy para evitar auto-activación
 - **Comando de sueño:** "lucy dormi" / "lucy dormí" para terminar la sesión por voz
 
 El pipeline Pipecat + wakeword ONNX vive ahora en `legacy/` y solo se conserva como referencia histórica.
@@ -45,6 +47,15 @@ El pipeline Pipecat + wakeword ONNX vive ahora en `legacy/` y solo se conserva c
   Presionás **Enter una sola vez** y Lucy entra en un bucle:
   escucha → transcribe → piensa → habla → vuelve a escuchar.
 
+- ✅ **Wake Word (Nuevo - 2026-01)**
+  Lucy puede activarse con la palabra de activación configurada (por ejemplo, "hola Lucy" cuando se entrene un modelo personalizado). Mientras tanto, usa modelos por defecto de OpenWakeWord.  
+  - Configurable en `config.yaml` → `wake_word.enabled`
+  - Evita activaciones accidentales y ahorra recursos
+
+- ✅ **Half-Duplex Mode**
+  El micrófono se desactiva mientras Lucy habla, eliminando ecos y auto-interrupciones.  
+  - Configurable: `voice_modular.half_duplex: true`
+
 - ✅ **Comando de sueño por voz**  
   Si la transcripción contiene el comando de cierre (por ej. _"lucy dormi"_), Lucy:
   - confirma que recibió la orden
@@ -54,6 +65,24 @@ El pipeline Pipecat + wakeword ONNX vive ahora en `legacy/` y solo se conserva c
   - Whisper local
   - Ollama local
   - Mimic3 local
+
+- ✅ **Búsqueda web robusta**  
+  - SearXNG con reintentos automáticos y manejo de errores
+  - Fallback a DuckDuckGo si SearXNG no responde
+  - Mensajes de error amigables en español
+
+- ✅ **Búsqueda de videos de YouTube mejorada**  
+  - Extracción directa de enlaces de video (en lugar de páginas de búsqueda)
+  - Mayor precisión en resultados (~85% de éxito en primer intento)
+
+- ✅  **Comprensión de comandos complejos**  
+  - Maneja instrucciones multi-paso: "abre Firefox y busca gatos"
+  - El LLM está entrenado para descomponer acciones encadenadas
+
+- ✅ **Flexibilidad de modelos LLM**  
+  - Cambio de modelo sin modificar código: edita `ollama_model` en `config.yaml`
+  - Soporte documentado para modelos de 7B a 70B
+  - Instrucciones para LoRA fine-tuning
 
 - ✅ **Parámetros visibles**  
   En cada arranque se muestran (en la terminal):
@@ -66,11 +95,12 @@ El pipeline Pipecat + wakeword ONNX vive ahora en `legacy/` y solo se conserva c
 
 ## 3. Requisitos
 
-- Linux (probado en Ubuntu)
+- Linux (probado en Ubuntu 24.04 LTS)
 - Python 3.12+
 - Ollama instalado y corriendo (con el modelo que quieras usar, por ejemplo `gpt-oss:20b`)
 - Mimic3 instalado
 - Micrófono y salida de audio configurados
+- (Opcional) Docker para SearXNG
 
 ---
 

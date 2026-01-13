@@ -2,6 +2,8 @@
 ddgs
 httpx
 ollama
+openwakeword>=0.5.0
 PyYAML
 tenacity
 trafilatura
+webrtcvad>=2.0.10
