@@ -64,3 +64,4 @@ diagnostics/
 test_copy.sh
 test_copy_messages.sh
 type_draft.sh
+=*
