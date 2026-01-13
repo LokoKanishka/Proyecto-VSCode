@@ -544,12 +544,23 @@ copy_chat_to() {
   local mode="${3:-auto}"
   local err_file=""
   : > "$out"
-  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
-    err_file="$LUCY_ASK_TMPDIR/copy_${tag}.stderr"
-  else
-    err_file="/tmp/lucy_copy_${TOKEN}_${tag}.stderr"
+  local strict_script="$ROOT/scripts/chatgpt_copy_messages_strict.sh"
+  local ok=0
+  if [[ -x "$strict_script" ]]; then
+    if timeout 25s "$strict_script" >"$out" 2>/dev/null; then
+       ok=1
+    fi
   fi
-  LUCY_COPY_MODE="$mode" timeout 25s "$COPY" >"$out" 2>"$err_file" || true
+  
+  if [[ "$ok" -ne 1 ]]; then
+    # Fallback to legacy
+    if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
+      err_file="$LUCY_ASK_TMPDIR/copy_${tag}.stderr"
+    else
+      err_file="/tmp/lucy_copy_${TOKEN}_${tag}.stderr"
+    fi
+    LUCY_COPY_MODE="$mode" timeout 25s "$COPY" >"$out" 2>"$err_file" || true
+  fi
   if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
     cp -f "$out" "$LUCY_ASK_TMPDIR/copy_${tag}.txt" 2>/dev/null || true
     cp -f "$err_file" "$LUCY_ASK_TMPDIR/copy_${tag}.stderr" 2>/dev/null || true

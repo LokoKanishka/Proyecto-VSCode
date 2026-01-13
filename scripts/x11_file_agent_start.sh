@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-IPC_DIR="${X11_FILE_IPC_DIR:-$ROOT/diagnostics/x11_file_ipc}"
+export X11_FILE_IPC_DIR="${X11_FILE_IPC_DIR:-$ROOT/diagnostics/x11_file_ipc}"
+IPC_DIR="$X11_FILE_IPC_DIR"
 FIFO="/tmp/lucy_agent_stdin.fifo"
 
 mkdir -p "$IPC_DIR/inbox" "$IPC_DIR/outbox" "$IPC_DIR/payloads"
