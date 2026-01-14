@@ -16,7 +16,7 @@ fi
 if [[ -n "${BRIDGE_CLASS:-}" ]]; then
   args+=(--class="${BRIDGE_CLASS}")
 fi
-args+=(--no-first-run --no-default-browser-check --new-window "${URL}")
+args+=(--no-first-run --no-default-browser-check --disable-session-crashed-bubble --new-window "${URL}")
 
 cmd="$CHROME_BIN"
 for arg in "${args[@]}"; do

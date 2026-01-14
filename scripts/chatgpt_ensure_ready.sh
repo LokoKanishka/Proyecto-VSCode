@@ -25,6 +25,8 @@ fi
 # tabular hasta "Permanecer con la sesión cerrada" y enter.
 MAX_TRIES="${CHATGPT_READY_TRIES:-4}"
 
+ALLOW_GUEST="${CHATGPT_ALLOW_GUEST:-0}"
+
 for n in $(seq 1 "$MAX_TRIES"); do
   set +e
   "$COPY_STRICT" >/dev/null 2>/tmp/lucy_copy_ready.err
