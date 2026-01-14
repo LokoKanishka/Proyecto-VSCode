@@ -45,8 +45,6 @@ export CHATGPT_WID_PIN_FILE="$PIN_FILE"
 CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 if [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-LUCY Dummy Chat}"
-elif [[ "${CHATGPT_TARGET}" == "paid" ]]; then
-  TITLE_INCLUDE=""
 else
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
 fi
@@ -153,6 +151,14 @@ title_is_excluded() {
   return 1
 }
 
+title_is_included() {
+  [[ -z "${TITLE_INCLUDE:-}" ]] && return 0
+  local title_lc inc_lc
+  title_lc="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  inc_lc="$(printf '%s' "${TITLE_INCLUDE}" | tr '[:upper:]' '[:lower:]')"
+  [[ "${title_lc}" == *"${inc_lc}"* ]]
+}
+
 title_has_strong_hint() {
   local title_lc
   title_lc="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
@@ -187,6 +193,9 @@ list_chrome_candidates() {
     if title_is_excluded "$title"; then
       continue
     fi
+    if ! title_is_included "$title"; then
+      continue
+    fi
     printf "%s\t%s\t%s\n" "$wid" "$pid" "$title"
   done
 }
@@ -210,6 +219,9 @@ list_paid_candidates() {
       continue
     fi
     if title_is_excluded "$title"; then
+      continue
+    fi
+    if ! title_is_included "$title"; then
       continue
     fi
     printf "%s\t%s\t%s\n" "$wid" "$pid" "$title"
