@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
+CLICK_MESSAGES="$ROOT/scripts/chatgpt_click_messages_zone.sh"
 
 WID_HEX="${1:-${CHATGPT_WID_HEX:-}}"
 if [[ -z "${WID_HEX:-}" ]]; then
@@ -20,77 +20,71 @@ if [[ "${WID_DEC}" -le 0 ]]; then
   exit 3
 fi
 
-geo="$("$HOST_EXEC" "xdotool getwindowgeometry --shell ${WID_DEC}" 2>/dev/null || true)"
-eval "$geo" || true
-: "${WIDTH:=1200}"
-: "${HEIGHT:=900}"
+# Por defecto: el strict debe devolver algo "real" (evita falsos positivos tipo 90 bytes)
+MIN_BYTES="${CHATGPT_STRICT_COPY_MIN_BYTES:-200}"
 
-# Coordinates to try: (X%, Y%)
-# 1. Slightly right-center (avoid sidebar)
-# 2. Lower right
-# 3. Center
-ATTEMPTS=( "60 60" "70 70" "50 50" )
+# Intentos: x_pct y_pct jitter_px (coords relativas a ventana)
+ATTEMPTS=(
+  "40 50 0"
+  "45 45 4"
+  "55 50 4"
+  "40 35 6"
+  "55 35 6"
+)
 
-# Strings that indicate we copied the sidebar
-SIDEBAR_PATTERNS=( "Historial" "Nuevo chat" "ChatGPT Plus" "Upgrade plan" )
+# Heurísticas de “copié basura / sidebar / header”
+BAD_PATTERNS=(
+  "Historial"
+  "Nuevo chat"
+  "ChatGPT Plus"
+  "Upgrade plan"
+  "Saltar al contenido"
+  "Historial del chat"
+)
+
+bytes_len() {
+  local t="$1"
+  printf "%s" "$t" | wc -c | tr -d " \n"
+}
+
+trim_basic() {
+  # preserva saltos de línea, solo recorta espacios por línea y CR
+  sed -e 's/\r//g' -e 's/[[:space:]]\+$//' -e 's/^[[:space:]]\+//'
+}
 
 for attempt in "${ATTEMPTS[@]}"; do
-  read -r x_pct y_pct <<< "$attempt"
-  
-  px=$(( WIDTH * x_pct / 100 ))
-  py=$(( HEIGHT * y_pct / 100 ))
-  
-  # Jitter
-  jitter=$(( (RANDOM % 5) - 2 ))
-  px=$(( px + jitter ))
-  py=$(( py + jitter ))
-  
-  cmd="PX='${px}' PY='${py}' WID_HEX='${WID_HEX}' WID_DEC='${WID_DEC}'; "
-  cmd+="set -euo pipefail; "
-  cmd+="wmctrl -ia \"\$WID_HEX\" 2>/dev/null || true; "
-  cmd+="xdotool windowactivate --sync \"\$WID_DEC\" 2>/dev/null || true; "
-  cmd+="xdotool key --clearmodifiers End 2>/dev/null || true; " # Force scroll bottom
-  cmd+="sleep 0.2; "
-  cmd+="xdotool mousemove --window \"\$WID_DEC\" \"\$PX\" \"\$PY\" click 1 2>/dev/null || true; "
-  cmd+="sleep 0.15; "
-  cmd+="xdotool key --clearmodifiers ctrl+a 2>/dev/null || true; "
-  cmd+="sleep 0.15; "
-  cmd+="xdotool key --clearmodifiers ctrl+c 2>/dev/null || true; "
-  cmd+="sleep 0.25; "
-  # Read clipboard loop
-  cmd+="t=''; "
-  cmd+="for i in \$(seq 1 10); do "
-  cmd+="  t=\$(timeout 0.5s xclip -selection clipboard -o 2>/dev/null || true); "
-  cmd+="  [[ -n \"\$t\" ]] && break; "
-  cmd+="  t=\$(timeout 0.5s xsel --clipboard --output 2>/dev/null || true); "
-  cmd+="  [[ -n \"\$t\" ]] && break; "
-  cmd+="  sleep 0.1; "
-  cmd+="done; "
-  cmd+="printf '%s' \"\$t\""
+  read -r x_pct y_pct jitter <<< "$attempt"
 
-  # Execute
-  clipboard_content="$("$HOST_EXEC" "$cmd")"
-  
-  # Validate
+  # Reusar el mecanismo ya robusto (Escape + retries largos + clipboard)
+  t="$(CHATGPT_MESSAGES_CLICK_X_PCT="$x_pct" \
+       CHATGPT_MESSAGES_CLICK_Y_PCT="$y_pct" \
+       CHATGPT_MESSAGES_CLICK_JITTER_PX="$jitter" \
+       CHATGPT_WID_HEX="$WID_HEX" \
+       "$CLICK_MESSAGES" 2>/dev/null || true)"
+
+  cleaned="$(printf "%s" "$t" | trim_basic)"
+  b="$(bytes_len "$cleaned")"
+
   is_bad=0
-  if [[ ${#clipboard_content} -lt 10 ]]; then
+
+  if [[ "$b" -lt "$MIN_BYTES" ]]; then
     is_bad=1
-  else
-    for pattern in "${SIDEBAR_PATTERNS[@]}"; do
-      if [[ "$clipboard_content" == *"$pattern"* ]]; then
-        is_bad=1
-        break
-      fi
-    done
   fi
-  
+
+  for pat in "${BAD_PATTERNS[@]}"; do
+    if [[ "$cleaned" == *"$pat"* ]]; then
+      is_bad=1
+      break
+    fi
+  done
+
   if [[ "$is_bad" -eq 0 ]]; then
-    echo "__LUCY_COPY_META__ OK attempts=${attempt}" >&2
-    printf '%s' "$clipboard_content"
+    echo "__LUCY_COPY_META__ OK x_pct=$x_pct y_pct=$y_pct jitter=$jitter bytes=$b" >&2
+    printf "%s" "$cleaned"
     exit 0
   fi
-  
-  echo "WARN: strict copy attempt failed (sidebar/empty) at ${x_pct}%,${y_pct}%" >&2
+
+  echo "WARN: strict copy attempt failed (empty/sidebar/weak) at ${x_pct}%,${y_pct}% bytes=$b" >&2
 done
 
 echo "ERROR: strict copy failed after all attempts" >&2
