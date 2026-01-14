@@ -21,6 +21,13 @@ if [[ -z "${WID_HEX:-}" ]]; then
 fi
 export CHATGPT_WID_HEX="$WID_HEX"
 
+# Guard: estabilizar UI (cierra overlays/login) antes del loop de 10
+if ! "$ROOT/scripts/chatgpt_ensure_ready.sh" "$CHATGPT_WID_HEX"; then
+  rc="$?"
+  exit "$rc"
+fi
+
+
 # Preflight: si ChatGPT está en login/bloqueo, NO iterar 10 veces (fail-fast)
 set +e
 "$ROOT/scripts/chatgpt_copy_messages_strict.sh" >/dev/null 2>/tmp/lucy_verify_copy_preflight.err

@@ -2,6 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ENSURE_READY="$ROOT/scripts/chatgpt_ensure_ready.sh"
+
+# Guard: si está en login/bloqueo, cortar acá (evita loops de wait/copy)
+"$ENSURE_READY" || exit "$?"
+
 
 # --- AUTO IPC DIR (A3.12) ---
 if [[ -z "${X11_FILE_IPC_DIR:-}" ]]; then
