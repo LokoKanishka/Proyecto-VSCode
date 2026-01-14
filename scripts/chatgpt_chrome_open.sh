@@ -7,7 +7,9 @@ HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 CHROME_BIN="${CHATGPT_CHROME_BIN:-google-chrome}"
 PROFILE_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-}"
 BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-}"
-URL="${1:-${CHATGPT_OPEN_URL:-https://chat.openai.com/}}"
+THREAD_URL="${CHATGPT_THREAD_URL:-}"
+OPEN_URL="${CHATGPT_OPEN_URL:-https://chatgpt.com/}"
+URL="${1:-${THREAD_URL:-$OPEN_URL}}"
 
 args=()
 if [[ -n "${PROFILE_DIR:-}" ]]; then

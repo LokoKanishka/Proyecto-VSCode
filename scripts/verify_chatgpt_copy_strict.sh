@@ -22,8 +22,11 @@ fi
 export CHATGPT_WID_HEX="$WID_HEX"
 
 # Guard: estabilizar UI (cierra overlays/login) antes del loop de 10
-if ! "$ROOT/scripts/chatgpt_ensure_ready.sh" "$CHATGPT_WID_HEX"; then
-  rc="$?"
+set +e
+"$ROOT/scripts/chatgpt_ensure_ready.sh" "$CHATGPT_WID_HEX"
+rc="$?"
+set -e
+if [[ "$rc" -ne 0 ]]; then
   exit "$rc"
 fi
 
