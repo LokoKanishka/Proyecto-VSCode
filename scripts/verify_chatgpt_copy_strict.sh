@@ -20,6 +20,17 @@ if [[ -z "${WID_HEX:-}" ]]; then
   exit 4
 fi
 export CHATGPT_WID_HEX="$WID_HEX"
+
+# Preflight: si ChatGPT está en login/bloqueo, NO iterar 10 veces (fail-fast)
+set +e
+"$ROOT/scripts/chatgpt_copy_messages_strict.sh" >/dev/null 2>/tmp/lucy_verify_copy_preflight.err
+rc="$?"
+set -e
+if [[ "$rc" -eq 7 ]]; then
+  echo "FAIL: ERROR_BLOCKED_LOGIN (ChatGPT está deslogueado/bloqueado). Abrí un chat válido y reintentá." >&2
+  exit 7
+fi
+
 echo "__LUCY_COPY_META__ PRE_WID=${WID_HEX} TARGET=${CHATGPT_TARGET}" >&2
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,6 +57,17 @@ if [[ -z "${WID_HEX:-}" ]]; then
   exit 0
 fi
 export CHATGPT_WID_HEX="$WID_HEX"
+
+# Preflight: si ChatGPT está en login/bloqueo, NO iterar 10 veces (fail-fast)
+set +e
+"$ROOT/scripts/chatgpt_copy_messages_strict.sh" >/dev/null 2>/tmp/lucy_verify_copy_preflight.err
+rc="$?"
+set -e
+if [[ "$rc" -eq 7 ]]; then
+  echo "FAIL: ERROR_BLOCKED_LOGIN (ChatGPT está deslogueado/bloqueado). Abrí un chat válido y reintentá." >&2
+  exit 7
+fi
+
 
 echo "== RUNNING STRICT COPY VERIFICATION (10 iterations) =="
 

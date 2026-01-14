@@ -33,6 +33,15 @@ ATTEMPTS=(
 )
 
 # Heurísticas de “copié basura / sidebar / header”
+LOGIN_PATTERNS=(
+  "Iniciar sesión"
+  "Registrarse gratuitamente"
+  "Permanecer con la sesión cerrada"
+  "Gracias por probar ChatGPT"
+  "Sign in"
+  "Sign up"
+)
+
 BAD_PATTERNS=(
   "Historial"
   "Nuevo chat"
@@ -63,6 +72,14 @@ for attempt in "${ATTEMPTS[@]}"; do
        "$CLICK_MESSAGES" 2>/dev/null || true)"
 
   cleaned="$(printf "%s" "$t" | trim_basic)"
+  # Fail-fast si estamos deslogueados/bloqueados (evita loops eternos)
+  for lp in "${LOGIN_PATTERNS[@]}"; do
+    if [[ "$cleaned" == *"$lp"* ]]; then
+      echo "ERROR_BLOCKED_LOGIN: ChatGPT no está en modo chat (login/bloqueo detectado)" >&2
+      exit 7
+    fi
+  done
+
   b="$(bytes_len "$cleaned")"
 
   is_bad=0
