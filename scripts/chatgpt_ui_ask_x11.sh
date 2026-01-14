@@ -710,317 +710,57 @@ if [[ "$SENT_OK" -ne 1 ]]; then
   fail_exit "E_NO_SEND" 4
 fi
 
-# 2) Esperar respuesta
-TIMEOUT_SEC="${CHATGPT_ASK_TIMEOUT_SEC:-90}"
-POLL_SEC="${POLL_SEC:-2}"
-STALL_POLLS="${STALL_POLLS:-12}"
-MAX_POLLS=$(( TIMEOUT_SEC / POLL_SEC ))
-if [[ "$MAX_POLLS" -lt 5 ]]; then MAX_POLLS=5; fi
+# 2) Esperar respuesta (State-based Poll)
+WAIT_SCRIPT="$ROOT/scripts/chatgpt_wait_answer_x11.sh"
 
-# --- A3_12_WATCHDOG ---
-# Watchdog escalonado con trazas (NUDGE_1 -> NUDGE_2 -> RELOAD -> RESEND).
-NUDGE_AT="${CHATGPT_ASK_NUDGE_AT:-18}"      # ~36s si POLL_SEC=2 (fallback TIMEOUT)
-# RELOAD_AT queda como fallback externo si se requiere en el futuro
-RELOAD_AT="${CHATGPT_ASK_RELOAD_AT:-35}"    # ~70s si POLL_SEC=2
-WATCHDOG_ACTIVE=0
-WATCHDOG_REASON=""
-WATCHDOG_LAST_STEP=""
-WATCHDOG_WAIT=0
+if [[ ! -x "$WAIT_SCRIPT" ]]; then
+   echo "ERROR: missing waiter script $WAIT_SCRIPT" >&2
+   fail_exit "MISSING_WAITER" 2
+fi
 
-# --- A3_12_RESEND_AFTER_RELOAD ---
-# Si el backend web queda colgado (intermitente), tras reload re-enviamos el mismo MSG y seguimos esperando.
-RESEND_AFTER_RELOAD="${CHATGPT_ASK_RESEND_AFTER_RELOAD:-1}"
-# --- /A3_12_RESEND_AFTER_RELOAD ---
+# Llamamos al waiter.
+# El waiter escribe metadatos a stderr (__LUCY_WAIT_META__) y la respuesta final a stdout.
+# Si falla, sale con RC != 0.
+ANSWER_LINE="$("$WAIT_SCRIPT" "$TOKEN")" || WAIT_RC=$?
+WAIT_RC="${WAIT_RC:-0}"
 
-nudge_input() {
-  # Best-effort: no debe matar el ask si falla
-  if [[ -x "$ENSURE_FOCUS" ]]; then
-    CHATGPT_INPUT_FOCUS_MAX_TRIES="$FOCUS_MAX_ATTEMPTS" FOCUS_LOG_DIR="$LUCY_ASK_TMPDIR" \
-      timeout "${FOCUS_MAX_SECONDS}s" "$ENSURE_FOCUS" "$WID" >/dev/null 2>/dev/null || true
-    return 0
-  fi
-  python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
-  local nx ny
-  python3 -u "$DISP" send_keys "$WID" "Escape" >/dev/null 2>/dev/null || true
-  python3 -u "$DISP" send_keys "$WID" "Escape" >/dev/null 2>/dev/null || true
-  nx="${CHATGPT_INPUT_CLICK_X:-0.70}"
-  ny="${CHATGPT_INPUT_CLICK_Y:-0.80}"
-  python3 -u "$DISP" click "$WID" "$nx" "$ny" >/dev/null 2>/dev/null || true
-  python3 -u "$DISP" send_keys "$WID" "End" >/dev/null 2>/dev/null || true
-  sleep 0.3
-}
-
-nudge_scroll() {
-  python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
-  python3 -u "$DISP" send_keys "$WID" "Page_Down" >/dev/null 2>/dev/null || true
-  python3 -u "$DISP" send_keys "$WID" "Page_Up" >/dev/null 2>/dev/null || true
-  sleep 0.3
-}
-
-reload_ui() {
-  # Ctrl+R (si la pestaña quedó colgada, esto suele destrabar)
-  python3 -u "$DISP" focus_window "$WID" >/dev/null 2>/dev/null || true
-  python3 -u "$DISP" send_keys "$WID" "ctrl+r" >/dev/null 2>/dev/null || true
-  sleep 2.0
-}
-
-resend_msg() {
-  if [[ "${RESEND_AFTER_RELOAD:-1}" -eq 1 ]]; then
-    "$SEND" "$MSG" >/dev/null 2>/dev/null || true
-    sleep 0.9
-  fi
-}
-# --- /A3_12_WATCHDOG ---
-
-i=0
-stall_count=0
-stall_start_ms=0
-prev_copy_bytes=0
-prev_copy_sha=""
-prev_shot_sha=""
-
-hash_file() {
-  local f="$1"
-  if command -v sha1sum >/dev/null 2>&1; then
-    sha1sum "$f" | awk '{print $1}'
-    return 0
-  fi
-  cksum "$f" | awk '{print $1}'
-}
-
-START_MS="$(now_ms)"
-export START_MS
-
-watchdog_t_ms() {
-  local now
-  now="$(now_ms)"
-  printf '%s' "$(( now - START_MS ))"
-}
-
-watchdog_step() {
-  local step="$1"
-  printf 'WATCHDOG_STEP=%s t_ms=%s\n' "$step" "$(watchdog_t_ms)" >&2
-  case "$step" in
-    NUDGE_1)
-      nudge_input
-      WATCHDOG_LAST_STEP="NUDGE_1"
-      WATCHDOG_WAIT=1
-      ;;
-    NUDGE_2)
-      nudge_scroll
-      WATCHDOG_LAST_STEP="NUDGE_2"
-      WATCHDOG_WAIT=1
-      ;;
-    RELOAD)
-      if ! ensure_thread_ok; then
-        write_dynamic_forensics || true
-        capture_clipboard || true
-        fail_exit "THREAD_UNSTABLE" 5
-      fi
-      if ! ensure_input_focus; then
-        write_dynamic_forensics || true
-        capture_clipboard || true
-        fail_exit "FOCUS_UNSTABLE" 5
-      fi
-      reload_ui
-      WATCHDOG_LAST_STEP="RELOAD"
-      WATCHDOG_WAIT=0
-      ;;
-    RESEND)
-      if ! ensure_thread_ok; then
-        write_dynamic_forensics || true
-        capture_clipboard || true
-        fail_exit "THREAD_UNSTABLE" 5
-      fi
-      if ! ensure_input_focus; then
-        write_dynamic_forensics || true
-        capture_clipboard || true
-        fail_exit "FOCUS_UNSTABLE" 5
-      fi
-      resend_msg
-      WATCHDOG_LAST_STEP="RESEND"
-      WATCHDOG_ACTIVE=0
-      ;;
-  esac
-}
-
-watchdog_start() {
-  local reason="$1"
-  if [[ "${WATCHDOG_ACTIVE}" -eq 1 ]]; then
-    return 0
-  fi
-  WATCHDOG_ACTIVE=1
-  WATCHDOG_REASON="$reason"
-  printf 'WATCHDOG_REASON=%s t_ms=%s\n' "$reason" "$(watchdog_t_ms)" >&2
-  watchdog_step "NUDGE_1"
-}
-
-for _ in $(seq 1 "$MAX_POLLS"); do
-  i=$((i+1))
-  if ! wid_exists "$WID"; then
-    echo "ERROR: WID desaparecido durante ask WID=${WID}" >&2
-    fail_exit "WID_MISSING_DURING_ASK" 3
-  fi
-  copy_chat_to "$TMP" "1" "$COPY_MODE_DEFAULT"
-  COPY_PRIMARY_PATH="$TMP"
-  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
-    COPY_PRIMARY_PATH="$LUCY_ASK_TMPDIR/copy_1.txt"
-  fi
-  copy_best="$TMP"
-  line="$(extract_answer_line "$TMP")"
-  if [[ "${ANSWER_EMPTY_SEEN}" -eq 1 ]]; then
-    ANSWER_EMPTY_ANY=1
-  fi
-
-  if [[ -z "${line:-}" ]] && copy_needs_retry "$TMP"; then
-    copy_chat_to "$TMP_MSG" "2" "$COPY_MODE_FALLBACK"
-    COPY_SECONDARY_PATH="$TMP_MSG"
-    if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
-      COPY_SECONDARY_PATH="$LUCY_ASK_TMPDIR/copy_2.txt"
-    fi
-    alt_line="$(extract_answer_line "$TMP_MSG")"
-    if [[ "${ANSWER_EMPTY_SEEN}" -eq 1 ]]; then
-      ANSWER_EMPTY_ANY=1
-    fi
-    if [[ -n "${alt_line:-}" ]]; then
-      line="$alt_line"
-      copy_best="$TMP_MSG"
-    else
-      bytes1="$(wc -c < "$TMP" 2>/dev/null || echo 0)"
-      bytes2="$(wc -c < "$TMP_MSG" 2>/dev/null || echo 0)"
-      if [[ "${bytes2}" -gt "${bytes1}" ]]; then
-        copy_best="$TMP_MSG"
-      fi
-    fi
-  fi
-
-  store_best_copy "$copy_best"
-  if [[ -n "${LUCY_ASK_TMPDIR:-}" ]]; then
-    COPY_BEST_PATH="$LUCY_ASK_TMPDIR/copy.txt"
-  else
-    COPY_BEST_PATH="$copy_best"
-  fi
-  copy_bytes="$(wc -c < "$copy_best" 2>/dev/null || echo 0)"
-  copy_sha="NA"
-  if [[ -f "$copy_best" ]]; then
-    copy_sha="$(hash_file "$copy_best" 2>/dev/null || echo NA)"
-  fi
-  shot_sha="NA"
-  progress=0
-  if [[ -z "${prev_copy_sha}" ]]; then
-    progress=1
-  elif [[ "${copy_sha}" != "${prev_copy_sha}" ]]; then
-    progress=1
-  elif [[ $(( copy_bytes - prev_copy_bytes )) -ge 20 ]]; then
-    progress=1
-  elif [[ "${shot_sha}" != "NA" ]] && [[ -n "${prev_shot_sha}" ]] && [[ "${shot_sha}" != "${prev_shot_sha}" ]]; then
-    progress=1
-  fi
-
-  poll_ms="$(now_ms)"
-  if [[ "${progress}" -eq 1 ]]; then
-    stall_count=0
-    stall_start_ms=0
-    STALL_FORENSICS_WRITTEN=0
-  else
-    stall_count=$((stall_count + 1))
-    if [[ "${stall_start_ms}" -eq 0 ]]; then
-      stall_start_ms="${poll_ms}"
-    fi
-  fi
-
-  printf 'POLL i=%s copy_bytes=%s copy_sha=%s shot_sha=%s progress=%s stall=%s\n' \
-    "$i" "$copy_bytes" "$copy_sha" "$shot_sha" "$progress" "$stall_count" >&2
-
-  if [[ "${WATCHDOG_ACTIVE}" -eq 1 ]] && [[ "${progress}" -eq 1 ]] && \
-     [[ "${WATCHDOG_LAST_STEP}" == "NUDGE_1" || "${WATCHDOG_LAST_STEP}" == "NUDGE_2" ]]; then
-    printf 'WATCHDOG_ABORTED step=%s reason=PROGRESS_RETURNED\n' "$WATCHDOG_LAST_STEP" >&2
-    WATCHDOG_ACTIVE=0
-    WATCHDOG_REASON=""
-    WATCHDOG_LAST_STEP=""
-    WATCHDOG_WAIT=0
-  fi
-
-  watchdog_skip_decrement=0
-  stall_elapsed_ms=0
-  if [[ "${stall_start_ms}" -gt 0 ]]; then
-    stall_elapsed_ms=$(( poll_ms - stall_start_ms ))
-  fi
-  stall_ms_threshold=$(( STALL_POLLS * POLL_SEC * 1000 ))
-  if [[ "${stall_count}" -ge "${STALL_POLLS}" ]] || [[ "${stall_elapsed_ms}" -ge "${stall_ms_threshold}" ]]; then
-    printf 'STALL_DETECTED polls=%s seconds=%s\n' "$stall_count" "$((stall_count * POLL_SEC))" >&2
-    capture_stall_forensics || true
-    if [[ "${WATCHDOG_ACTIVE}" -ne 1 ]]; then
-      watchdog_start "STALL"
-      watchdog_skip_decrement=1
-    fi
-  fi
-
-  if [[ "${WATCHDOG_ACTIVE}" -ne 1 ]] && [[ "$i" -eq "$NUDGE_AT" ]] && [[ "${progress}" -eq 0 ]]; then
-    watchdog_start "TIMEOUT"
-    watchdog_skip_decrement=1
-  fi
-
-  if [[ "${WATCHDOG_ACTIVE}" -eq 1 ]]; then
-    if [[ "${WATCHDOG_WAIT}" -gt 0 ]] && [[ "${watchdog_skip_decrement}" -eq 0 ]]; then
-      WATCHDOG_WAIT=$((WATCHDOG_WAIT - 1))
-    fi
-    if [[ "${WATCHDOG_WAIT}" -eq 0 ]] && [[ "${progress}" -eq 0 ]]; then
-      if [[ "${WATCHDOG_LAST_STEP}" == "NUDGE_1" ]]; then
-        watchdog_step "NUDGE_2"
-      elif [[ "${WATCHDOG_LAST_STEP}" == "NUDGE_2" ]]; then
-        watchdog_step "RELOAD"
-        watchdog_step "RESEND"
-      fi
-    fi
-  fi
-
-  prev_copy_bytes="${copy_bytes}"
-  prev_copy_sha="${copy_sha}"
-  prev_shot_sha="${shot_sha}"
-
-  if [[ -n "${line:-}" ]]; then
-    if [[ "$line" == "$LAST_LINE_SEEN" ]]; then
-      LINE_STABLE_COUNT=$((LINE_STABLE_COUNT + 1))
-    else
-      LAST_LINE_SEEN="$line"
-      LINE_STABLE_COUNT=0
-    fi
-    if [[ "${LINE_STABLE_COUNT}" -ge 1 ]]; then
-      ANSWER_LINE="$line"
-      ASK_RC=0
-      ASK_STATUS="ok"
-      END_MS="$(now_ms)"
-      ELAPSED_MS=$(( END_MS - START_MS ))
-      if [[ "${ELAPSED_MS}" -lt 0 ]]; then
-        ELAPSED_MS=0
-      fi
-      export ASK_RC ASK_STATUS ANSWER_LINE END_MS ELAPSED_MS COPY_PRIMARY_PATH COPY_SECONDARY_PATH COPY_BEST_PATH FAIL_REASON
-      write_meta || true
-      write_summary || true
-      printf '%s\n' "$line"
-      exit 0
-    fi
-  else
-    LAST_LINE_SEEN=""
-    LINE_STABLE_COUNT=0
-  fi
-  sleep "$POLL_SEC"
-done
-
-if [[ "${ANSWER_EMPTY_ANY}" -eq 1 ]]; then
-  FAIL_REASON="ANSWER_EMPTY"
+if [[ "$WAIT_RC" -eq 0 ]] && [[ -n "$ANSWER_LINE" ]]; then
+  # Success
+  ASK_RC=0
+  ASK_STATUS="ok"
+  
+  END_MS="$(now_ms)"
+  ELAPSED_MS=$(( END_MS - START_MS ))
+  if [[ "${ELAPSED_MS}" -lt 0 ]]; then ELAPSED_MS=0; fi
+  
+  # Export for summary
+  export ASK_RC ASK_STATUS ANSWER_LINE END_MS ELAPSED_MS FAIL_REASON=""
+  
+  write_meta || true
+  write_summary || true
+  
+  # Imprimir respuesta limpia a stdout (es lo que espera el caller)
+  printf '%s\n' "$ANSWER_LINE"
+  exit 0
 else
-  FAIL_REASON="TIMEOUT"
+  # Failure
+  ASK_RC="$WAIT_RC"
+  ASK_STATUS="fail"
+  FAIL_REASON="TIMEOUT_OR_STUCK"
+  
+  if [[ "$WAIT_RC" -eq 2 ]]; then
+     FAIL_REASON="STUCK_NO_ANSWER"
+  elif [[ "$WAIT_RC" -eq 1 ]]; then
+     FAIL_REASON="TIMEOUT"
+  fi
+  
+  END_MS="$(now_ms)"
+  ELAPSED_MS=$(( END_MS - START_MS ))
+  if [[ "${ELAPSED_MS}" -lt 0 ]]; then ELAPSED_MS=0; fi
+  
+  export ASK_RC ASK_STATUS FAIL_REASON END_MS ELAPSED_MS
+  
+  capture_failure_context || true
+  echo "ERROR: waiter failed rc=${WAIT_RC} reason=${FAIL_REASON}" >&2
+  exit "$WAIT_RC"
 fi
-ASK_RC=1
-ASK_STATUS="fail"
-END_MS="$(now_ms)"
-ELAPSED_MS=$(( END_MS - START_MS ))
-if [[ "${ELAPSED_MS}" -lt 0 ]]; then
-  ELAPSED_MS=0
-fi
-export ASK_RC ASK_STATUS ANSWER_LINE END_MS ELAPSED_MS COPY_PRIMARY_PATH COPY_SECONDARY_PATH COPY_BEST_PATH FAIL_REASON
-capture_failure_context || true
-echo "ERROR: timeout esperando LUCY_ANSWER_${TOKEN}:" >&2
-exit 1
