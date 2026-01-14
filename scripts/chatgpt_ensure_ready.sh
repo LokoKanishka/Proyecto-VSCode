@@ -5,6 +5,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 COPY_STRICT="$ROOT/scripts/chatgpt_copy_messages_strict.sh"
+GET_URL="$ROOT/scripts/chatgpt_get_url_x11.sh"
 
 WID_HEX="${1:-${CHATGPT_WID_HEX:-}}"
 if [[ -z "${WID_HEX:-}" ]]; then
@@ -34,8 +35,18 @@ for n in $(seq 1 "$MAX_TRIES"); do
   set -e
 
   if [[ "$rc" -eq 0 ]]; then
-    echo "__LUCY_READY__ OK try=$n wid=$WID_HEX" >&2
-    exit 0
+    # Además del copy, exigimos URL de hilo (chatgpt.com/c/...) para evitar falsos OK
+    url="$("$GET_URL" "$WID_HEX" 2>/dev/null || true)"
+    if [[ -z "${url:-}" ]]; then
+      echo "__LUCY_READY__ WARN url vacía (retry) try=$n" >&2
+    else
+      if [[ "${ALLOW_GUEST}" -ne 1 ]] && [[ "${url}" != *"/c/"* ]]; then
+        echo "ERROR_NOT_IN_THREAD: URL=${url} (no es /c/). Abrí el hilo de test y reintentá." >&2
+        exit 8
+      fi
+      echo "__LUCY_READY__ OK try=$n wid=$WID_HEX url=$url" >&2
+      exit 0
+    fi
   fi
 
   if [[ "$rc" -ne 7 ]]; then
