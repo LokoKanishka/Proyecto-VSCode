@@ -53,26 +53,6 @@ else
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
 fi
 
-# Fast-path: paid usa pinfile (no requiere TITLE_INCLUDE)
-if [[ "${CHATGPT_TARGET}" == "paid" ]] && [[ "${PAID_PIN_TRUSTED}" -eq 1 ]] && [[ -f "${PIN_FILE}" ]]; then
-  # Leer primer campo (WID_HEX) y título (si existe) del pinfile
-  pin_wid_hex="$(head -n 1 "${PIN_FILE}" 2>/dev/null | awk '{print $1}' || true)"
-  if [[ -n "${pin_wid_hex:-}" ]]; then
-    # Confirmar que la ventana existe y obtener título actual (vía host)
-    pin_wid_dec="$(printf "%d" "${pin_wid_hex}" 2>/dev/null || echo 0)"
-    if [[ "${pin_wid_dec}" -gt 0 ]]; then
-      pin_title="$("$HOST_EXEC" "wmctrl -lx 2>/dev/null | awk -v w='${pin_wid_hex}' '\$1==w { \$1=\$2=\$3=\$4=\"\"; sub(/^ +/,\"\"); print; exit }'")"
-      if [[ -z "${pin_title:-}" ]]; then
-        pin_title="$("$HOST_EXEC" "xdotool getwindowname ${pin_wid_dec} 2>/dev/null")"
-      fi
-      # Aplicar SOLO exclusions (no include) para paid
-      if [[ -n "${pin_title:-}" ]] && ! title_is_excluded "${pin_title}"; then
-        printf "%s\n" "${pin_wid_hex}"
-        exit 0
-      fi
-    fi
-  fi
-fi
 TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-}"
 CHATGPT_OPEN_URL="${CHATGPT_OPEN_URL:-https://chat.openai.com/}"
 PROFILE_LOCK=0
@@ -175,6 +155,27 @@ title_is_excluded() {
   [[ "${title_lc}" == *"visual studio code"* ]] && return 0
   return 1
 }
+
+# Fast-path: paid usa pinfile (no requiere TITLE_INCLUDE)
+if [[ "${CHATGPT_TARGET}" == "paid" ]] && [[ "${PAID_PIN_TRUSTED}" -eq 1 ]] && [[ -f "${PIN_FILE}" ]]; then
+  # Leer primer campo (WID_HEX) y título (si existe) del pinfile
+  pin_wid_hex="$(head -n 1 "${PIN_FILE}" 2>/dev/null | awk '{print $1}' || true)"
+  if [[ -n "${pin_wid_hex:-}" ]]; then
+    # Confirmar que la ventana existe y obtener título actual (vía host)
+    pin_wid_dec="$(printf "%d" "${pin_wid_hex}" 2>/dev/null || echo 0)"
+    if [[ "${pin_wid_dec}" -gt 0 ]]; then
+      pin_title="$("$HOST_EXEC" "wmctrl -lx 2>/dev/null | awk -v w='${pin_wid_hex}' '\$1==w { \$1=\$2=\$3=\$4=\"\"; sub(/^ +/,\"\"); print; exit }'")"
+      if [[ -z "${pin_title:-}" ]]; then
+        pin_title="$("$HOST_EXEC" "xdotool getwindowname ${pin_wid_dec} 2>/dev/null")"
+      fi
+      # Aplicar SOLO exclusions (no include) para paid
+      if [[ -n "${pin_title:-}" ]] && ! title_is_excluded "${pin_title}"; then
+        printf "%s\n" "${pin_wid_hex}"
+        exit 0
+      fi
+    fi
+  fi
+fi
 
 title_is_included() {
   [[ -z "${TITLE_INCLUDE:-}" ]] && return 0
