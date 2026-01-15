@@ -68,16 +68,16 @@ for n in $(seq 1 "$MAX_TRIES"); do
   cmd+="wmctrl -ia \"\$WID_HEX\" 2>/dev/null || true; "
   cmd+="xdotool windowactivate --sync \"\$WID_DEC\" 2>/dev/null || true; "
   cmd+="sleep 0.15; "
-  cmd+="xdotool key --clearmodifiers Escape Escape 2>/dev/null || true; " # cierra bubble/overlays si responden a ESC
+  cmd+="xdotool key --window "$WID_DEC" --clearmodifiers Escape Escape 2>/dev/null || true; " # cierra bubble/overlays si responden a ESC
   cmd+="sleep 0.15; "
   cmd+="xdotool mousemove --window \"\$WID_DEC\" \"\$CX\" \"\$CY\" click 1 2>/dev/null || true; "
   cmd+="sleep 0.10; "
-  cmd+="xdotool key --clearmodifiers Escape 2>/dev/null || true; "
+  cmd+="xdotool key --window "$WID_DEC" --clearmodifiers Escape 2>/dev/null || true; "
   cmd+="sleep 0.10; "
   # Si estamos en gate de ChatGPT, normalmente el foco arranca en "Iniciar sesión".
   # Tab x2-3 + Enter suele caer en "Permanecer con la sesión cerrada" (si existe).
-  cmd+="for i in 1 2 3; do xdotool key --clearmodifiers Tab 2>/dev/null || true; sleep 0.05; done; "
-  cmd+="xdotool key --clearmodifiers Return 2>/dev/null || true; "
+  cmd+="for i in 1 2 3; do xdotool key --window "$WID_DEC" --clearmodifiers Tab 2>/dev/null || true; sleep 0.05; done; "
+  cmd+="xdotool key --window "$WID_DEC" --clearmodifiers Return 2>/dev/null || true; "
   cmd+="sleep 0.25; "
   "$HOST_EXEC" "$cmd" >/dev/null 2>&1 || true
 done

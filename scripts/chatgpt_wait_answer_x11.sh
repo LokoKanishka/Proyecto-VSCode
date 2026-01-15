@@ -102,7 +102,7 @@ while true; do
       # Acción suave: Escape + End + Recopy forzado
       # Esto ayuda si el "strict copy" estaba fallando por scroll o foco perdido
       # O si ChatGPT dejó de streamear pero no scrolleó.
-      "$HOST_EXEC" "xdotool key --clearmodifiers Escape End 2>/dev/null"
+      "$HOST_EXEC" "xdotool key --window "$WID_DEC" --clearmodifiers Escape End 2>/dev/null"
       nudged=1
       # Reseteamos last_change_ts para dar tiempo post-nudge
       last_change_ts="$now"

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-THREAD_LOADER="$ROOT/scripts/chatgpt_thread_url_load.sh"
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+THREAD_LOADER="$ROOT/scripts/chatgpt_thread_url_load.sh"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 
 CHROME_BIN="${CHATGPT_CHROME_BIN:-google-chrome}"
