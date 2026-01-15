@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+THREAD_LOADER="$ROOT/scripts/chatgpt_thread_url_load.sh"
+
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 
 CHROME_BIN="${CHATGPT_CHROME_BIN:-google-chrome}"
 PROFILE_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-}"
 BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-}"
-THREAD_URL="${CHATGPT_THREAD_URL:-}"
+THREAD_URL="$(${THREAD_LOADER} 2>/dev/null || echo ${CHATGPT_OPEN_URL:-https://chatgpt.com/})"
 OPEN_URL="${CHATGPT_OPEN_URL:-https://chatgpt.com/}"
 URL="${1:-${THREAD_URL:-$OPEN_URL}}"
 
