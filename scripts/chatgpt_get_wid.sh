@@ -49,18 +49,21 @@ PAID_PIN_TRUSTED="${CHATGPT_PAID_PIN_TRUSTED:-1}"
 CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 if [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-LUCY Dummy Chat}"
+else
+  TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
+fi
 
 # Fast-path: paid usa pinfile (no requiere TITLE_INCLUDE)
 if [[ "${CHATGPT_TARGET}" == "paid" ]] && [[ "${PAID_PIN_TRUSTED}" -eq 1 ]] && [[ -f "${PIN_FILE}" ]]; then
   # Leer primer campo (WID_HEX) y título (si existe) del pinfile
   pin_wid_hex="$(head -n 1 "${PIN_FILE}" 2>/dev/null | awk '{print $1}' || true)"
   if [[ -n "${pin_wid_hex:-}" ]]; then
-    # Confirmar que la ventana existe y obtener título actual
+    # Confirmar que la ventana existe y obtener título actual (vía host)
     pin_wid_dec="$(printf "%d" "${pin_wid_hex}" 2>/dev/null || echo 0)"
     if [[ "${pin_wid_dec}" -gt 0 ]]; then
-      pin_title="$(wmctrl -lx 2>/dev/null | awk -v w="${pin_wid_hex}" '$1==w { $1=$2=$3=$4=""; sub(/^ +/,""); print; exit }' || true)"
+      pin_title="$("$HOST_EXEC" "wmctrl -lx 2>/dev/null | awk -v w='${pin_wid_hex}' '\$1==w { \$1=\$2=\$3=\$4=\"\"; sub(/^ +/,\"\"); print; exit }'")"
       if [[ -z "${pin_title:-}" ]]; then
-        pin_title="$(xdotool getwindowname "${pin_wid_dec}" 2>/dev/null || true)"
+        pin_title="$("$HOST_EXEC" "xdotool getwindowname ${pin_wid_dec} 2>/dev/null")"
       fi
       # Aplicar SOLO exclusions (no include) para paid
       if [[ -n "${pin_title:-}" ]] && ! title_is_excluded "${pin_title}"; then
@@ -69,9 +72,6 @@ if [[ "${CHATGPT_TARGET}" == "paid" ]] && [[ "${PAID_PIN_TRUSTED}" -eq 1 ]] && [
       fi
     fi
   fi
-fi
-else
-  TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
 fi
 TITLE_EXCLUDE="${CHATGPT_TITLE_EXCLUDE:-}"
 CHATGPT_OPEN_URL="${CHATGPT_OPEN_URL:-https://chat.openai.com/}"
