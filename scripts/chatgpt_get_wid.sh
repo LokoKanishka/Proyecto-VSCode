@@ -28,7 +28,7 @@ ensure_pin_file() {
   dir="$(dirname "$f")"
   mkdir -p "$dir" 2>/dev/null || true
   if [[ -e "$f" ]]; then
-    dd if=/dev/null of="$f" 2>/dev/null || return 1
+    : >>"$f" 2>/dev/null || return 1
   else
     local tmp
     tmp="$(mktemp "$dir/.pinwrite.XXXX" 2>/dev/null)" || return 1
