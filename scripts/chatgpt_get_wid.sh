@@ -41,12 +41,11 @@ if ! ensure_pin_file "$PIN_FILE"; then
   mkdir -p "$(dirname "$PIN_FILE")" 2>/dev/null || true
   echo "WARN: PIN_FILE not writable, using ${PIN_FILE}" >&2
 fi
-export CHATGPT_WID_PIN_FILE
+export CHATGPT_WID_PIN_FILE="$PIN_FILE"
 
 # PAID_PIN_TRUSTED: en paid, el título del tab puede NO contener "ChatGPT" (ej. "Hilo de prueba - Google Chrome").
 # Si hay pinfile paid y el WID sigue existiendo, confiamos en el pin (solo aplicamos exclusions).
 PAID_PIN_TRUSTED="${CHATGPT_PAID_PIN_TRUSTED:-1}"
-="$PIN_FILE"
 CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 if [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-LUCY Dummy Chat}"
