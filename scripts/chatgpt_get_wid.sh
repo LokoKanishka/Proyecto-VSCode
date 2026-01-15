@@ -41,10 +41,36 @@ if ! ensure_pin_file "$PIN_FILE"; then
   mkdir -p "$(dirname "$PIN_FILE")" 2>/dev/null || true
   echo "WARN: PIN_FILE not writable, using ${PIN_FILE}" >&2
 fi
-export CHATGPT_WID_PIN_FILE="$PIN_FILE"
+export CHATGPT_WID_PIN_FILE
+
+# PAID_PIN_TRUSTED: en paid, el título del tab puede NO contener "ChatGPT" (ej. "Hilo de prueba - Google Chrome").
+# Si hay pinfile paid y el WID sigue existiendo, confiamos en el pin (solo aplicamos exclusions).
+PAID_PIN_TRUSTED="${CHATGPT_PAID_PIN_TRUSTED:-1}"
+="$PIN_FILE"
 CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 if [[ "${CHATGPT_TARGET}" == "dummy" ]]; then
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-LUCY Dummy Chat}"
+
+# Fast-path: paid usa pinfile (no requiere TITLE_INCLUDE)
+if [[ "${CHATGPT_TARGET}" == "paid" ]] && [[ "${PAID_PIN_TRUSTED}" -eq 1 ]] && [[ -f "${PIN_FILE}" ]]; then
+  # Leer primer campo (WID_HEX) y título (si existe) del pinfile
+  pin_wid_hex="$(head -n 1 "${PIN_FILE}" 2>/dev/null | awk '{print $1}' || true)"
+  if [[ -n "${pin_wid_hex:-}" ]]; then
+    # Confirmar que la ventana existe y obtener título actual
+    pin_wid_dec="$(printf "%d" "${pin_wid_hex}" 2>/dev/null || echo 0)"
+    if [[ "${pin_wid_dec}" -gt 0 ]]; then
+      pin_title="$(wmctrl -lx 2>/dev/null | awk -v w="${pin_wid_hex}" '$1==w { $1=$2=$3=$4=""; sub(/^ +/,""); print; exit }' || true)"
+      if [[ -z "${pin_title:-}" ]]; then
+        pin_title="$(xdotool getwindowname "${pin_wid_dec}" 2>/dev/null || true)"
+      fi
+      # Aplicar SOLO exclusions (no include) para paid
+      if [[ -n "${pin_title:-}" ]] && ! title_is_excluded "${pin_title}"; then
+        printf "%s\n" "${pin_wid_hex}"
+        exit 0
+      fi
+    fi
+  fi
+fi
 else
   TITLE_INCLUDE="${CHATGPT_TITLE_INCLUDE:-ChatGPT}"
 fi
