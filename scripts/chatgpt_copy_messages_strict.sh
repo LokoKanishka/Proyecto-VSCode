@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 CLICK_MESSAGES="$ROOT/scripts/chatgpt_click_messages_zone.sh"
+CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
 
 WID_HEX="${1:-${CHATGPT_WID_HEX:-}}"
 if [[ -z "${WID_HEX:-}" ]]; then
@@ -88,12 +89,14 @@ for attempt in "${ATTEMPTS[@]}"; do
     is_bad=1
   fi
 
-  for pat in "${BAD_PATTERNS[@]}"; do
-    if [[ "$cleaned" == *"$pat"* ]]; then
-      is_bad=1
-      break
-    fi
-  done
+  if [[ "${CHATGPT_TARGET}" != "paid" ]]; then
+    for pat in "${BAD_PATTERNS[@]}"; do
+      if [[ "$cleaned" == *"$pat"* ]]; then
+        is_bad=1
+        break
+      fi
+    done
+  fi
 
   if [[ "$is_bad" -eq 0 ]]; then
     echo "__LUCY_COPY_META__ OK x_pct=$x_pct y_pct=$y_pct jitter=$jitter bytes=$b" >&2
