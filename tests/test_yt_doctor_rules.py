@@ -18,12 +18,28 @@ class TestYouTubeDoctorRules(unittest.TestCase):
         self.assertTrue(reason)
 
     def test_placeholder_pattern(self) -> None:
-        reason = _run_rule("https://pega_aca_la_url/", "")
+        reason = _run_rule("https://peg%C3%A1_ac%C3%A1_la_url/", "")
         self.assertTrue(reason)
 
     def test_allowed_url(self) -> None:
         reason = _run_rule("https://www.youtube.com/", "")
         self.assertEqual(reason, "")
+
+    def test_allowed_google_accounts(self) -> None:
+        reason = _run_rule("https://accounts.google.com/signin", "")
+        self.assertEqual(reason, "")
+
+    def test_allowed_google_search(self) -> None:
+        reason = _run_rule("https://www.google.com/search?q=youtube", "")
+        self.assertEqual(reason, "")
+
+    def test_allowed_consent(self) -> None:
+        reason = _run_rule("https://consent.youtube.com/m?continue=1", "")
+        self.assertEqual(reason, "")
+
+    def test_dns_title(self) -> None:
+        reason = _run_rule("https://www.youtube.com/", "DNS_PROBE_FINISHED_NXDOMAIN")
+        self.assertTrue(reason)
 
 
 if __name__ == "__main__":

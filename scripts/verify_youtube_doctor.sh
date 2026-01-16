@@ -72,5 +72,9 @@ if [ "$rc" -eq 10 ]; then
   echo "YT_DOCTOR_FAIL: detected bad url ($hit)" >&2
   exit 2
 fi
+if [ "$rc" -ne 0 ]; then
+  echo "YT_DOCTOR_FAIL: unexpected watcher rc=$rc" >&2
+  exit 2
+fi
 
 echo "YT_DOCTOR_OK" >&2

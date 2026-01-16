@@ -16,10 +16,21 @@ WID_HEX="${3:-}"
 OUTROOT="/tmp/lucy_yt_watch"
 mkdir -p "$OUTROOT"
 
+HIT_BAD_URL=""
+SAVED="0"
+OUTDIR=""
+
+_emit_status() {
+  echo "HIT_BAD_URL=$HIT_BAD_URL"
+  echo "SAVED=$SAVED"
+  echo "OUTDIR=$OUTDIR"
+}
+
 if [ -z "$WID_HEX" ]; then
   mapfile -t found < <(xdotool search --name "YouTube - Google Chrome" 2>/dev/null || true)
   if [ "${#found[@]}" -eq 0 ]; then
     echo "ERROR_NO_WID: no window matching 'YouTube - Google Chrome'" >&2
+    _emit_status
     exit 3
   fi
   if [ "${#found[@]}" -gt 1 ]; then
@@ -28,15 +39,13 @@ if [ -z "$WID_HEX" ]; then
       name="$(xdotool getwindowname "$wid" 2>/dev/null || true)"
       printf 'WID_DEC=%s TITLE=%s\n' "$wid" "$name" >&2
     done
+    _emit_status
     exit 3
   fi
   WID_HEX="$(printf '0x%08x' "${found[0]}")"
 fi
 
 start_ts="$(date +%s)"
-HIT_BAD_URL=""
-SAVED="0"
-OUTDIR=""
 empty_count=0
 EMPTY_LIMIT=3
 
@@ -47,7 +56,7 @@ while true; do
   fi
 
   iter_dir="$OUTROOT/$(date +%Y%m%d_%H%M%S)_$$"
-  capture_out="$("$DIR/chrome_capture_active_tab.sh" "$WID_HEX" "$iter_dir" 2>/dev/null || true)"
+  "$DIR/chrome_capture_active_tab.sh" "$WID_HEX" "$iter_dir" >/dev/null 2>&1 || true
 
   url_raw=""
   title_raw=""
@@ -64,9 +73,9 @@ while true; do
     empty_count=$((empty_count + 1))
     if [ "$empty_count" -ge "$EMPTY_LIMIT" ]; then
       OUTDIR="$iter_dir"
-      echo "HIT_BAD_URL="
-      echo "SAVED=0"
-      echo "OUTDIR=$OUTDIR"
+      SAVED="0"
+      HIT_BAD_URL=""
+      _emit_status
       exit 11
     fi
   else
@@ -88,9 +97,7 @@ while true; do
   sleep "$INTERVAL"
 done
 
-echo "HIT_BAD_URL=$HIT_BAD_URL"
-echo "SAVED=$SAVED"
-echo "OUTDIR=$OUTDIR"
+_emit_status
 
 if [ -n "$HIT_BAD_URL" ]; then
   exit 10

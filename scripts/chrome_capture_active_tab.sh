@@ -49,6 +49,7 @@ fi
 
 printf '%s' "$TITLE" > "$OUTDIR/title.txt"
 printf '%s' "$url" > "$OUTDIR/url.txt"
+printf '%s' "$WID_HEX" > "$OUTDIR/wid_hex.txt"
 
 ts="$(date -Is)"
 printf '%s\t%s\t%s\t%s\n' "$ts" "$WID_HEX" "$TITLE" "$url" >> "$OUTDIR/trace.tsv"

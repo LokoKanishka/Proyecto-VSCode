@@ -16,6 +16,10 @@ Capturar evidencia automatica cuando aparece el placeholder/NXDOMAIN o errores i
     - `10`: bad url detectada (se guarda evidencia).
     - `11`: no se pudo leer URL de forma confiable (clipboard vacio repetido).
     - `3`: no WID o multiples WID.
+  - Salida estandar:
+    - `OUTDIR=...` (vacio si no aplica)
+    - `HIT_BAD_URL=...` (vacio si no aplica)
+    - `SAVED=0|1`
 
 - `scripts/verify_youtube_doctor.sh`
   - Verifica dependencias, corre tests y hace un smoke de captura.
@@ -35,4 +39,3 @@ Cuando hay evidencia, el OUTDIR contiene:
 - `title.txt` - titulo de la ventana.
 - `screenshot.png` y `hit.png` - captura del estado.
 - `trace.tsv` - linea con timestamp, WID, title y URL.
-
