@@ -56,7 +56,10 @@ while true; do
   fi
 
   iter_dir="$OUTROOT/$(date +%Y%m%d_%H%M%S)_$$"
-  "$DIR/chrome_capture_active_tab.sh" "$WID_HEX" "$iter_dir" >/dev/null 2>&1 || true
+  set +e
+  "$DIR/chrome_capture_active_tab.sh" "$WID_HEX" "$iter_dir" >/dev/null 2>&1
+  capture_rc=$?
+  set -e
 
   url_raw=""
   title_raw=""
@@ -69,7 +72,17 @@ while true; do
 
   url_trim="$(printf '%s' "$url_raw" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
 
-  if [ -z "$url_trim" ]; then
+  if [ "$capture_rc" -eq 11 ]; then
+    empty_count=$((empty_count + 1))
+    url_trim=""
+    if [ "$empty_count" -ge "$EMPTY_LIMIT" ]; then
+      OUTDIR="$iter_dir"
+      SAVED="0"
+      HIT_BAD_URL=""
+      _emit_status
+      exit 11
+    fi
+  elif [ -z "$url_trim" ]; then
     empty_count=$((empty_count + 1))
     if [ "$empty_count" -ge "$EMPTY_LIMIT" ]; then
       OUTDIR="$iter_dir"

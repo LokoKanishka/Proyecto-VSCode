@@ -45,7 +45,18 @@ xdotool windowactivate --sync "$wid" 2>/dev/null || true
 sleep 0.2
 
 echo "[YT-DOCTOR] Capture smoke..." >&2
-capture="$($DIR/chrome_capture_active_tab.sh "$(printf '0x%08x' "$wid")" 2>/dev/null || true)"
+set +e
+capture="$($DIR/chrome_capture_active_tab.sh "$(printf '0x%08x' "$wid")" 2>/dev/null)"
+cap_rc=$?
+set -e
+if [ "$cap_rc" -eq 11 ]; then
+  echo "YT_DOCTOR_FAIL: capture URL invalid" >&2
+  exit 2
+fi
+if [ "$cap_rc" -ne 0 ]; then
+  echo "YT_DOCTOR_FAIL: capture rc=$cap_rc" >&2
+  exit 2
+fi
 url="$(printf '%s' "$capture" | awk -F= '/^URL=/{print $2}' | tail -n 1)"
 if ! printf '%s' "$url" | grep -Eq '^https?://'; then
   echo "YT_DOCTOR_FAIL: capture URL invalid <$url>" >&2
