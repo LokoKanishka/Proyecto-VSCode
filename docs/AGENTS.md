@@ -189,6 +189,11 @@ web_search:
    - Consistent logging for debugging
    - Dependency management (requirements.txt updated)
 
+### 9. **YouTube Doctor Hardening**
+   - Added evidence-first watcher/capture scripts for bad URL detection
+   - Fail-fast URL validation to avoid placeholder/NXDOMAIN tabs
+   - New verification script for YouTube hygiene checks
+
 ---
 
 ## Development Guidelines
@@ -220,6 +225,12 @@ python3 lucy_tools/searxng_query.py "economía argentina" --snippets
 **Find YouTube Video**:
 ```bash
 python3 lucy_web_agent/youtube_agent.py "Alejandro Dolina entrevista"
+```
+
+**YouTube Doctor (diagnostics)**:
+```bash
+./scripts/yt_watch_until_bad_url.sh 30 1
+./scripts/verify_youtube_doctor.sh
 ```
 
 **Check Model Status**:
@@ -289,5 +300,5 @@ When helping with Lucy development:
 
 ---
 
-**Last Updated**: 2026-01-13  
+**Last Updated**: 2026-01-16  
 **Maintained by**: Diego's AI Development Team
