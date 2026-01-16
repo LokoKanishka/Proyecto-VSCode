@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
 
 from lucy_agents.action_router import run_action
 from lucy_agents.desktop_bridge import run_desktop_command
-from lucy_web_agent import find_youtube_video_url
+from lucy_web_agent import YouTubeURLResolutionError, find_youtube_video_url
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -988,32 +988,27 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
             f"[LucyVoiceActions] Playback intent detected for YouTube; query={search_query!r}",
             flush=True,
         )
-        video_url = find_youtube_video_url(search_query, channel_hint=None, strategy="latest")
-        if video_url:
+        try:
+            video_url = find_youtube_video_url(search_query, channel_hint=None, strategy="latest")
+        except YouTubeURLResolutionError as exc:
             print(
-                f"[LucyVoiceActions] Web agent selected YouTube video URL: {video_url}",
-                flush=True,
-            )
-            cmd = f"xdg-open {video_url}"
-            rc = run_desktop_command(cmd)
-            print(f"[LucyVoiceActions] Resultado (desktop) {cmd!r}: {rc}", flush=True)
-            if isinstance(video_url, str) and video_url.startswith(
-                "https://www.youtube.com/results?search_query="
-            ):
-                spoken = "No encontré una entrevista exacta, pero te abrí la búsqueda en YouTube para que elijas."
-            else:
-                spoken = "Te abrí la búsqueda y además un video en YouTube. Debería estar reproduciéndose en otra pestaña."
-            return True, spoken
-        else:
-            print(
-                f"[LucyVoiceActions] Web agent could not select a YouTube video for query: {search_query!r}",
+                f"[LucyVoiceActions] YouTube URL resolution failed: {exc}",
                 flush=True,
             )
             spoken = (
-                "Te abrí la búsqueda en YouTube para ese programa, pero todavía no puedo "
-                "elegir el video ni darle play. Tenés que apretar vos en el que quieras."
+                "No pude encontrar una URL válida de YouTube para reproducir en este momento."
             )
             return True, spoken
+
+        print(
+            f"[LucyVoiceActions] Web agent selected YouTube video URL: {video_url}",
+            flush=True,
+        )
+        cmd = f"xdg-open {video_url}"
+        rc = run_desktop_command(cmd)
+        print(f"[LucyVoiceActions] Resultado (desktop) {cmd!r}: {rc}", flush=True)
+        spoken = "Te abrí la búsqueda y además un video en YouTube. Debería estar reproduciéndose en otra pestaña."
+        return True, spoken
 
     return True
 

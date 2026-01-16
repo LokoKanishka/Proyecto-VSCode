@@ -3,7 +3,7 @@ import re
 import subprocess
 import unicodedata
 from typing import Optional, List, Dict, Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 
 def _log(msg: str) -> None:
@@ -62,6 +62,40 @@ COMMON_WORDS = {
     "charla",
     "especial",
 }
+
+ALLOWED_YT_HOSTS = {
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "youtu.be",
+}
+
+
+class YouTubeURLResolutionError(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class NoYouTubeURLFound(YouTubeURLResolutionError):
+    def __init__(self, message: str = "ERROR_NO_URL") -> None:
+        super().__init__("ERROR_NO_URL", message)
+
+
+class BadYouTubeURL(YouTubeURLResolutionError):
+    def __init__(self, message: str = "ERROR_BAD_URL") -> None:
+        super().__init__("ERROR_BAD_URL", message)
+
+
+def _is_allowed_youtube_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in ALLOWED_YT_HOSTS
 
 
 def _normalize_token(t: str) -> str:
@@ -163,17 +197,31 @@ def _search_searxng_fallback(query: str) -> Optional[str]:
     
     for res in results:
         url = res.get("url", "")
-        if "youtube.com/watch?v=" in url:
+        if url and _is_allowed_youtube_url(url):
             _log(f"Fallback: Found URL {url}")
             return url
             
+    return None
+
+
+def _candidate_video_url(entry: Dict[str, Any]) -> Optional[str]:
+    if entry.get("webpage_url"):
+        return entry.get("webpage_url")
+    if entry.get("url"):
+        raw = entry.get("url")
+        if isinstance(raw, str) and raw.startswith(("http://", "https://")):
+            return raw
+        if isinstance(raw, str) and not raw.startswith("ytsearch"):
+            return f"https://www.youtube.com/watch?v={raw}"
+    if entry.get("id"):
+        return f"https://www.youtube.com/watch?v={entry.get('id')}"
     return None
 
 def find_youtube_video_url(
     query: str,
     channel_hint: Optional[str] = None,
     strategy: str = "latest",
-) -> Optional[str]:
+) -> str:
     """
     Dado un texto de búsqueda y (opcionalmente) un identificador/dica de canal,
     intenta encontrar una URL de video de YouTube que encaje.
@@ -181,17 +229,15 @@ def find_youtube_video_url(
     cleaned_query = (query or "").strip()
     if not cleaned_query:
         _log("Empty query provided to find_youtube_video_url.")
-        return None
+        raise NoYouTubeURLFound("ERROR_NO_URL: empty query")
         
-    search_url = f"https://www.youtube.com/results?search_query={quote_plus(cleaned_query)}"
-
     # 1. Check yt-dlp availability
     if not shutil.which("yt-dlp"):
          _log("yt-dlp not found. Trying SearXNG fallback.")
          fallback = _search_searxng_fallback(cleaned_query)
          if fallback:
              return fallback
-         return search_url
+         raise NoYouTubeURLFound("ERROR_NO_URL: yt-dlp missing and no fallback")
 
     try:
         search_term = cleaned_query
@@ -211,16 +257,16 @@ def find_youtube_video_url(
             _log(f"yt-dlp failed (code {proc.returncode}). Trying SearXNG fallback.")
             fallback = _search_searxng_fallback(cleaned_query)
             if fallback:
-                 return fallback
-            return search_url
+                return fallback
+            raise NoYouTubeURLFound("ERROR_NO_URL: yt-dlp failed and no fallback")
 
         stdout = proc.stdout or ""
         if not stdout.strip():
             _log("yt-dlp returned empty output. Trying SearXNG fallback.")
             fallback = _search_searxng_fallback(cleaned_query)
             if fallback:
-                 return fallback
-            return search_url
+                return fallback
+            raise NoYouTubeURLFound("ERROR_NO_URL: yt-dlp empty output")
 
         data = json.loads(stdout)
         entries = data.get("entries") or []
@@ -228,8 +274,8 @@ def find_youtube_video_url(
             entries = [data]
 
         if not entries:
-            _log(f"[LucyWebAgent] No entries from yt-dlp. Returning generic.")
-            return search_url
+            _log("[LucyWebAgent] No entries from yt-dlp.")
+            raise NoYouTubeURLFound("ERROR_NO_URL: no entries")
 
         strong_tokens = _strong_query_tokens(cleaned_query)
         weak_tokens = [tok for tok in _tokenize(cleaned_query) if tok not in strong_tokens]
@@ -252,44 +298,38 @@ def find_youtube_video_url(
             scored.append((e, score, name_matches))
 
         if not scored:
-             return search_url
+            raise NoYouTubeURLFound("ERROR_NO_URL: no scored entries")
 
         # Sort strictly by score desc
         scored.sort(key=lambda x: x[1], reverse=True)
         
-        best_candidate = scored[0][0]
-        best_score = scored[0][1]
-        
-        _log(f"Selected best candidate score={best_score}: {best_candidate.get('title')}")
+        bad_urls: list[str] = []
+        for candidate, score, _ in scored:
+            _log(f"Selected candidate score={score}: {candidate.get('title')}")
+            candidate_url = _candidate_video_url(candidate)
+            if not candidate_url or candidate_url.startswith("ytsearch"):
+                continue
+            if _is_allowed_youtube_url(candidate_url):
+                return candidate_url
+            bad_urls.append(candidate_url)
 
-        video_url: str | None = None
-        if best_candidate.get("webpage_url"):
-            video_url = best_candidate.get("webpage_url")
-        elif best_candidate.get("url"):
-            raw = best_candidate.get("url")
-            if isinstance(raw, str) and raw.startswith(("http://", "https://")):
-                video_url = raw
-            elif isinstance(raw, str) and not raw.startswith("ytsearch"):
-                video_url = f"https://www.youtube.com/watch?v={raw}"
-        elif best_candidate.get("id"):
-            video_url = f"https://www.youtube.com/watch?v={best_candidate.get('id')}"
+        if bad_urls:
+            raise BadYouTubeURL(f"ERROR_BAD_URL: {bad_urls[0]}")
+        raise NoYouTubeURLFound("ERROR_NO_URL: no valid youtube url")
 
-        if not video_url or (isinstance(video_url, str) and video_url.startswith("ytsearch")):
-            return search_url
-
-        return video_url
-
+    except YouTubeURLResolutionError:
+        raise
     except Exception as exc:
         _log(f"Error while searching YouTube: {exc}")
-        return search_url
+        raise NoYouTubeURLFound("ERROR_NO_URL: unexpected error") from exc
 
 
 if __name__ == "__main__":
     import sys
 
     q = " ".join(sys.argv[1:]) or "alejandro dolina"
-    url = find_youtube_video_url(q)
-    if url:
+    try:
+        url = find_youtube_video_url(q)
         print(url)
-    else:
-        print("No se encontró ningún video para esa búsqueda.")
+    except YouTubeURLResolutionError as exc:
+        print(str(exc))
