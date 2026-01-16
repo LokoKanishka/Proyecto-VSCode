@@ -191,6 +191,7 @@ web_search:
 
 ### 9. **YouTube Doctor Hardening**
    - Added evidence-first watcher/capture scripts for bad URL detection
+   - Watcher ignores normal non-YouTube navigations and focuses on real bug signals
    - Fail-fast URL validation to avoid placeholder/NXDOMAIN tabs
    - New verification script for YouTube hygiene checks
 
@@ -229,6 +230,7 @@ python3 lucy_web_agent/youtube_agent.py "Alejandro Dolina entrevista"
 
 **YouTube Doctor (diagnostics)**:
 ```bash
+./scripts/chrome_capture_active_tab.sh 0x<HEX_WID>
 ./scripts/yt_watch_until_bad_url.sh 30 1
 ./scripts/verify_youtube_doctor.sh
 ```
