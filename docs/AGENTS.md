@@ -233,6 +233,7 @@ python3 lucy_web_agent/youtube_agent.py "Alejandro Dolina entrevista"
 ./scripts/chrome_capture_active_tab.sh 0x<HEX_WID>
 ./scripts/yt_watch_until_bad_url.sh 30 1
 ./scripts/verify_youtube_doctor.sh
+./scripts/yt_force_placeholder_clean.sh 25 1
 ```
 
 **Check Model Status**:
