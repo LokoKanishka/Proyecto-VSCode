@@ -42,7 +42,6 @@ class LucyVoiceBridge:
             recording = recording.flatten()
             
             # --- GUARDAR DEBUG PARA VERIFICAR ---
-            # Guardamos lo que escuchó para que puedas reproducirlo si falla
             wav.write("debug_audio.wav", SAMPLE_RATE, recording)
             print("💾 [Engine] Audio guardado en 'debug_audio.wav' para análisis.")
 
