@@ -2,6 +2,24 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# --- Diego client guard ---
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+export CHROME_PROFILE_NAME="${CHROME_PROFILE_NAME:-${CHATGPT_PROFILE_NAME}}"
+export CHROME_DIEGO_EMAIL="${CHROME_DIEGO_EMAIL:-chatjepetex2025@gmail.com}"
+export CHROME_DIEGO_PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
+
+pre="$("$ROOT/scripts/chatgpt_diego_preflight.sh")"
+CHROME_WID_HEX="$(printf '%s\n' "$pre" | awk -F= '/^WID_HEX=/{print $2}' | tail -n 1)"
+if [ -z "${CHROME_WID_HEX:-}" ]; then
+  echo "ERROR_DIEGO_PREFLIGHT_NO_WID" >&2
+  exit 3
+fi
+export CHATGPT_WID_HEX="$CHROME_WID_HEX"
+export CHATGPT_WID_PIN_FILE="$CHROME_DIEGO_PIN_FILE"
+export CHATGPT_ALLOW_ACTIVE_WINDOW=0
+export CHATGPT_WID_PIN_ONLY=1
+# --- end Diego client guard ---
+
 ENSURE_READY="$ROOT/scripts/chatgpt_ensure_ready.sh"
 
 # Guard: si está en login/bloqueo, cortar acá (evita loops de wait/copy)
@@ -17,6 +35,7 @@ fi
 REQ_ACCESS="$ROOT/scripts/x11_require_access.sh"
 ENSURE="$ROOT/scripts/chatgpt_bridge_ensure.sh"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
+RESOLVE_BY_URL="$ROOT/scripts/chatgpt_resolve_wid_by_url.sh"
 SEND="$ROOT/scripts/chatgpt_ui_send_x11.sh"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
 DISP="$ROOT/lucy_agents/x11_dispatcher.py"
@@ -33,6 +52,13 @@ if [[ "${CHATGPT_TARGET}" == "free" ]] && [[ -n "${CHATGPT_CHROME_USER_DATA_DIR:
 fi
 if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
   CHATGPT_CHROME_USER_DATA_DIR=""
+  export CHATGPT_ALLOW_ACTIVE_WINDOW="${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}"
+  export CHATGPT_WID_PIN_ONLY="${CHATGPT_WID_PIN_ONLY:-1}"
+  export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+  if [[ -z "${CHATGPT_WID_PIN_FILE:-}" ]]; then
+    export CHATGPT_WID_PIN_FILE="$ROOT/diagnostics/pins/chatgpt_diego.wid"
+  fi
+  mkdir -p "$(dirname "$CHATGPT_WID_PIN_FILE")" 2>/dev/null || true
 fi
 
 PROMPT="${1:-}"
@@ -445,6 +471,19 @@ fi
 
 # Ensure bridge (no fatal)
 "$ENSURE" >/dev/null 2>&1 || true
+
+if [[ "${CHATGPT_TARGET}" == "paid" ]] && [[ -z "${CHATGPT_WID_HEX:-}" ]]; then
+  if [[ -n "${CHATGPT_WID_PIN_FILE:-}" ]] && [[ ! -s "${CHATGPT_WID_PIN_FILE}" ]]; then
+    set +e
+    CHATGPT_WID_PIN_FILE="$CHATGPT_WID_PIN_FILE" "$RESOLVE_BY_URL" 12 9 >/dev/null 2>&1
+    resolve_rc=$?
+    set -e
+    if [[ "$resolve_rc" -ne 0 ]]; then
+      echo "ERROR: paid resolve by URL failed (rc=$resolve_rc)" >&2
+      fail_exit "NO_WID" 3
+    fi
+  fi
+fi
 
 resolve_wid() {
   # 1) env

@@ -17,6 +17,10 @@ class TestYouTubeDoctorRules(unittest.TestCase):
         reason = _run_rule("chrome-error://foo", "")
         self.assertTrue(reason)
 
+    def test_chrome_scheme(self) -> None:
+        reason = _run_rule("chrome://settings", "")
+        self.assertTrue(reason)
+
     def test_placeholder_pattern(self) -> None:
         reason = _run_rule("https://peg%C3%A1_ac%C3%A1_la_url/", "")
         self.assertTrue(reason)
@@ -33,9 +37,25 @@ class TestYouTubeDoctorRules(unittest.TestCase):
         reason = _run_rule("https://www.google.com/search?q=youtube", "")
         self.assertEqual(reason, "")
 
+    def test_allowed_google_search_no_www(self) -> None:
+        reason = _run_rule("https://google.com/search?q=youtube", "")
+        self.assertEqual(reason, "")
+
     def test_allowed_consent(self) -> None:
         reason = _run_rule("https://consent.youtube.com/m?continue=1", "")
         self.assertEqual(reason, "")
+
+    def test_allowed_consent_google(self) -> None:
+        reason = _run_rule("https://consent.google.com/m?continue=1", "")
+        self.assertEqual(reason, "")
+
+    def test_scheme_invalid(self) -> None:
+        reason = _run_rule("file:///etc/passwd", "")
+        self.assertTrue(reason)
+
+    def test_host_not_allowed(self) -> None:
+        reason = _run_rule("https://example.com/", "")
+        self.assertTrue(reason)
 
     def test_dns_title(self) -> None:
         reason = _run_rule("https://www.youtube.com/", "DNS_PROBE_FINISHED_NXDOMAIN")

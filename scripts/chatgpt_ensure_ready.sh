@@ -6,6 +6,7 @@ HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 COPY_STRICT="$ROOT/scripts/chatgpt_copy_messages_strict.sh"
 GET_URL="$ROOT/scripts/chatgpt_get_url_x11.sh"
+ENSURE_URL="$ROOT/scripts/chrome_ensure_url_in_window.sh"
 
 WID_HEX="${1:-${CHATGPT_WID_HEX:-}}"
 if [[ -z "${WID_HEX:-}" ]]; then
@@ -20,6 +21,18 @@ WID_DEC="$(printf "%d" "$WID_HEX" 2>/dev/null || echo 0)"
 if [[ "${WID_DEC}" -le 0 ]]; then
   echo "ERROR_INVALID_WID" >&2
   exit 3
+fi
+
+TARGET_URL="${CHATGPT_TARGET_URL:-}"
+if [[ -n "${TARGET_URL:-}" ]]; then
+  set +e
+  "$ENSURE_URL" "$WID_HEX" "$TARGET_URL" 8 >/dev/null 2>&1
+  ensure_rc=$?
+  set -e
+  if [[ "$ensure_rc" -ne 0 ]]; then
+    echo "ERROR_ENSURE_URL: rc=$ensure_rc url=$TARGET_URL" >&2
+    exit 3
+  fi
 fi
 
 # Intentos suaves: cerrar burbuja "Restaurar páginas", overlays, y si aparece gate de ChatGPT,

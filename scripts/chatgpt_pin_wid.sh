@@ -105,10 +105,12 @@ wm_command_matches_profile() {
 
 wid="${CHATGPT_WID_HEX:-}"
 if [[ -z "${wid:-}" ]]; then
-  wid="$(get_active_wid)"
+  if [[ "${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}" -eq 1 ]]; then
+    wid="$(get_active_wid)"
+  fi
 fi
 if [[ -z "${wid:-}" ]]; then
-  echo "ERROR: no active window detected" >&2
+  echo "ERROR: missing CHATGPT_WID_HEX (active window disabled)" >&2
   exit 1
 fi
 

@@ -1,12 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# A24_USE_CHATGPT_WID_HEX_IF_SET
+if [ -n "${CHATGPT_WID_HEX:-}" ]; then
+  if xprop -id "$CHATGPT_WID_HEX" _NET_WM_NAME >/dev/null 2>&1; then
+    echo "WID_HEX=$CHATGPT_WID_HEX"
+    echo "RC=0"
+    exit 0
+  fi
+fi
+
 # Selector estable del WID de la ventana "puente" de ChatGPT.
 # - NO usa wmctrl local: usa host_exec (IPC), sirve desde sandbox.
 # - Si no existe ventana ChatGPT, la crea (abre chat.openai.com) y espera.
 # - Protege de tipear en ventanas "V.S.Code ..."
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# A24_DIEGO_EMAIL_GATE_BEGIN
+# Si estamos en modo "diego", exigimos email y pin del cliente Chrome.
+CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-}"
+CHATGPT_EXPECTED_EMAIL="${CHATGPT_EXPECTED_EMAIL:-}"
+CHATGPT_WID_PIN_FILE="${CHATGPT_WID_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
+CHATGPT_ALLOW_ACTIVE_WINDOW="${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}"
+
+if [[ "${CHATGPT_PROFILE_NAME,,}" == "diego" ]]; then
+  : "${CHATGPT_EXPECTED_EMAIL:=chatjepetex2025@gmail.com}"
+  export CHROME_PROFILE_NAME="${CHROME_PROFILE_NAME:-$CHATGPT_PROFILE_NAME}"
+  export CHROME_DIEGO_EMAIL="${CHROME_DIEGO_EMAIL:-$CHATGPT_EXPECTED_EMAIL}"
+  export CHROME_DIEGO_PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$CHATGPT_WID_PIN_FILE}"
+  # Si no hay pin, lo generamos por guard del cliente (no por ventana activa)
+  if [[ ! -s "$CHATGPT_WID_PIN_FILE" ]]; then
+    "$ROOT/scripts/chrome_guard_diego_client.sh" "https://www.google.com/" >/dev/null
+  fi
+fi
+# A24_DIEGO_EMAIL_GATE_END
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
 PAID_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_chatgpt.sh"
@@ -286,6 +314,9 @@ list_strong_candidates() {
 }
 
 get_active_wid() {
+  if [[ "${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}" -ne 1 ]]; then
+    return 0
+  fi
   local raw
   raw="$("$HOST_EXEC" 'xprop -root _NET_ACTIVE_WINDOW' 2>/dev/null \
     | sed -n 's/.*\(0x[0-9a-fA-F]\+\).*/\1/p' | head -n 1)"
@@ -600,15 +631,17 @@ if [[ -f "${PIN_FILE}" ]]; then
     fi
     echo "PIN_INVALID=1 old_wid=${PIN_WID} reason=${pin_reason} pid=${pin_pid:-}" >&2
     if [[ "${CHATGPT_WID_PIN_ONLY:-0}" -eq 1 ]]; then
-      if [[ "${PROFILE_LOCK}" -ne 1 ]]; then
-        echo "ERROR: PIN_INVALID WID=${PIN_WID}" >&2
-        exit 3
-      fi
-      echo "WARN: PIN_INVALID with PROFILE_LOCK=1, attempting recovery" >&2
+      echo "ERROR: PIN_INVALID WID=${PIN_WID}" >&2
+      exit 3
     fi
     rm -f "$PIN_FILE" 2>/dev/null || true
     PIN_RECOVER_NEEDS_WRITE=1
   fi
+fi
+
+if [[ "${CHATGPT_WID_PIN_ONLY:-0}" -eq 1 ]] && [[ ! -f "${PIN_FILE}" ]]; then
+  echo "ERROR: PIN_ONLY requires existing pin file (${PIN_FILE})" >&2
+  exit 3
 fi
 
 if [[ "${PIN_RECOVER_NEEDS_WRITE}" -eq 1 ]]; then
@@ -715,3 +748,10 @@ if [[ -z "${WID:-}" ]]; then
 fi
 
 printf '%s\n' "$WID"
+
+# A24_DISABLE_ACTIVE_WINDOW_FALLBACK
+# Si se pidió explícitamente NO usar ventana activa, forzamos fallo en ese camino.
+# (Los callers en modo diego hacen repin por launch.)
+if [[ "${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}" == "0" ]]; then
+  export CHATGPT_DISABLE_ACTIVE_WINDOW=1
+fi

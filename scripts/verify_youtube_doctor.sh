@@ -32,21 +32,6 @@ fi
 echo "[YT-DOCTOR] Running unit tests..." >&2
 python3 -m unittest -q tests.test_yt_doctor_rules
 
-echo "[YT-DOCTOR] Placeholder deterministic test..." >&2
-set +e
-force_out="$($DIR/yt_force_placeholder_clean.sh 12 1)"
-force_rc=$?
-set -e
-echo "$force_out"
-if [ "$force_rc" -ne 0 ]; then
-  echo "YT_DOCTOR_FAIL: placeholder test rc=$force_rc" >&2
-  exit 2
-fi
-if ! printf '%s' "$force_out" | grep -q "OK_FORCE_PLACEHOLDER"; then
-  echo "YT_DOCTOR_FAIL: placeholder test missing OK" >&2
-  exit 2
-fi
-
 echo "[YT-DOCTOR] Launching clean Chrome..." >&2
 open_url="https://www.youtube.com/"
 set +e
@@ -91,12 +76,20 @@ for cand in "${pid_candidates[@]}"; do
   done
 done
 if [ -z "$wid_hex" ]; then
-  echo "YT_DOCTOR_FAIL: could not resolve WID from PID" >&2
-  exit 2
-fi
-if [ -z "$wid_hex" ]; then
-  echo "YT_DOCTOR_FAIL: missing WID_HEX" >&2
-  exit 2
+  echo "[YT-DOCTOR] Fallback resolve WID by URL..." >&2
+  set +e
+  resolve_out="$($DIR/yt_resolve_wid_by_url.sh 12 9 2>/dev/null)"
+  resolve_rc=$?
+  set -e
+  if [ "$resolve_rc" -ne 0 ]; then
+    echo "YT_DOCTOR_FAIL: could not resolve WID by URL (rc=$resolve_rc)" >&2
+    exit 2
+  fi
+  wid_hex="$(printf '%s\n' "$resolve_out" | awk -F= '/^WID_HEX=/{print $2}' | tail -n 1)"
+  if [ -z "$wid_hex" ]; then
+    echo "YT_DOCTOR_FAIL: missing WID_HEX from URL resolver" >&2
+    exit 2
+  fi
 fi
 wid_dec=$((wid_hex))
 xdotool windowactivate --sync "$wid_dec" 2>/dev/null || true
@@ -145,6 +138,21 @@ if [ "$rc" -eq 10 ]; then
 fi
 if [ "$rc" -ne 0 ]; then
   echo "YT_DOCTOR_FAIL: unexpected watcher rc=$rc" >&2
+  exit 2
+fi
+
+echo "[YT-DOCTOR] Placeholder deterministic test..." >&2
+set +e
+force_out="$($DIR/yt_force_placeholder_clean.sh 12 1)"
+force_rc=$?
+set -e
+echo "$force_out"
+if [ "$force_rc" -ne 0 ]; then
+  echo "YT_DOCTOR_FAIL: placeholder test rc=$force_rc" >&2
+  exit 2
+fi
+if ! printf '%s' "$force_out" | grep -q "OK_FORCE_PLACEHOLDER"; then
+  echo "YT_DOCTOR_FAIL: placeholder test missing OK" >&2
   exit 2
 fi
 

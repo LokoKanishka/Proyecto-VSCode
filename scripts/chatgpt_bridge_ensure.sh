@@ -2,6 +2,24 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# --- Diego client guard ---
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+export CHROME_PROFILE_NAME="${CHROME_PROFILE_NAME:-${CHATGPT_PROFILE_NAME}}"
+export CHROME_DIEGO_EMAIL="${CHROME_DIEGO_EMAIL:-chatjepetex2025@gmail.com}"
+export CHROME_DIEGO_PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
+
+pre="$("$ROOT/scripts/chatgpt_diego_preflight.sh")"
+CHROME_WID_HEX="$(printf '%s\n' "$pre" | awk -F= '/^WID_HEX=/{print $2}' | tail -n 1)"
+if [ -z "${CHROME_WID_HEX:-}" ]; then
+  echo "ERROR_DIEGO_PREFLIGHT_NO_WID" >&2
+  exit 3
+fi
+export CHATGPT_WID_HEX="$CHROME_WID_HEX"
+export CHATGPT_WID_PIN_FILE="$CHROME_DIEGO_PIN_FILE"
+export CHATGPT_ALLOW_ACTIVE_WINDOW=0
+export CHATGPT_WID_PIN_ONLY=1
+# --- end Diego client guard ---
+
 GET_WID="$ROOT/scripts/chatgpt_get_wid.sh"
 CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
 CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
@@ -10,6 +28,16 @@ PAID_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_chatgpt.sh"
 PROFILE_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-${CHATGPT_BRIDGE_PROFILE_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}}"
 URL="${CHATGPT_BRIDGE_URL:-https://chatgpt.com}"
 CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
+
+if [[ "${CHATGPT_TARGET}" == "paid" ]]; then
+  export CHATGPT_ALLOW_ACTIVE_WINDOW="${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}"
+  export CHATGPT_WID_PIN_ONLY="${CHATGPT_WID_PIN_ONLY:-1}"
+  export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+  if [[ -z "${CHATGPT_WID_PIN_FILE:-}" ]]; then
+    export CHATGPT_WID_PIN_FILE="$ROOT/diagnostics/pins/chatgpt_diego.wid"
+  fi
+  mkdir -p "$(dirname "$CHATGPT_WID_PIN_FILE")" 2>/dev/null || true
+fi
 
 # En modo paid/dummy, no abrimos ventanas nuevas.
 if [[ "${CHATGPT_TARGET}" != "free" ]]; then

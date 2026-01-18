@@ -5,12 +5,11 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
 COPY="$ROOT/scripts/chatgpt_copy_chat_text.sh"
+ENSURE_URL="$ROOT/scripts/chrome_ensure_url_in_window.sh"
 
-export CHATGPT_TARGET="dummy"
-export CHATGPT_PROFILE_NAME="dummy"
-PROFILE_DIR="${CHATGPT_CHROME_USER_DATA_DIR:-$HOME/.cache/lucy_chrome_chatgpt_free}"
-export CHATGPT_CHROME_USER_DATA_DIR="$PROFILE_DIR"
-export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-free}"
+export CHATGPT_TARGET="paid"
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+export CHATGPT_CHROME_USER_DATA_DIR=""
 export CHATGPT_BRIDGE_CLASS="${CHATGPT_BRIDGE_CLASS:-lucy-chatgpt-bridge}"
 
 DUMMY_FILE="$ROOT/diagnostics/ui_dummy_chat.html"
@@ -33,49 +32,6 @@ get_wmctrl_l() {
   "$HOST_EXEC" 'wmctrl -l' 2>/dev/null || true
 }
 
-get_cmdline_by_pid() {
-  local pid="$1"
-  [[ "${pid:-}" =~ ^[0-9]+$ ]] || return 1
-  "$HOST_EXEC" "bash -lc 'tr \"\\0\" \" \" < /proc/${pid}/cmdline 2>/dev/null'" || true
-}
-
-get_wm_command_by_wid() {
-  local wid="$1"
-  local out
-  out="$("$HOST_EXEC" "xprop -id ${wid} WM_COMMAND" 2>/dev/null || true)"
-  if [[ "${out}" == *"not found"* ]]; then
-    return 0
-  fi
-  printf '%s\n' "$out"
-}
-
-cmdline_has_user_data() {
-  local cmd="$1"
-  if [[ "${cmd}" == *"--user-data-dir=${PROFILE_DIR}"* ]]; then
-    return 0
-  fi
-  if [[ "${cmd}" == *"--user-data-dir ${PROFILE_DIR}"* ]]; then
-    return 0
-  fi
-  return 1
-}
-
-wm_command_has_user_data() {
-  local wid="$1"
-  local cmd
-  cmd="$(get_wm_command_by_wid "$wid")"
-  if [[ -z "${cmd:-}" ]]; then
-    return 0
-  fi
-  if [[ "${cmd}" == *"--user-data-dir=${PROFILE_DIR}"* ]]; then
-    return 0
-  fi
-  if [[ "${cmd}" == *"--user-data-dir ${PROFILE_DIR}"* ]]; then
-    return 0
-  fi
-  return 1
-}
-
 choose_latest_wid() {
   local max_dec=-1
   local max_wid=""
@@ -92,45 +48,52 @@ choose_latest_wid() {
 }
 
 URL="file://${DUMMY_FILE}?t=$(date +%s%N)"
+URL_PREFIX="file://${DUMMY_FILE}"
 CHATGPT_OPEN_URL="$URL" \
-  CHATGPT_CHROME_USER_DATA_DIR="$PROFILE_DIR" \
   CHATGPT_BRIDGE_CLASS="${DUMMY_CLASS}" \
   "$CHROME_OPEN" >/dev/null 2>&1 || true
 
 dummy_wid=""
 for _ in $(seq 1 20); do
   sleep 0.5
-  candidates="$(get_wmctrl_l | awk -v tag="${DUMMY_CLASS}" -v title="LUCY Dummy Chat" '
-    {
-      wid=$1;
-      t="";
-      for(i=4;i<=NF;i++){ t = t (i==4 ? "" : " ") $i }
-      if (tolower(t) ~ tolower(tag) || index(t, title) > 0) {
-        printf "%s\n", wid
-      }
-    }
-  ')"
-  if [[ -n "${candidates:-}" ]]; then
-    filtered=""
-    while IFS= read -r wid; do
-      [[ -z "${wid:-}" ]] && continue
-      pid="$(get_wmctrl_lp | awk -v w="${wid}" '$1==w {print $3; exit}')"
-      cmd="$(get_cmdline_by_pid "$pid")"
-      if ! cmdline_has_user_data "$cmd"; then
-        continue
-      fi
-      if ! wm_command_has_user_data "$wid"; then
-        continue
-      fi
-      filtered+="${wid}\t${pid}\n"
-    done <<< "$candidates"
-    dummy_wid="$(printf '%b' "$filtered" | choose_latest_wid || true)"
-    [[ -n "${dummy_wid:-}" ]] && break
+  candidates="$(wmctrl -lx 2>/dev/null | awk '/chrome/ {print $1}' || true)"
+  if [[ -z "${candidates:-}" ]]; then
+    continue
   fi
+  while IFS= read -r wid; do
+    [[ -z "${wid:-}" ]] && continue
+    tmpdir="/tmp/lucy_dummy_capture_$$"
+    mkdir -p "$tmpdir"
+    set +e
+    "$ROOT/scripts/chrome_capture_active_tab.sh" "$wid" "$tmpdir" >/dev/null 2>&1
+    cap_rc=$?
+    set -e
+    if [[ "$cap_rc" -ne 0 ]]; then
+      rm -rf "$tmpdir" 2>/dev/null || true
+      continue
+    fi
+    url="$(cat "$tmpdir/url.txt" 2>/dev/null || true)"
+    if [[ "$url" == "$URL_PREFIX"* ]]; then
+      dummy_wid="$wid"
+      rm -rf "$tmpdir" 2>/dev/null || true
+      break
+    fi
+    rm -rf "$tmpdir" 2>/dev/null || true
+  done <<< "$candidates"
+  [[ -n "${dummy_wid:-}" ]] && break
 done
 
 if [[ -z "${dummy_wid:-}" ]]; then
   echo "ERROR: failed to detect dummy window" >&2
+  exit 1
+fi
+
+set +e
+"$ENSURE_URL" "$dummy_wid" "$URL_PREFIX" 8 >/dev/null 2>&1
+ensure_rc=$?
+set -e
+if [[ "$ensure_rc" -ne 0 ]]; then
+  echo "ERROR: failed to tab-lock dummy url" >&2
   exit 1
 fi
 
@@ -160,7 +123,7 @@ xdotool mousemove --window \"\$WID_DEC\" \"\$input_x\" \"\$input_y\" click 1 2>/
 sleep 0.05
 xdotool key --window \"\$WID_DEC\" ctrl+a 2>/dev/null || true
 xdotool key --window \"\$WID_DEC\" Delete 2>/dev/null || true
-xdotool type --delay 0 -- ${MSG_Q}
+xdotool type --window \"\$WID_DEC\" --delay 0 -- ${MSG_Q}
 xdotool key --window \"\$WID_DEC\" Return
 '" >/dev/null 2>&1 || true
 sleep 0.8

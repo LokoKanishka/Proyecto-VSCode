@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$DIR/.." && pwd)"
 CAP="$ROOT/scripts/chrome_capture_active_tab.sh"
@@ -8,11 +9,11 @@ PROFILE_RESOLVE="$ROOT/scripts/chrome_profile_dir_by_name.sh"
 
 MAX_WINDOWS="${1:-12}"
 MAX_TABS="${2:-9}"
-OUTROOT="/tmp/lucy_yt_resolve"
+OUTROOT="/tmp/lucy_chatgpt_resolve"
 mkdir -p "$OUTROOT"
-PROFILE_NAME="${YOUTUBE_PROFILE_NAME:-}"
+PROFILE_NAME="${CHATGPT_PROFILE_NAME:-}"
 PROFILE_DIR_FILTER=""
-PIN_FILE="${YOUTUBE_WID_PIN_FILE:-}"
+PIN_FILE="${CHATGPT_WID_PIN_FILE:-}"
 if [ -n "${PROFILE_NAME:-}" ]; then
   prof_out="$("$PROFILE_RESOLVE" "$PROFILE_NAME" 2>/dev/null || true)"
   PROFILE_DIR_FILTER="$(printf '%s\n' "$prof_out" | awk -F= '/^PROFILE_DIR=/{print $2}' | tail -n 1)"
@@ -22,12 +23,10 @@ _is_allowed_url() {
   local u_lc
   u_lc="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   case "$u_lc" in
-    https://www.youtube.com/*|http://www.youtube.com/*) return 0 ;;
-    https://youtube.com/*|http://youtube.com/*) return 0 ;;
-    https://m.youtube.com/*|http://m.youtube.com/*) return 0 ;;
-    https://youtu.be/*|http://youtu.be/*) return 0 ;;
-    https://consent.youtube.com/*) return 0 ;;
-    https://consent.google.com/*) return 0 ;;
+    https://chatgpt.com/*|http://chatgpt.com/*) return 0 ;;
+    https://www.chatgpt.com/*|http://www.chatgpt.com/*) return 0 ;;
+    https://chat.openai.com/*|http://chat.openai.com/*) return 0 ;;
+    https://auth.openai.com/*|http://auth.openai.com/*) return 0 ;;
     https://accounts.google.com/*) return 0 ;;
     *) return 1 ;;
   esac
@@ -83,12 +82,10 @@ for wid_hex in "${wids[@]}"; do
     fi
   fi
 
-  # activar ventana para que ctrl+<n> funcione
   wmctrl -ia "$wid_hex" 2>/dev/null || true
   xdotool windowactivate --sync "$wid_dec" 2>/dev/null || true
   sleep 0.12
 
-  # escanear tabs 1..MAX_TABS
   for tab in $(seq 1 "$MAX_TABS"); do
     xdotool key --window "$wid_dec" --clearmodifiers "ctrl+$tab" 2>/dev/null || true
     sleep 0.10
@@ -118,7 +115,7 @@ for wid_hex in "${wids[@]}"; do
 done
 
 if [ -z "$best" ]; then
-  echo "ERROR_NO_YOUTUBE_URL_IN_ANY_CHROME_WINDOW" >&2
+  echo "ERROR_NO_CHATGPT_URL_IN_ANY_CHROME_WINDOW" >&2
   echo "RC=3"
   exit 3
 fi

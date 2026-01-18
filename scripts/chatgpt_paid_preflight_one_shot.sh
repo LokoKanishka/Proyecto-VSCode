@@ -2,12 +2,31 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# --- Diego client guard ---
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+export CHROME_PROFILE_NAME="${CHROME_PROFILE_NAME:-${CHATGPT_PROFILE_NAME}}"
+export CHROME_DIEGO_EMAIL="${CHROME_DIEGO_EMAIL:-chatjepetex2025@gmail.com}"
+export CHROME_DIEGO_PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
+
+pre="$("$ROOT/scripts/chatgpt_diego_preflight.sh")"
+CHROME_WID_HEX="$(printf '%s\n' "$pre" | awk -F= '/^WID_HEX=/{print $2}' | tail -n 1)"
+if [ -z "${CHROME_WID_HEX:-}" ]; then
+  echo "ERROR_DIEGO_PREFLIGHT_NO_WID" >&2
+  exit 3
+fi
+export CHATGPT_WID_HEX="$CHROME_WID_HEX"
+export CHATGPT_WID_PIN_FILE="$CHROME_DIEGO_PIN_FILE"
+export CHATGPT_ALLOW_ACTIVE_WINDOW=0
+export CHATGPT_WID_PIN_ONLY=1
+# --- end Diego client guard ---
+
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 PAID_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_chatgpt.sh"
 THREAD_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_test_thread.sh"
 GET_URL="$ROOT/scripts/chatgpt_paid_get_url.sh"
 PIN="$ROOT/scripts/chatgpt_pin_wid.sh"
 UNPIN="$ROOT/scripts/chatgpt_unpin_wid.sh"
+RESOLVE_BY_URL="$ROOT/scripts/chatgpt_resolve_wid_by_url.sh"
 
 export CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
 if [[ "${CHATGPT_TARGET}" != "paid" ]]; then
@@ -15,8 +34,12 @@ if [[ "${CHATGPT_TARGET}" != "paid" ]]; then
   exit 2
 fi
 
+export CHATGPT_ALLOW_ACTIVE_WINDOW="${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}"
+export CHATGPT_WID_PIN_ONLY="${CHATGPT_WID_PIN_ONLY:-1}"
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+
 LOG_PATH="${CHATGPT_PAID_PREFLIGHT_LOG:-/tmp/paid_preflight_one_shot.log}"
-PIN_FILE="${CHATGPT_WID_PIN_FILE_PAID:-$HOME/.cache/lucy_chatgpt_wid_pin_paid}"
+PIN_FILE="${CHATGPT_WID_PIN_FILE_PAID:-$ROOT/diagnostics/pins/chatgpt_diego.wid}"
 FORENSICS_DIR="/tmp/lucy_chatgpt_bridge/$(date +%F)/PREFLIGHT_$(date +%s)_$RANDOM"
 mkdir -p "$(dirname "$LOG_PATH")" "$FORENSICS_DIR"
 : >"$LOG_PATH"
@@ -46,13 +69,19 @@ if ! ensure_pin_file "$PIN_FILE"; then
 fi
 export CHATGPT_WID_PIN_FILE="$PIN_FILE"
 
+get_pid_by_wid() {
+  "$HOST_EXEC" "wmctrl -lp | awk '\$1==\"$1\" {print \$3; exit}'" 2>/dev/null || true
+}
+
 write_forensics() {
   local wid="$1" pid="$2" thread_url="$3" cur_url="$4"
   local active_wid
   printf '%s\n' "$thread_url" > "$FORENSICS_DIR/thread_url.txt" 2>/dev/null || true
   printf '%s\n' "$cur_url" > "$FORENSICS_DIR/url.txt" 2>/dev/null || true
   "$HOST_EXEC" "wmctrl -lp" > "$FORENSICS_DIR/wmctrl_lp.txt" 2>/dev/null || true
-  active_wid="$("$HOST_EXEC" "xprop -root _NET_ACTIVE_WINDOW" 2>/dev/null | sed -n 's/.*\\(0x[0-9a-fA-F]\\+\\).*/\\1/p' | head -n 1)"
+  if [[ "${CHATGPT_ALLOW_ACTIVE_WINDOW}" -eq 1 ]]; then
+    active_wid="$("$HOST_EXEC" "xprop -root _NET_ACTIVE_WINDOW" 2>/dev/null | sed -n 's/.*\\(0x[0-9a-fA-F]\\+\\).*/\\1/p' | head -n 1)"
+  fi
   printf '%s\n' "${active_wid:-}" > "$FORENSICS_DIR/active_wid.txt" 2>/dev/null || true
   {
     echo "TARGET=paid"
@@ -73,9 +102,31 @@ fail_exit() {
   exit 1
 }
 
-ensure_out="$("$PAID_ENSURE" 2>>"$LOG_PATH" || true)"
-PAID_WID="$(printf '%s\n' "$ensure_out" | awk -F= '/PAID_CHATGPT_WID=/{print $2}' | tail -n 1)"
-PAID_PID="$(printf '%s\n' "$ensure_out" | awk -F= '/PAID_CHATGPT_PID=/{print $2}' | tail -n 1)"
+PAID_WID=""
+PAID_PID=""
+if [[ "${CHATGPT_WID_PIN_ONLY}" -eq 1 ]]; then
+  if [[ ! -s "${PIN_FILE}" ]]; then
+    set +e
+    CHATGPT_WID_PIN_FILE="$PIN_FILE" "$RESOLVE_BY_URL" 12 9 >/dev/null 2>&1
+    resolve_rc=$?
+    set -e
+    if [[ "$resolve_rc" -ne 0 ]]; then
+      write_forensics "" "" "" ""
+      fail_exit "resolve by url failed"
+    fi
+  fi
+  PAID_WID="$(head -n 1 "$PIN_FILE" 2>/dev/null | sed -n 's/.*\\(0x[0-9a-fA-F]\\+\\).*/\\1/p' | head -n 1)"
+  if [[ -n "${PAID_WID:-}" ]]; then
+    PAID_PID="$(get_pid_by_wid "$PAID_WID")"
+  fi
+fi
+
+ensure_out=""
+if [[ -z "${PAID_WID:-}" ]] || [[ -z "${PAID_PID:-}" ]]; then
+  ensure_out="$("$PAID_ENSURE" 2>>"$LOG_PATH" || true)"
+  PAID_WID="$(printf '%s\n' "$ensure_out" | awk -F= '/PAID_CHATGPT_WID=/{print $2}' | tail -n 1)"
+  PAID_PID="$(printf '%s\n' "$ensure_out" | awk -F= '/PAID_CHATGPT_PID=/{print $2}' | tail -n 1)"
+fi
 if [[ -z "${PAID_WID:-}" ]] || [[ -z "${PAID_PID:-}" ]]; then
   write_forensics "" "" "" ""
   fail_exit "paid ensure failed"

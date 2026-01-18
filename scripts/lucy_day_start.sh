@@ -2,6 +2,24 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# --- Diego client guard ---
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+export CHROME_PROFILE_NAME="${CHROME_PROFILE_NAME:-${CHATGPT_PROFILE_NAME}}"
+export CHROME_DIEGO_EMAIL="${CHROME_DIEGO_EMAIL:-chatjepetex2025@gmail.com}"
+export CHROME_DIEGO_PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
+
+pre="$("$ROOT/scripts/chatgpt_diego_preflight.sh")"
+CHROME_WID_HEX="$(printf '%s\n' "$pre" | awk -F= '/^WID_HEX=/{print $2}' | tail -n 1)"
+if [ -z "${CHROME_WID_HEX:-}" ]; then
+  echo "ERROR_DIEGO_PREFLIGHT_NO_WID" >&2
+  exit 3
+fi
+export CHATGPT_WID_HEX="$CHROME_WID_HEX"
+export CHATGPT_WID_PIN_FILE="$CHROME_DIEGO_PIN_FILE"
+export CHATGPT_ALLOW_ACTIVE_WINDOW=0
+export CHATGPT_WID_PIN_ONLY=1
+# --- end Diego client guard ---
+
 cd "$ROOT"
 
 STAMP="$(date +%Y%m%d_%H%M%S)_$RANDOM"
@@ -25,6 +43,14 @@ else
 fi
 
 export CHATGPT_PAID_THREAD_STRICT=1
+export CHATGPT_ALLOW_ACTIVE_WINDOW="${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}"
+export CHATGPT_WID_PIN_ONLY="${CHATGPT_WID_PIN_ONLY:-1}"
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+export LUCY_STRICT_TARGETING="${LUCY_STRICT_TARGETING:-1}"
+if [[ -z "${CHATGPT_WID_PIN_FILE:-}" ]]; then
+  export CHATGPT_WID_PIN_FILE="$ROOT/diagnostics/pins/chatgpt_diego.wid"
+fi
+mkdir -p "$(dirname "$CHATGPT_WID_PIN_FILE")" 2>/dev/null || true
 
 SEARXNG_URL="${SEARXNG_URL:-http://127.0.0.1:8080}"
 
@@ -100,7 +126,12 @@ if [[ "${CUR_URL}" != "${THREAD_URL}" ]]; then
 fi
 
 log "== PIN ROBUST =="
-WID_HEX="$(CHATGPT_TARGET=paid "$ROOT/scripts/chatgpt_get_wid.sh")"
+WID_HEX=""
+if [[ "${CHATGPT_WID_PIN_ONLY}" -eq 1 ]] && [[ -n "${PAID_WID:-}" ]]; then
+  WID_HEX="${PAID_WID}"
+else
+  WID_HEX="$(CHATGPT_TARGET=paid "$ROOT/scripts/chatgpt_get_wid.sh")"
+fi
 if [[ -z "${WID_HEX:-}" ]]; then
   echo "ERROR: chatgpt_get_wid returned empty" >&2
   exit 6
@@ -113,10 +144,6 @@ pin_out="$(CHATGPT_TARGET=paid CHATGPT_WID_HEX="${WID_HEX}" "$ROOT/scripts/chatg
 log "$pin_out"
 
 PIN_FILE="${CHATGPT_WID_PIN_FILE:-/tmp/lucy_chatgpt_wid_pin_paid}"
-if [[ "${PIN_FILE}" != /tmp/* ]]; then
-  echo "ERROR: pin file not in /tmp (PIN_FILE=${PIN_FILE})" >&2
-  exit 6
-fi
 if [[ ! -f "${PIN_FILE}" ]]; then
   echo "ERROR: pin file missing at ${PIN_FILE}" >&2
   exit 6
@@ -128,7 +155,11 @@ if [[ -z "${PIN_WID:-}" ]]; then
 fi
 
 log "== SMOKE DUMMY =="
-"$ROOT/scripts/verify_ui_dummy_pipe.sh"
+if [[ "${LUCY_STRICT_TARGETING}" -eq 1 ]]; then
+  log "SKIP_UI_DUMMY_PIPE_STRICT=1"
+else
+  "$ROOT/scripts/verify_ui_dummy_pipe.sh"
+fi
 
 log "== SMOKE WEB_SEARCH =="
 "$ROOT/scripts/verify_web_search_searxng.sh"

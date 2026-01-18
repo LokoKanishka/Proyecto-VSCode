@@ -31,7 +31,7 @@ _yt_has_placeholder_pattern() {
 _yt_bad_url_reason() {
   local url_raw="$1"
   local title_raw="$2"
-  local url_lc title_lc
+  local url_lc title_lc host path
   url_lc="$(_yt_norm "$url_raw")"
   title_lc="$(_yt_norm "$title_raw")"
 
@@ -40,7 +40,7 @@ _yt_bad_url_reason() {
     return 0
   fi
 
-  if [[ "$url_lc" == chrome-error://* ]] || [[ "$url_lc" == *chromewebdata* ]]; then
+  if [[ "$url_lc" == chrome-error://* ]] || [[ "$url_lc" == chrome://* ]] || [[ "$url_lc" == *chromewebdata* ]]; then
     echo "chrome_error"
     return 0
   fi
@@ -60,5 +60,38 @@ _yt_bad_url_reason() {
     return 0
   fi
 
-  echo ""
+  if ! printf '%s' "$url_lc" | grep -Eq '^https?://'; then
+    echo "scheme_invalid"
+    return 0
+  fi
+
+  host="$(printf '%s' "$url_lc" | sed -E 's,^[a-z]+://([^/]+).*,\1,' | sed 's/:.*//')"
+  path="$(printf '%s' "$url_lc" | sed -E 's,^[a-z]+://[^/]+(/[^?]*)?.*,\1,')"
+
+  case "$host" in
+    youtube.com|www.youtube.com|m.youtube.com|youtu.be)
+      echo ""
+      return 0
+      ;;
+    accounts.google.com)
+      echo ""
+      return 0
+      ;;
+    consent.youtube.com|consent.google.com)
+      echo ""
+      return 0
+      ;;
+    google.com|www.google.com)
+      if [[ "$path" == /search* ]]; then
+        echo ""
+        return 0
+      fi
+      ;;
+  esac
+
+  if [ -z "$host" ]; then
+    echo "host_not_allowed:unknown"
+  else
+    echo "host_not_allowed:$host"
+  fi
 }

@@ -2,15 +2,42 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# --- Diego client guard ---
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+export CHROME_PROFILE_NAME="${CHROME_PROFILE_NAME:-${CHATGPT_PROFILE_NAME}}"
+export CHROME_DIEGO_EMAIL="${CHROME_DIEGO_EMAIL:-chatjepetex2025@gmail.com}"
+export CHROME_DIEGO_PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
+
+pre="$("$ROOT/scripts/chatgpt_diego_preflight.sh")"
+CHROME_WID_HEX="$(printf '%s\n' "$pre" | awk -F= '/^WID_HEX=/{print $2}' | tail -n 1)"
+if [ -z "${CHROME_WID_HEX:-}" ]; then
+  echo "ERROR_DIEGO_PREFLIGHT_NO_WID" >&2
+  exit 3
+fi
+export CHATGPT_WID_HEX="$CHROME_WID_HEX"
+export CHATGPT_WID_PIN_FILE="$CHROME_DIEGO_PIN_FILE"
+export CHATGPT_ALLOW_ACTIVE_WINDOW=0
+export CHATGPT_WID_PIN_ONLY=1
+# --- end Diego client guard ---
+
 HOST_EXEC="$ROOT/scripts/x11_host_exec.sh"
 CHROME_OPEN="$ROOT/scripts/chatgpt_chrome_open.sh"
 THREAD_ENSURE="$ROOT/scripts/chatgpt_paid_ensure_test_thread.sh"
+RESOLVE_BY_URL="$ROOT/scripts/chatgpt_resolve_wid_by_url.sh"
 
 CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
 if [[ "${CHATGPT_TARGET}" != "paid" ]]; then
   echo "ERROR: chatgpt_paid_ensure_chatgpt.sh requiere CHATGPT_TARGET=paid" >&2
   exit 2
 fi
+
+export CHATGPT_ALLOW_ACTIVE_WINDOW="${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}"
+export CHATGPT_WID_PIN_ONLY="${CHATGPT_WID_PIN_ONLY:-1}"
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+if [[ -z "${CHATGPT_WID_PIN_FILE:-}" ]]; then
+  export CHATGPT_WID_PIN_FILE="$ROOT/diagnostics/pins/chatgpt_diego.wid"
+fi
+mkdir -p "$(dirname "$CHATGPT_WID_PIN_FILE")" 2>/dev/null || true
 
 DEFAULT_FREE_DIR="$HOME/.cache/lucy_chrome_chatgpt_free"
 FREE_DIR="${CHATGPT_FREE_PROFILE_DIR:-${CHATGPT_CHROME_USER_DATA_DIR:-$DEFAULT_FREE_DIR}}"
@@ -26,6 +53,43 @@ log() {
 mkdir -p "$(dirname "$LOG_PATH")"
 : >"$LOG_PATH"
 log "PAID_ENSURE_START free_dir=${FREE_DIR} timeout_s=${TIMEOUT_S}"
+
+get_pid_by_wid() {
+  "$HOST_EXEC" "wmctrl -lp | awk '\$1==\"$1\" {print \$3; exit}'" 2>/dev/null || true
+}
+
+if [[ "${CHATGPT_WID_PIN_ONLY}" -eq 1 ]]; then
+  if [[ ! -s "${CHATGPT_WID_PIN_FILE}" ]]; then
+    set +e
+    CHATGPT_WID_PIN_FILE="$CHATGPT_WID_PIN_FILE" "$RESOLVE_BY_URL" 12 9 >/dev/null 2>&1
+    resolve_rc=$?
+    set -e
+    if [[ "$resolve_rc" -ne 0 ]]; then
+      log "ERROR: resolve by url failed rc=$resolve_rc"
+      echo "ERROR: resolve by url failed" >&2
+      echo "PAID_ENSURE_LOG=$LOG_PATH" >&2
+      exit 3
+    fi
+  fi
+  PIN_WID="$(head -n 1 "$CHATGPT_WID_PIN_FILE" 2>/dev/null | sed -n 's/.*\\(0x[0-9a-fA-F]\\+\\).*/\\1/p' | head -n 1)"
+  PIN_PID=""
+  if [[ -n "${PIN_WID:-}" ]]; then
+    PIN_PID="$(get_pid_by_wid "$PIN_WID")"
+  fi
+  if [[ -n "${PIN_WID:-}" ]] && [[ -n "${PIN_PID:-}" ]]; then
+    printf 'PAID_CHATGPT_WID=%s\n' "$PIN_WID"
+    printf 'PAID_CHATGPT_PID=%s\n' "$PIN_PID"
+    if [[ -x "$THREAD_ENSURE" ]]; then
+      if ! CHATGPT_PAID_ENSURE_CALLER=1 PAID_CHATGPT_WID="$PIN_WID" PAID_CHATGPT_PID="$PIN_PID" "$THREAD_ENSURE" >/dev/null 2>&1; then
+        log "ERROR: ensure_test_thread failed"
+        echo "ERROR: ensure_test_thread failed" >&2
+        echo "PAID_ENSURE_LOG=$LOG_PATH" >&2
+        exit 5
+      fi
+    fi
+    exit 0
+  fi
+fi
 
 host_script="$(mktemp /tmp/lucy_paid_ensure_host.XXXX.sh)"
 cat > "$host_script" <<'HOST'

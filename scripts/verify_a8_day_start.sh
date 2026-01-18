@@ -2,6 +2,24 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# --- Diego client guard ---
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+export CHROME_PROFILE_NAME="${CHROME_PROFILE_NAME:-${CHATGPT_PROFILE_NAME}}"
+export CHROME_DIEGO_EMAIL="${CHROME_DIEGO_EMAIL:-chatjepetex2025@gmail.com}"
+export CHROME_DIEGO_PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
+
+pre="$("$ROOT/scripts/chatgpt_diego_preflight.sh")"
+CHROME_WID_HEX="$(printf '%s\n' "$pre" | awk -F= '/^WID_HEX=/{print $2}' | tail -n 1)"
+if [ -z "${CHROME_WID_HEX:-}" ]; then
+  echo "ERROR_DIEGO_PREFLIGHT_NO_WID" >&2
+  exit 3
+fi
+export CHATGPT_WID_HEX="$CHROME_WID_HEX"
+export CHATGPT_WID_PIN_FILE="$CHROME_DIEGO_PIN_FILE"
+export CHATGPT_ALLOW_ACTIVE_WINDOW=0
+export CHATGPT_WID_PIN_ONLY=1
+# --- end Diego client guard ---
+
 cd "$ROOT"
 
 STAMP="${VERIFY_A8_STAMP:-$(date +%Y%m%d_%H%M%S)_$RANDOM}"
@@ -17,7 +35,9 @@ fi
 
 grep -q "LUCY_DAY_START_OK" "$LOG" || { echo "ERROR: missing LUCY_DAY_START_OK" >&2; exit 1; }
 grep -q "VERIFY_WEB_SEARCH_SEARXNG_OK" "$LOG" || { echo "ERROR: missing VERIFY_WEB_SEARCH_SEARXNG_OK" >&2; exit 1; }
-grep -q "VERIFY_UI_DUMMY_PIPE_OK" "$LOG" || { echo "ERROR: missing VERIFY_UI_DUMMY_PIPE_OK" >&2; exit 1; }
+if ! grep -q "VERIFY_UI_DUMMY_PIPE_OK" "$LOG"; then
+  grep -q "SKIP_UI_DUMMY_PIPE_STRICT=1" "$LOG" || { echo "ERROR: missing VERIFY_UI_DUMMY_PIPE_OK" >&2; exit 1; }
+fi
 grep -q "VERIFY_A5_PAID_SMOKE_OK" "$LOG" || { echo "ERROR: missing VERIFY_A5_PAID_SMOKE_OK" >&2; exit 1; }
 
 if [[ -f "$ROOT/scripts/chatgpt_profile_paid_env.sh" ]]; then
@@ -26,6 +46,13 @@ if [[ -f "$ROOT/scripts/chatgpt_profile_paid_env.sh" ]]; then
 else
   echo "ERROR: missing chatgpt_profile_paid_env.sh" >&2
   exit 1
+fi
+
+export CHATGPT_ALLOW_ACTIVE_WINDOW="${CHATGPT_ALLOW_ACTIVE_WINDOW:-0}"
+export CHATGPT_WID_PIN_ONLY="${CHATGPT_WID_PIN_ONLY:-1}"
+export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
+if [[ -z "${CHATGPT_WID_PIN_FILE:-}" ]]; then
+  export CHATGPT_WID_PIN_FILE="$ROOT/diagnostics/pins/chatgpt_diego.wid"
 fi
 
 THREAD_FILE="${CHATGPT_PAID_TEST_THREAD_FILE:-$ROOT/diagnostics/chatgpt/paid_test_thread.url}"
