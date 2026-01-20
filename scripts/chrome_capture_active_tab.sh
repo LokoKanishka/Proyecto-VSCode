@@ -1,111 +1,54 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-if [ -r "$DIR/x11_env.sh" ]; then
-  # shellcheck source=/dev/null
-  . "$DIR/x11_env.sh"
+WID_HEX="${1:-}"
+OUTDIR="${2:-}"
+
+if [ -z "${WID_HEX:-}" ] || [ -z "${OUTDIR:-}" ]; then
+  echo "USAGE: chrome_capture_active_tab.sh <WID_HEX> <outdir>" >&2
+  exit 2
 fi
 
-WID_HEX="${1:-}"
-if [ -z "$WID_HEX" ]; then
-  echo "ERROR_NO_WID_HEX" >&2
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR_MISSING_TOOL: $1" >&2; exit 3; }; }
+need xprop
+
+mkdir -p "$OUTDIR"
+printf '%s\n' "$WID_HEX" >"$OUTDIR/wid_hex.txt"
+
+# WID must be live
+set +e
+xprop -id "$WID_HEX" _NET_WM_NAME >/dev/null 2>&1
+live_rc=$?
+set -e
+if [ "$live_rc" -ne 0 ]; then
+  echo "ERROR_BADWINDOW: $WID_HEX" >&2
   exit 3
 fi
 
-OUTDIR="${2:-/tmp/lucy_yt_capture_$(date +%Y%m%d_%H%M%S)_$$}"
-mkdir -p "$OUTDIR"
+# Title
+title="$(xprop -id "$WID_HEX" _NET_WM_NAME 2>/dev/null | sed -n 's/.*= "\(.*\)".*/\1/p' | head -n 1 || true)"
+printf '%s\n' "${title:-}" >"$OUTDIR/title.txt"
 
-WID_DEC=$((WID_HEX))
+# URL: prefer omnibox capture (robusto)
+OMNI="$ROOT/scripts/chrome_capture_url_omnibox.sh"
+if [ -x "$OMNI" ]; then
+  # Esto escribe url.txt/title.txt/ok.txt dentro de OUTDIR
+  set +e
+  "$OMNI" "$WID_HEX" "$OUTDIR" >/dev/null 2>&1
+  set -e
+fi
 
-_clear_clipboard() {
-  if command -v xclip >/dev/null 2>&1; then
-    printf '' | xclip -selection clipboard 2>/dev/null || true
-  elif command -v xsel >/dev/null 2>&1; then
-    printf '' | xsel --clipboard --input 2>/dev/null || true
-  fi
-}
+# Si por cualquier razón sigue vacío, dejamos archivo igual (pero no debería pasar ya)
+: > /dev/null
 
-_read_clipboard() {
-  local text=""
-  text="$(timeout 2s xclip -selection clipboard -o 2>/dev/null || true)"
-  if [ -z "$text" ]; then
-    text="$(timeout 2s xsel --clipboard --output 2>/dev/null || true)"
-  fi
-  printf '%s' "$text"
-}
-
-_focus_omnibox() {
-  local method="$1"
-  case "$method" in
-    ctrl+l)
-      xdotool key --window "$WID_DEC" --clearmodifiers ctrl+l 2>/dev/null || true
-      ;;
-    alt+d)
-      xdotool key --window "$WID_DEC" --clearmodifiers alt+d 2>/dev/null || true
-      ;;
-    F6)
-      xdotool key --window "$WID_DEC" --clearmodifiers F6 2>/dev/null || true
-      ;;
-  esac
-  sleep 0.08
-}
-
-wmctrl -ia "$WID_HEX" 2>/dev/null || true
-xdotool windowactivate --sync "$WID_DEC" 2>/dev/null || true
-xdotool windowfocus --sync "$WID_DEC" 2>/dev/null || true
-sleep 0.25
-
+# Print in machine-friendly form for callers
 url=""
-attempt=0
-while [ "$attempt" -lt 5 ]; do
-  attempt=$((attempt + 1))
-  _clear_clipboard
-  case "$attempt" in
-    1|4) _focus_omnibox "ctrl+l" ;;
-    2|5) _focus_omnibox "alt+d" ;;
-    *) _focus_omnibox "F6" ;;
-  esac
-  xdotool key --window "$WID_DEC" --clearmodifiers ctrl+c 2>/dev/null || true
-  url=""
-  for _ in $(seq 1 10); do
-    sleep 0.1
-    url="$(_read_clipboard)"
-    url="$(printf '%s' "$url" | tr -d '\r')"
-    if [ -n "$url" ]; then
-      break
-    fi
-  done
-  if printf '%s' "$url" | grep -Eq '^https?://'; then
-    break
-  fi
-  sleep 0.1
-done
-
-TITLE="$(xdotool getwindowname "$WID_DEC" 2>/dev/null || true)"
-SCREENSHOT="$OUTDIR/screenshot.png"
-
-if command -v import >/dev/null 2>&1; then
-  import -window "$WID_HEX" "$SCREENSHOT" 2>/dev/null || true
-else
-  echo "ERROR_NO_IMPORT: ImageMagick 'import' not found." >&2
-  : > "$SCREENSHOT"
+if [ -r "$OUTDIR/url.txt" ]; then
+  url="$(head -n 1 "$OUTDIR/url.txt" | tr -d '\r' || true)"
 fi
+printf 'TITLE=%s\n' "${title:-}"
+printf 'URL=%s\n' "${url:-}"
 
-printf '%s' "$TITLE" > "$OUTDIR/title.txt"
-printf '%s' "$url" > "$OUTDIR/url.txt"
-printf '%s' "$WID_HEX" > "$OUTDIR/wid_hex.txt"
-
-ts="$(date -Is)"
-printf '%s\t%s\t%s\t%s\n' "$ts" "$WID_HEX" "$TITLE" "$url" >> "$OUTDIR/trace.tsv"
-
-echo "OUTDIR=$OUTDIR"
-echo "WID_HEX=$WID_HEX"
-echo "TITLE=$TITLE"
-echo "URL=$url"
-echo "SCREENSHOT=$SCREENSHOT"
-
-if ! printf '%s' "$url" | grep -Eq '^https?://'; then
-  echo "CAPTURE_URL_INVALID" >&2
-  exit 11
-fi
+exit 0

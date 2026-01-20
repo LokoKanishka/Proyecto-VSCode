@@ -42,10 +42,33 @@ while true; do
   xdotool windowactivate --sync "$WID_DEC" 2>/dev/null || true
   sleep 0.12
 
-  xdotool key --window "$WID_DEC" --clearmodifiers ctrl+l 2>/dev/null || true
-  sleep 0.06
-  xdotool type --window "$WID_DEC" --clearmodifiers --delay 2 "$URL_PREFIX" 2>/dev/null || true
-  xdotool key --window "$WID_DEC" --clearmodifiers Return 2>/dev/null || true
+  
+  # Robust omnibox focus + clear (evita escribir en campos de la pagina)
+
+  xdotool key --window "" --clearmodifiers Escape 2>/dev/null || true
+
+  sleep 0.03
+
+  xdotool key --window "" --clearmodifiers ctrl+l 2>/dev/null || true
+
+  sleep 0.03
+
+  xdotool key --window "" --clearmodifiers alt+d 2>/dev/null || true
+
+  sleep 0.03
+
+  xdotool key --window "" --clearmodifiers ctrl+a 2>/dev/null || true
+
+  sleep 0.02
+
+  xdotool key --window "" --clearmodifiers BackSpace 2>/dev/null || true
+
+  sleep 0.03
+
+  xdotool type --window "" --clearmodifiers --delay 6 "" 2>/dev/null || true
+
+  xdotool key --window "" --clearmodifiers Return 2>/dev/null || true
+
   sleep 0.25
 
   iter_dir="$OUTROOT/$(date +%Y%m%d_%H%M%S)_$$"

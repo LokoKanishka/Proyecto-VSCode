@@ -2,185 +2,123 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
-
-TARGET_URL="${1:-https://www.google.com/}"
-EXPECTED_EMAIL="${CHROME_DIEGO_EMAIL:-chatjepetex2025@gmail.com}"
-PROFILE_NAME="${CHROME_PROFILE_NAME:-diego}"
-MAX_TRIES="${CHROME_DIEGO_MAX_TRIES:-3}"
-
-mkdir -p "$(dirname -- "$PIN_FILE")"
-
-# Detect chrome config dir (prefer google-chrome)
-CHROME_CFG="${CHROME_CFG:-$HOME/.config/google-chrome}"
-LOCAL_STATE="$CHROME_CFG/Local State"
-if [ ! -r "$LOCAL_STATE" ]; then
-  echo "ERROR_NO_LOCAL_STATE: $LOCAL_STATE" >&2
-  exit 3
+if [ -r "$ROOT/scripts/x11_env.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$ROOT/scripts/x11_env.sh"
 fi
 
-detect_chrome_bin() {
-  if [ -x "/opt/google/chrome/chrome" ]; then
-    echo "/opt/google/chrome/chrome"
-    return
-  fi
-  command -v google-chrome || true
-}
+START_URL="${1:-https://www.google.com/}"
+MAX_SECONDS="${CHROME_GUARD_MAX_SECONDS:-12}"
 
-resolve_profile_dir_and_email() {
-  python3 - <<'PY'
-from pathlib import Path
-import json, os, sys
+PROFILE_NAME="${CHROME_PROFILE_NAME:-diego}"
+EXPECT_EMAIL="${CHROME_DIEGO_EMAIL:-chatjepetex2025@gmail.com}"
+PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
 
-local_state = Path(os.environ["LOCAL_STATE"])
-profile_name = os.environ["PROFILE_NAME"]
-expected = os.environ["EXPECTED_EMAIL"]
+RESOLVER="$ROOT/scripts/chrome_profile_dir_by_name.sh"
+CAP="$ROOT/scripts/chrome_capture_active_tab.sh"
 
-data = json.loads(local_state.read_text(encoding="utf-8", errors="ignore"))
-info = (((data.get("profile") or {}).get("info_cache")) or {})
-
-best_dir = ""
-best_email = ""
-for prof_dir, meta in info.items():
-    name = (meta or {}).get("name") or ""
-    email = (meta or {}).get("user_name") or ""
-    if str(name).strip().lower() == profile_name.strip().lower():
-        best_dir = prof_dir
-        best_email = email
-        break
-
-if not best_dir:
-    print("ERROR_NO_PROFILE_MATCH")
-    sys.exit(10)
-
-print(f"PROFILE_DIR={best_dir}")
-print(f"EMAIL={best_email}")
-
-if expected and best_email and best_email.strip().lower() != expected.strip().lower():
-    print(f"ERROR_EMAIL_MISMATCH expected={expected} got={best_email}")
-    sys.exit(11)
-PY
-}
-
-list_chrome_wids() {
-  wmctrl -lx 2>/dev/null | awk '$3 ~ /google-chrome/ {print $1}' | sed '/^$/d' | sort -u || true
-}
-
-topmost_from_set() {
-  local stack
-  stack="$(xprop -root _NET_CLIENT_LIST_STACKING 2>/dev/null | sed -n 's/.*# //p' | tr ',' '\n' | tr -d ' ' | sed '/^$/d' || true)"
-  if [ -z "$stack" ]; then
-    tail -n 1
-    return
-  fi
-  awk '
-    NR==FNR {cand[$1]=1; last=$1; next}
-    { if (cand[$1]) pick=$1 }
-    END { if (pick) print pick; else if (last) print last; }
-  ' /dev/stdin <(printf '%s\n' "$stack")
-}
-
-export LOCAL_STATE PROFILE_NAME EXPECTED_EMAIL
-
-PROFILE_DIR=""
-EMAIL=""
-
-CHROME_BIN="$(detect_chrome_bin)"
+CHROME_BIN="${CHROME_BIN:-/opt/google/chrome/chrome}"
+if [ ! -x "$CHROME_BIN" ]; then
+  CHROME_BIN="$(command -v google-chrome || true)"
+fi
 if [ -z "${CHROME_BIN:-}" ]; then
   echo "ERROR_NO_CHROME_BIN" >&2
   exit 3
 fi
+if [ ! -x "$CAP" ]; then
+  echo "ERROR_NO_CAP_TOOL: $CAP" >&2
+  exit 3
+fi
 
-tries=0
-while [ "$tries" -lt "$MAX_TRIES" ]; do
-  tries=$((tries + 1))
+PROFILE_DIR=""
+if [ -x "$RESOLVER" ]; then
+  out="$($RESOLVER "$PROFILE_NAME" 2>/dev/null || true)"
+  PROFILE_DIR="$(printf '%s\n' "$out" | awk -F= '/^PROFILE_DIR=/{print $2}' | tail -n 1)"
+fi
+if [ -z "${PROFILE_DIR:-}" ]; then
+  # fallback razonable si el resolver no está/rompe
+  PROFILE_DIR="Profile 1"
+fi
 
-  res="$(resolve_profile_dir_and_email 2>/dev/null || true)"
-  PROFILE_DIR="$(printf '%s\n' "$res" | awk -F= '/^PROFILE_DIR=/{print $2}' | tail -n 1)"
-  EMAIL="$(printf '%s\n' "$res" | awk -F= '/^EMAIL=/{print $2}' | tail -n 1)"
+TOKEN="$(date +%s)_$$"
+if [[ "$START_URL" == *"?"* ]]; then
+  GUARD_URL="${START_URL}&lucy_guard=${TOKEN}"
+else
+  GUARD_URL="${START_URL}?lucy_guard=${TOKEN}"
+fi
 
-  if printf '%s' "$res" | grep -q "ERROR_EMAIL_MISMATCH"; then
-    echo "ERROR_EMAIL_MISMATCH (Local State) expected=$EXPECTED_EMAIL got=$EMAIL" >&2
-    if [ "$tries" -ge "$MAX_TRIES" ]; then
-      exit 3
+LOG="/tmp/lucy_chrome_guard_diego.log"
+OUTROOT="/tmp/lucy_guard_scan/${TOKEN}"
+mkdir -p "$OUTROOT/all"
+
+# Siempre pedimos ventana nueva (aunque Chrome use sesión existente del mismo perfil)
+"$CHROME_BIN" --profile-directory="$PROFILE_DIR" --new-window "$GUARD_URL" >>"$LOG" 2>&1 || true
+
+deadline=$(( $(date +%s) + MAX_SECONDS ))
+found_wid=""
+found_url=""
+found_title=""
+
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  # listar ventanas Chrome
+  mapfile -t wids < <(wmctrl -lx 2>/dev/null | awk '$3 ~ /google-chrome/ {print $1}' | awk 'NF' || true)
+
+  for wid in "${wids[@]}"; do
+    d="$OUTROOT/all/$wid"
+    mkdir -p "$d"
+
+    set +e
+    "$CAP" "$wid" "$d" >/dev/null 2>&1
+    rc=$?
+    set -e
+    [ "$rc" -eq 0 ] || continue
+
+    url=""
+    if [ -r "$d/url.txt" ]; then
+      url="$(head -n 1 "$d/url.txt" | sed 's/^<<<//;s/>>>$//')"
     fi
-  elif [ -z "${PROFILE_DIR:-}" ]; then
-    echo "ERROR_NO_PROFILE_DIR (Local State) name=$PROFILE_NAME" >&2
-    exit 3
-  elif [ -z "${EMAIL:-}" ]; then
-    echo "ERROR_NO_EMAIL (Local State) profile_dir=$PROFILE_DIR" >&2
-    exit 3
-  fi
-
-  BEFORE="$(list_chrome_wids)"
-
-  "$CHROME_BIN" --profile-directory="$PROFILE_DIR" --new-window "$TARGET_URL" \
-    >/tmp/lucy_chrome_guard_diego.log 2>&1 &
-  LAUNCH_PID="$!"
-  sleep 0.7
-
-  WID_HEX=""
-  for _ in $(seq 1 30); do
-    AFTER="$(list_chrome_wids)"
-    NEW="$(comm -13 <(printf '%s\n' "$BEFORE" | sort -u) <(printf '%s\n' "$AFTER" | sort -u) || true)"
-    if [ -n "$NEW" ]; then
-      WID_HEX="$(printf '%s\n' "$NEW" | topmost_from_set | tail -n 1)"
-      if [ -n "${WID_HEX:-}" ]; then
-        break
-      fi
+    title=""
+    if [ -r "$d/title.txt" ]; then
+      title="$(head -n 1 "$d/title.txt")"
     fi
 
-    mapfile -t pids < <(printf '%s\n' "$LAUNCH_PID" && pgrep -P "$LAUNCH_PID" 2>/dev/null || true)
-    if [ "${#pids[@]}" -gt 0 ]; then
-      wid_pid="$(wmctrl -lp 2>/dev/null | awk -v pids="$(printf '%s,' "${pids[@]}")" '
-        BEGIN { split(pids,a,","); for(i in a) if(a[i]!="") wanted[a[i]]=1; }
-        { if ($3 in wanted) wid=$1; }
-        END { if (wid!="") print wid; }
-      ')"
-      if [ -n "${wid_pid:-}" ]; then
-        WID_HEX="$wid_pid"
-        break
-      fi
+    if printf '%s' "$url" | grep -q "lucy_guard=${TOKEN}"; then
+      found_wid="$wid"
+      found_url="$url"
+      found_title="$title"
+      break
     fi
-
-    sleep 0.2
   done
 
-  if [ -z "${WID_HEX:-}" ]; then
-    echo "ERROR_NO_WID_AFTER_LAUNCH (delta+stacking+pid failed) see /tmp/lucy_chrome_guard_diego.log" >&2
-    exit 3
+  if [ -n "${found_wid:-}" ]; then
+    break
   fi
-
-  if ! xprop -id "$WID_HEX" _NET_WM_NAME >/dev/null 2>&1; then
-    echo "ERROR_BADWINDOW $WID_HEX" >&2
-    exit 3
-  fi
-
-  if [ -n "${EMAIL:-}" ] && [ "$EMAIL" != "$EXPECTED_EMAIL" ]; then
-    wmctrl -ic "$WID_HEX" 2>/dev/null || true
-    if [ "$tries" -ge "$MAX_TRIES" ]; then
-      echo "ERROR_EMAIL_MISMATCH (after launch) expected=$EXPECTED_EMAIL got=$EMAIL" >&2
-      exit 3
-    fi
-    continue
-  fi
-
-  TITLE="$(xprop -id "$WID_HEX" _NET_WM_NAME 2>/dev/null | sed -n 's/.*= //p' | tr -d '\r' | tail -n 1 || true)"
-  {
-    echo "WID_HEX=$WID_HEX"
-    echo "EMAIL=$EMAIL"
-    echo "PROFILE_DIR=$PROFILE_DIR"
-    echo "TITLE=$TITLE"
-    echo "TS=$(date +%F_%H%M%S)"
-  } > "$PIN_FILE"
-
-  echo "OK_GUARD_DIEGO_CLIENT"
-  echo "WID_HEX=$WID_HEX"
-  echo "EMAIL=$EMAIL"
-  echo "PROFILE_DIR=$PROFILE_DIR"
-  echo "PIN_FILE=$PIN_FILE"
-  exit 0
+  sleep 0.25
 done
 
-echo "ERROR_GUARD_DIEGO_CLIENT_FAIL" >&2
-exit 3
+if [ -z "${found_wid:-}" ]; then
+  echo "ERROR_GUARD_FAILED profile=$PROFILE_NAME email=$EXPECT_EMAIL (no_token_seen)" >&2
+  echo "SEE_LOG=$LOG" >&2
+  echo "SEE_SCAN=$OUTROOT" >&2
+  echo "URLS_CAPTURED(head):" >&2
+  (find "$OUTROOT/all" -maxdepth 2 -name url.txt -print -exec sh -lc 'head -n 1 "$1" 2>/dev/null || true' _ {} \; | head -n 40) >&2 || true
+  exit 3
+fi
+
+mkdir -p "$(dirname "$PIN_FILE")"
+ts="$(date +%F_%H%M%S)"
+{
+  echo "WID_HEX=$found_wid"
+  echo "EMAIL=$EXPECT_EMAIL"
+  echo "PROFILE_DIR=$PROFILE_DIR"
+  printf 'TITLE="%s"\n' "$(printf '%s' "$found_title" | sed 's/"/\\"/g')"
+  echo "TS=$ts"
+} >"$PIN_FILE"
+
+echo "OK_GUARD_DIEGO_CLIENT"
+echo "WID_HEX=$found_wid"
+echo "EMAIL=$EXPECT_EMAIL"
+echo "PROFILE_DIR=$PROFILE_DIR"
+echo "PIN_FILE=$PIN_FILE"
+echo "SCAN_DIR=$OUTROOT"
+echo "URL=$found_url"
