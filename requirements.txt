@@ -2,7 +2,7 @@
 ddgs
 httpx
 ollama
-openwakeword>=0.5.0
+# openwakeword>=0.5.0  # COMENTADO TEMPORALMENTE: Conflicto con Python 3.12 (tflite-runtime)
 PyYAML
 tenacity
 trafilatura

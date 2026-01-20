@@ -17,7 +17,7 @@ def _insert_helper_after_imports(source: str) -> str:
     lines = source.splitlines(True)
     last_import = -1
     for i, line in enumerate(lines[:300]):
-        if re.match(r"^\s*(from|import)\s+\w+", line):
+        if re.match(r"^(from|import)\s+\w+", line):
             last_import = i
 
     helper = f"""
