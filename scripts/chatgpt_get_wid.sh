@@ -17,6 +17,31 @@ fi
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# --- LUCY_PIN_LIVE_GUARD: ensure chrome_diego.wid points to a live WID (avoid BadWindow) ---
+PIN_FILE_DEFAULT="$ROOT/diagnostics/pins/chrome_diego.wid"
+PIN_FILE="${CHATGPT_WID_PIN_FILE:-$PIN_FILE_DEFAULT}"
+
+ENSURE_LIVE="$ROOT/scripts/chrome_diego_pin_ensure_live.sh"
+if [ ! -x "$ENSURE_LIVE" ]; then
+  echo "ERROR_NO_PIN_ENSURE: $ENSURE_LIVE" >&2
+  exit 3
+fi
+
+# Fail hard if we can't repin (better than silently using another window)
+CHROME_DIEGO_PIN_FILE="$PIN_FILE" "$ENSURE_LIVE" "https://chatgpt.com/" >/dev/null
+
+
+# --- LUCY_PIN_FORMAT_NORMALIZE: accept legacy pin format (raw 0x...) and rewrite to WID_HEX=... ---
+if [ -r "$PIN_FILE" ] && ! grep -q '^WID_HEX=' "$PIN_FILE" 2>/dev/null; then
+  _first="$(sed -n '1{s/\r$//;p;q;}' "$PIN_FILE" 2>/dev/null || true)"
+  if printf '%s' "$_first" | grep -Eq '^0x[0-9a-fA-F]+$'; then
+    _tmp="$(mktemp)"
+    echo "WID_HEX=$_first" >"$_tmp"
+    # conservar el resto de líneas (ej: TITLE=...) si existen
+    tail -n +2 "$PIN_FILE" 2>/dev/null >>"$_tmp" || true
+    mv -f "$_tmp" "$PIN_FILE"
+  fi
+fi
 # A24_DIEGO_EMAIL_GATE_BEGIN
 # Si estamos en modo "diego", exigimos email y pin del cliente Chrome.
 CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-}"
@@ -163,7 +188,7 @@ write_pin() {
   local title="$2"
   mkdir -p "$(dirname "$PIN_FILE")"
   {
-    echo "$wid"
+    echo "WID_HEX=$wid"
     echo "TITLE=$title"
   } > "$PIN_FILE"
 }
@@ -187,7 +212,7 @@ title_is_excluded() {
 # Fast-path: paid usa pinfile (no requiere TITLE_INCLUDE)
 if [[ "${CHATGPT_TARGET}" == "paid" ]] && [[ "${PAID_PIN_TRUSTED}" -eq 1 ]] && [[ -f "${PIN_FILE}" ]]; then
   # Leer primer campo (WID_HEX) y título (si existe) del pinfile
-  pin_wid_hex="$(head -n 1 "${PIN_FILE}" 2>/dev/null | awk '{print $1}' || true)"
+  pin_wid_hex="$(read_pin_wid "$PIN_FILE" || true)"
   if [[ -n "${pin_wid_hex:-}" ]]; then
     # Confirmar que la ventana existe y obtener título actual (vía host)
     pin_wid_dec="$(printf "%d" "${pin_wid_hex}" 2>/dev/null || echo 0)"
