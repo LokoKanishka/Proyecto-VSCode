@@ -1,89 +1,45 @@
 import customtkinter as ctk
-from .code_block import CodeBlock
 
 class MessageBubble(ctk.CTkFrame):
     def __init__(self, master, text, is_user=False, **kwargs):
-        super().__init__(master, corner_radius=15, **kwargs)
+        super().__init__(master, **kwargs)
         
-        self.is_user = is_user
-        
-        # Style configuration
+        # Colores extraídos del Botón (Metal Cepillado + Neón)
         if is_user:
-            self.configure(fg_color="#5e5cd6") # Accent color
-            text_color = "#ffffff"
-            anchor = "e"
+            self.accent_color = "#00ff41" # Verde Neón
+            self.bg_inner = "#0a1f0a"     # Verde Profundo
         else:
-            self.configure(fg_color="#333333") # Darker gray
-            text_color = "#dce4ee"
-            anchor = "w"
+            self.accent_color = "#d800ff" # Violeta Neón
+            self.bg_inner = "#1f0a1f"     # Violeta Profundo
 
-        self.grid_columnconfigure(0, weight=1)
-        self.widgets = [] # Keep track of internal widgets
-        
-        # Initial render
-        self.render_content(text, text_color)
+        # Estilo "Hardware Module"
+        self.configure(
+            fg_color="#121212",      # Gris Metal Oscuro
+            corner_radius=2,         # Esquinas casi rectas (industrial)
+            border_width=2,
+            border_color="#333333"    # Metal cepillado
+        )
 
-    def render_content(self, text, text_color):
-        """Parses text for ```code blocks``` and renders widgets."""
-        # Clear previous widgets
-        for widget in self.widgets:
-            widget.destroy()
-        self.widgets = []
+        # Efecto de Circuito/Glow Interno
+        self.inner_frame = ctk.CTkFrame(
+            self, 
+            fg_color=self.bg_inner,
+            corner_radius=0,
+            border_width=1,
+            border_color=self.accent_color
+        )
+        self.inner_frame.pack(padx=2, pady=2, fill="both", expand=True)
 
-        parts = text.split("```")
-        
-        row_idx = 0
-        for i, part in enumerate(parts):
-            if not part: continue
-            
-            # Even indices = Normal Text (0, 2, 4...)
-            # Odd indices = Code Block (1, 3, 5...)
-            is_code = (i % 2 == 1)
-            
-            if is_code:
-                # Code Block
-                # Strip language ident if present (e.g. "python\nprint()")
-                content = part
-                if '\n' in content:
-                    first_line, rest = content.split('\n', 1)
-                    if first_line.strip().replace("_","").isalnum(): # Simple check for lang name
-                        content = rest
-                elif content.strip().replace("_","").isalnum(): # Just a lang name? ignore
-                     content = part 
-                
-                # Trim valid code content
-                content = content.strip("\n")
-                
-                block = CodeBlock(self, content)
-                block.grid(row=row_idx, column=0, padx=10, pady=5, sticky="ew")
-                self.widgets.append(block)
-                
-            else:
-                # Normal Text
-                # Avoid empty text parts
-                if not part.strip(): continue
-                
-                label = ctk.CTkLabel(
-                    self, 
-                    text=part, 
-                    text_color=text_color, 
-                    wraplength=400, 
-                    justify="left",
-                    font=("Roboto", 14)
-                )
-                label.grid(row=row_idx, column=0, padx=15, pady=5, sticky="w")
-                self.widgets.append(label)
-                
-            row_idx += 1
+        self.label = ctk.CTkLabel(
+            self.inner_frame, 
+            text=text, 
+            text_color=self.accent_color,
+            font=("Consolas", 14),
+            wraplength=450, 
+            justify="left"
+        )
+        self.label.pack(padx=15, pady=10)
 
     def update_text(self, new_text):
-        """Updates content dynamically."""
-        # For full Markdown parsing, we need to re-render.
-        # This might be heavy for per-character updates.
-        # Optimization: Only re-render if connection status changes or periodically?
-        # For now, re-render is safe for small contexts.
-        
-        # Determine text color again (stored or re-derived)
-        text_color = "#ffffff" if self.is_user else "#dce4ee"
-        self.render_content(new_text, text_color)
-
+        """Update the bubble text (for streaming)."""
+        self.label.configure(text=new_text)
