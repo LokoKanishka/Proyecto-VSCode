@@ -27,6 +27,32 @@ if [ ! -x "$CAPTURE" ]; then
 fi
 
 # Navega una vez al target
+
+# --- LUCY_PIN_LIVE_GUARD_YT: if caller passed the pinned WID and it's dead, auto-repin ---
+PIN_FILE_DEFAULT="$ROOT/diagnostics/pins/chrome_diego.wid"
+PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$PIN_FILE_DEFAULT}"
+ENSURE_LIVE="$ROOT/scripts/chrome_diego_pin_ensure_live.sh"
+
+_read_pin_wid() { awk -F= '/^WID_HEX=/{print $2}' "$PIN_FILE" 2>/dev/null | tail -n 1; }
+_is_live() { xprop -id "$1" _NET_WM_NAME >/dev/null 2>&1; }
+
+pin_wid="$(_read_pin_wid || true)"
+
+# Solo auto-repin si el WID muerto que nos pasaron ES el pin actual (evita tocar otras ventanas/WIDs externos)
+if [ -n "${WID_HEX:-}" ] && ! _is_live "$WID_HEX" && [ -n "${pin_wid:-}" ] && [ "$pin_wid" = "$WID_HEX" ]; then
+  if [ ! -x "$ENSURE_LIVE" ]; then
+    echo "ERROR_NO_PIN_ENSURE: $ENSURE_LIVE" >&2
+    exit 3
+  fi
+  echo "PIN_DEAD -> REPIN (yt_ensure)" >&2
+  CHROME_DIEGO_PIN_FILE="$PIN_FILE" "$ENSURE_LIVE" "https://chatgpt.com/" >/dev/null
+  WID_HEX="$(_read_pin_wid || true)"
+  if [ -z "${WID_HEX:-}" ] || ! _is_live "$WID_HEX"; then
+    echo "ERROR_REPIN_FAILED (yt_ensure)" >&2
+    exit 3
+  fi
+fi
+# --- /LUCY_PIN_LIVE_GUARD_YT ---
 WID_DEC=$((WID_HEX))
 wmctrl -ia "$WID_HEX" 2>/dev/null || true
 xdotool windowactivate --sync "$WID_DEC" 2>/dev/null || true
