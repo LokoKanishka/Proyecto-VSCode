@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# A29: recursion marker (do not call chrome_diego_pin_ensure_live from inside guard)
+export LUCY_GUARD_RUNNING="1"
 if [ -r "$ROOT/scripts/x11_env.sh" ]; then
   # shellcheck source=/dev/null
   . "$ROOT/scripts/x11_env.sh"

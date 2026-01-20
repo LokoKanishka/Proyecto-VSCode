@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+
+# --- LUCY_RECURSION_BREAKER: prevent guard<->ensure recursion (fail fast) ---
+if [ "${LUCY_GUARD_RUNNING:-0}" = "1" ]; then
+  echo "ERROR_RECURSION: ensure_live called from inside guard" >&2
+  exit 3
+fi
+# --- /LUCY_RECURSION_BREAKER ---
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -r "$ROOT/scripts/x11_env.sh" ]; then
   # shellcheck source=/dev/null
