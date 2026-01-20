@@ -1,18 +1,10 @@
 #!/bin/bash
-echo "🔋 Iniciando Protocolo Lucy (v1.0-STABLE)..."
-
-# 1. Revivir Audio si está muerto
-if ! pactl info > /dev/null 2>&1; then
-    echo "🔊 Reiniciando PulseAudio..."
-    pulseaudio --start
-else
-    echo "✅ Audio OK"
-fi
-
-# 2. Configurar Entorno
 export PYTHONPATH=/home/xdie/Proyecto-VSCode
-source .venv/bin/activate
-
-# 3. Lanzar App
-echo "🚀 Ejecutando..."
-python3 src/gui/main.py
+echo "🚀 Verificando sintaxis..."
+if .venv/bin/python3 -m py_compile src/engine/voice_bridge.py; then
+    echo "✅ Código Válido. Ejecutando..."
+    .venv/bin/python3 src/gui/main.py
+else
+    echo "❌ ERROR FATAL DE SINTAXIS. Revisa el copiado/pegado."
+    read -p "Presiona Enter para salir..."
+fi
