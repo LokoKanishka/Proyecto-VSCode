@@ -42,7 +42,7 @@ _need xdotool
 
 echo "== STEP 1: GUARD DIEGO CLIENT (EMAIL) ==" | tee "$OUT/step.log"
 set +e
-guard_out="$(CHROME_PROFILE_NAME="$PROFILE_NAME" CHROME_DIEGO_EMAIL="$DIEGO_EMAIL" "$GUARD" "https://www.google.com/" 2>&1)"
+guard_out="$(CHROME_PROFILE_NAME="$PROFILE_NAME" CHROME_DIEGO_EMAIL="$DIEGO_EMAIL" "$GUARD" "https://chatgpt.com/" 2>&1)"
 guard_rc=$?
 set -e
 printf '%s\n' "$guard_out" >"$OUT/guard.txt"
