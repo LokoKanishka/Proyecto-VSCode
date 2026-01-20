@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,16 +10,19 @@ if [ -r "$ROOT/scripts/x11_env.sh" ]; then
   . "$ROOT/scripts/x11_env.sh"
 fi
 
+# A34 - Diego Chrome Guard Client (PASSIVE BEACON STRATEGY)
+# Safety: do not send input to any window until it is identified by beacon token.
 
-START_URL="${1:-https://www.google.com/}"
-MAX_SECONDS="${CHROME_GUARD_MAX_SECONDS:-12}"
+TARGET_URL="${1:-https://www.google.com/}"
+MAX_SECONDS="${CHROME_GUARD_MAX_SECONDS:-20}"
+TARGET_MAX_SECONDS="${CHROME_GUARD_TARGET_MAX_SECONDS:-$MAX_SECONDS}"
 
-PROFILE_NAME="${CHROME_PROFILE_NAME:-diego}"
-EXPECT_EMAIL="${CHROME_DIEGO_EMAIL:-chatjepetex2025@gmail.com}"
-PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
+REQUIRED_PROFILE_DIR="Profile 1"
+REQUIRED_EMAIL="chatjepetex2025@gmail.com"
 
-RESOLVER="$ROOT/scripts/chrome_profile_dir_by_name.sh"
-CAP="$ROOT/scripts/chrome_capture_active_tab.sh"
+need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR_MISSING_TOOL: $1" >&2; exit 3; }; }
+need wmctrl
+need xdotool
 
 CHROME_BIN="${CHROME_BIN:-/opt/google/chrome/chrome}"
 if [ ! -x "$CHROME_BIN" ]; then
@@ -29,100 +32,147 @@ if [ -z "${CHROME_BIN:-}" ]; then
   echo "ERROR_NO_CHROME_BIN" >&2
   exit 3
 fi
+
+PROFILE_NAME="${CHROME_PROFILE_NAME:-diego}"
+profile_norm="${PROFILE_NAME,,}"
+if [ "$profile_norm" != "diego" ]; then
+  echo "ERROR_BAD_PROFILE_NAME expected=diego got=$PROFILE_NAME" >&2
+  exit 3
+fi
+
+EXPECT_EMAIL="${CHROME_DIEGO_EMAIL:-$REQUIRED_EMAIL}"
+if [ "$EXPECT_EMAIL" != "$REQUIRED_EMAIL" ]; then
+  echo "ERROR_BAD_EXPECT_EMAIL expected=$REQUIRED_EMAIL got=$EXPECT_EMAIL" >&2
+  exit 3
+fi
+
+PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
+LOG="/tmp/lucy_chrome_guard_diego.log"
+CAP="$ROOT/scripts/chrome_capture_active_tab.sh"
+if [ ! -x "$CAP" ]; then
+  CAP="$ROOT/scripts/chrome_capture_url_omnibox.sh"
+fi
 if [ ! -x "$CAP" ]; then
   echo "ERROR_NO_CAP_TOOL: $CAP" >&2
   exit 3
 fi
 
-PROFILE_DIR=""
-if [ -x "$RESOLVER" ]; then
-  out="$($RESOLVER "$PROFILE_NAME" 2>/dev/null || true)"
-  PROFILE_DIR="$(printf '%s\n' "$out" | awk -F= '/^PROFILE_DIR=/{print $2}' | tail -n 1)"
-fi
-if [ -z "${PROFILE_DIR:-}" ]; then
-  # fallback razonable si el resolver no está/rompe
-  PROFILE_DIR="Profile 1"
-fi
+TOKEN="LUCY_BEACON_$(date +%s)_$$"
+BEACON_URL="https://www.google.com/search?q=${TOKEN}"
 
-TOKEN="$(date +%s)_$$"
-if [[ "$START_URL" == *"?"* ]]; then
-  GUARD_URL="${START_URL}&lucy_guard=${TOKEN}"
-else
-  GUARD_URL="${START_URL}?lucy_guard=${TOKEN}"
-fi
-
-LOG="/tmp/lucy_chrome_guard_diego.log"
 OUTROOT="/tmp/lucy_guard_scan/${TOKEN}"
-mkdir -p "$OUTROOT/all"
+mkdir -p "$OUTROOT/target"
+mkdir -p "$(dirname "$PIN_FILE")"
+: >"$LOG"
 
-# Siempre pedimos ventana nueva (aunque Chrome use sesión existente del mismo perfil)
-"$CHROME_BIN" --profile-directory="$PROFILE_DIR" --new-window "$GUARD_URL" >>"$LOG" 2>&1 || true
+log() { echo "[$(date '+%H:%M:%S')] $1" >> "$LOG"; }
 
-deadline=$(( $(date +%s) + MAX_SECONDS ))
+if ! printf '%s' "$TARGET_URL" | grep -Eq '^https?://'; then
+  echo "ERROR_BAD_TARGET_URL: <$TARGET_URL>" >&2
+  exit 2
+fi
+
+navigate_url() {
+  local wid_hex="$1"
+  local url="$2"
+  local wid_dec=$((wid_hex))
+
+  log "Action: Navigating Verified WID=$wid_hex"
+
+  wmctrl -ia "$wid_hex" 2>/dev/null || true
+  xdotool windowactivate --sync "$wid_dec" 2>/dev/null || true
+  sleep 0.2
+  xdotool key --window "$wid_dec" --clearmodifiers Escape 2>/dev/null || true
+  sleep 0.1
+  xdotool key --window "$wid_dec" --clearmodifiers ctrl+l 2>/dev/null || true
+  sleep 0.1
+  xdotool type --window "$wid_dec" --clearmodifiers --delay 2 "$url" 2>/dev/null || true
+  xdotool key --window "$wid_dec" --clearmodifiers Return 2>/dev/null || true
+  sleep 0.5
+}
+
 found_wid=""
-found_url=""
-found_title=""
 
-while [ "$(date +%s)" -lt "$deadline" ]; do
-  # listar ventanas Chrome
-  mapfile -t wids < <(wmctrl -lx 2>/dev/null | awk '$3 ~ /google-chrome/ {print $1}' | awk 'NF' || true)
-
-  for wid in "${wids[@]}"; do
-    d="$OUTROOT/all/$wid"
-    mkdir -p "$d"
-
-    set +e
-    "$CAP" "$wid" "$d" >/dev/null 2>&1
-    rc=$?
-    set -e
-    [ "$rc" -eq 0 ] || continue
-
-    url=""
-    if [ -r "$d/url.txt" ]; then
-      url="$(head -n 1 "$d/url.txt" | sed 's/^<<<//;s/>>>$//')"
+# Try to reuse pin if still alive (passive check only).
+if [ -s "$PIN_FILE" ]; then
+  pin_wid="$(awk -F= '/^WID_HEX=/{print $2}' "$PIN_FILE" | tail -n 1)"
+  if [ -n "${pin_wid:-}" ]; then
+    if wmctrl -l | awk '{print $1}' | grep -qx "$pin_wid"; then
+      log "Strategy: Reusing live PIN WID=$pin_wid"
+      found_wid="$pin_wid"
+    else
+      log "PIN stale: WID not found"
     fi
-    title=""
-    if [ -r "$d/title.txt" ]; then
-      title="$(head -n 1 "$d/title.txt")"
-    fi
+  fi
+fi
 
-    if printf '%s' "$url" | grep -q "lucy_guard=${TOKEN}"; then
-      found_wid="$wid"
-      found_url="$url"
-      found_title="$title"
+if [ -z "$found_wid" ]; then
+  log "Strategy: Launching BEACON ($TOKEN)"
+
+  "$CHROME_BIN" \
+    --profile-directory="$REQUIRED_PROFILE_DIR" \
+    --new-window \
+    "$BEACON_URL" >>"$LOG" 2>&1 &
+
+  log "Scan: Waiting for window title containing '$TOKEN'..."
+  scan_deadline=$(( $(date +%s) + 10 ))
+  while [ "$(date +%s)" -lt "$scan_deadline" ]; do
+    match_line="$(wmctrl -l | grep "$TOKEN" | head -n 1 || true)"
+    if [ -n "$match_line" ]; then
+      found_wid="$(printf '%s\n' "$match_line" | awk '{print $1}')"
+      log "MATCH: Found Beacon in WID=$found_wid"
       break
     fi
+    sleep 0.5
   done
+fi
 
-  if [ -n "${found_wid:-}" ]; then
-    break
-  fi
-  sleep 0.25
-done
-
-if [ -z "${found_wid:-}" ]; then
-  echo "ERROR_GUARD_FAILED profile=$PROFILE_NAME email=$EXPECT_EMAIL (no_token_seen)" >&2
-  echo "SEE_LOG=$LOG" >&2
-  echo "SEE_SCAN=$OUTROOT" >&2
-  echo "URLS_CAPTURED(head):" >&2
-  (find "$OUTROOT/all" -maxdepth 2 -name url.txt -print -exec sh -lc 'head -n 1 "$1" 2>/dev/null || true' _ {} \; | head -n 40) >&2 || true
+if [ -z "$found_wid" ]; then
+  echo "ERROR_GUARD_FAILED: No window appeared with token '$TOKEN' in title." >&2
   exit 3
 fi
 
-mkdir -p "$(dirname "$PIN_FILE")"
-ts="$(date +%F_%H%M%S)"
+navigate_url "$found_wid" "$TARGET_URL"
+
+final_url=""
+final_title=""
+deadline=$(( $(date +%s) + TARGET_MAX_SECONDS ))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  iter="$OUTROOT/target/$(date +%Y%m%d_%H%M%S)_$$"
+  mkdir -p "$iter"
+
+  "$CAP" "$found_wid" "$iter" >/dev/null 2>&1 || true
+
+  if [ -r "$iter/url.txt" ]; then
+    u="$(head -n 1 "$iter/url.txt" | sed 's/^<<<//;s/>>>$//')"
+    t="$(head -n 1 "$iter/title.txt" 2>/dev/null || true)"
+    check_stub="${TARGET_URL:0:15}"
+    if [[ "$u" == "$check_stub"* ]]; then
+      final_url="$u"
+      final_title="$t"
+      break
+    fi
+  fi
+  sleep 0.5
+done
+
+if [[ "$found_wid" != 0x* ]]; then
+  found_wid=$(printf "0x%x" $((found_wid)))
+fi
+
 {
   echo "WID_HEX=$found_wid"
-  echo "EMAIL=$EXPECT_EMAIL"
-  echo "PROFILE_DIR=$PROFILE_DIR"
-  printf 'TITLE="%s"\n' "$(printf '%s' "$found_title" | sed 's/"/\\"/g')"
-  echo "TS=$ts"
-} >"$PIN_FILE"
+  echo "EMAIL=$REQUIRED_EMAIL"
+  echo "PROFILE_DIR=$REQUIRED_PROFILE_DIR"
+  printf 'TITLE="%s"\n' "$(printf '%s' "$final_title" | sed 's/"/\\"/g')"
+  echo "TS=$(date +%Y-%m-%d_%H%M%S)"
+} > "$PIN_FILE"
 
 echo "OK_GUARD_DIEGO_CLIENT"
 echo "WID_HEX=$found_wid"
-echo "EMAIL=$EXPECT_EMAIL"
-echo "PROFILE_DIR=$PROFILE_DIR"
+echo "EMAIL=$REQUIRED_EMAIL"
+echo "PROFILE_DIR=$REQUIRED_PROFILE_DIR"
 echo "PIN_FILE=$PIN_FILE"
 echo "SCAN_DIR=$OUTROOT"
-echo "URL=$found_url"
+echo "URL=${final_url:-}"
+exit 0
