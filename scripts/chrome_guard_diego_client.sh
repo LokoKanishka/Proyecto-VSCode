@@ -7,6 +7,7 @@ if [ -r "$ROOT/scripts/x11_env.sh" ]; then
   . "$ROOT/scripts/x11_env.sh"
 fi
 
+
 START_URL="${1:-https://www.google.com/}"
 MAX_SECONDS="${CHROME_GUARD_MAX_SECONDS:-12}"
 

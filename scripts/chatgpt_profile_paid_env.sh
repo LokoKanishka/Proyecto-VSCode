@@ -3,6 +3,17 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# --- LUCY_PIN_LIVE_GUARD_ENTRY: ensure diego pin points to a live WID (avoid BadWindow) ---
+PIN_FILE_DEFAULT="$ROOT/diagnostics/pins/chrome_diego.wid"
+PIN_FILE="${CHROME_DIEGO_PIN_FILE:-$PIN_FILE_DEFAULT}"
+ENSURE_LIVE="$ROOT/scripts/chrome_diego_pin_ensure_live.sh"
+if [ ! -x "$ENSURE_LIVE" ]; then
+  echo "ERROR_NO_PIN_ENSURE: $ENSURE_LIVE" >&2
+  exit 3
+fi
+CHROME_DIEGO_PIN_FILE="$PIN_FILE" "$ENSURE_LIVE" "https://chatgpt.com/" >/dev/null
+# --- /LUCY_PIN_LIVE_GUARD_ENTRY ---
+
 export CHATGPT_TARGET="${CHATGPT_TARGET:-paid}"
 export CHATGPT_PROFILE_NAME="${CHATGPT_PROFILE_NAME:-diego}"
 export CHATGPT_WID_PIN_FILE="${CHATGPT_WID_PIN_FILE:-$ROOT/diagnostics/pins/chrome_diego.wid}"
