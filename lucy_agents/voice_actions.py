@@ -27,9 +27,9 @@ from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
 
 from lucy_agents.action_router import run_action
 from lucy_agents.desktop_bridge import run_desktop_command
-from lucy_web_agent import YouTubeURLResolutionError, find_youtube_video_url
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+YOUTUBE_CONTROLLER = PROJECT_ROOT / "scripts" / "lucy_youtube_controller.py"
 
 
 def _env_bool(name: str, default: bool = True) -> bool:
@@ -116,6 +116,63 @@ def _searxng_spoken_summary(query: str, top: int = 3) -> str | None:
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+
+def _run_youtube_action(command: str, payload: str) -> dict | None:
+    """Execute YouTube actions via the A36 controller CLI."""
+    script = str(YOUTUBE_CONTROLLER)
+    if not Path(script).exists():
+        print(f"[LucyVoiceActions] ERROR_NO_YT_CONTROLLER {script}", file=sys.stderr, flush=True)
+        return None
+
+    cmd = [sys.executable, script, command]
+    if command == "search":
+        cmd.append(payload)
+    elif command == "play":
+        if "youtube.com" in payload or "youtu.be" in payload:
+            cmd.extend(["--url", payload])
+        else:
+            cmd.extend(["--id", payload])
+
+    try:
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        print("[LucyVoiceActions] YouTube controller timeout", file=sys.stderr, flush=True)
+        return None
+
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        msg = stderr if stderr else f"rc={proc.returncode}"
+        print(f"[LucyVoiceActions] YouTube controller failed: {msg}", file=sys.stderr, flush=True)
+        return None
+
+    out = (proc.stdout or "").strip()
+    if not out:
+        return None
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        print("[LucyVoiceActions] YouTube controller returned invalid JSON", file=sys.stderr, flush=True)
+        return None
+
+
+def _youtube_action_from_command(command: str) -> tuple[str, str] | None:
+    """Translate a desktop xdg-open YouTube command into controller action."""
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    if not argv or argv[0] != "xdg-open" or len(argv) < 2:
+        return None
+    url = argv[1]
+    if "youtube.com" not in url and "youtu.be" not in url:
+        return None
+    marker = "https://www.youtube.com/results?search_query="
+    if marker in url:
+        raw = url.split("search_query=", 1)[1].split("&", 1)[0]
+        query = unquote_plus(raw).strip()
+        return ("search", query) if query else None
+    return ("play", url)
 
 
 def _extract_chatgpt_answer(raw: str) -> str | None:
@@ -947,6 +1004,8 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
         return False
 
     wants_play = _wants_playback(text)
+    yt_last_results: dict | None = None
+    yt_last_query: str | None = None
 
     print("[LucyVoiceActions] plan de escritorio:", flush=True)
     for i, act in enumerate(plan, start=1):
@@ -958,9 +1017,34 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     # Ejecutar en orden
     for act in plan:
         if act.tool == "desktop":
-            rc = run_desktop_command(act.command)
+            yt_action = _youtube_action_from_command(act.command)
+            if yt_action:
+                yt_cmd, yt_payload = yt_action
+                result = _run_youtube_action(yt_cmd, yt_payload)
+                rc = 0 if result else 3
+                if yt_cmd == "search":
+                    yt_last_query = yt_payload
+                    yt_last_results = result
+                print(
+                    f"[LucyVoiceActions] Resultado (youtube) {yt_cmd!r} {yt_payload!r}: {rc}",
+                    flush=True,
+                )
+            else:
+                rc = run_desktop_command(act.command)
+                print(
+                    f"[LucyVoiceActions] Resultado ({act.tool}) {act.command!r}: {rc}",
+                    flush=True,
+                )
+        elif act.tool in {"youtube", "web_agent"}:
+            yt_cmd = "play" if act.command == "play" else "search"
+            yt_payload = (act.description or "").strip() or (act.command or "").strip()
+            result = _run_youtube_action(yt_cmd, yt_payload)
+            rc = 0 if result else 3
+            if yt_cmd == "search":
+                yt_last_query = yt_payload
+                yt_last_results = result
             print(
-                f"[LucyVoiceActions] Resultado ({act.tool}) {act.command!r}: {rc}",
+                f"[LucyVoiceActions] Resultado (youtube) {yt_cmd!r} {yt_payload!r}: {rc}",
                 flush=True,
             )
         else:
@@ -988,26 +1072,28 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
             f"[LucyVoiceActions] Playback intent detected for YouTube; query={search_query!r}",
             flush=True,
         )
-        try:
-            video_url = find_youtube_video_url(search_query, channel_hint=None, strategy="latest")
-        except YouTubeURLResolutionError as exc:
-            print(
-                f"[LucyVoiceActions] YouTube URL resolution failed: {exc}",
-                flush=True,
-            )
+        result = yt_last_results or _run_youtube_action("search", search_query)
+        results_list = []
+        if isinstance(result, dict):
+            results_list = result.get("results") or []
+        if not results_list:
             spoken = (
-                "No pude encontrar una URL válida de YouTube para reproducir en este momento."
+                "No pude leer resultados de YouTube para reproducir en este momento."
             )
             return True, spoken
 
-        print(
-            f"[LucyVoiceActions] Web agent selected YouTube video URL: {video_url}",
-            flush=True,
-        )
-        cmd = f"xdg-open {video_url}"
-        rc = run_desktop_command(cmd)
-        print(f"[LucyVoiceActions] Resultado (desktop) {cmd!r}: {rc}", flush=True)
-        spoken = "Te abrí la búsqueda y además un video en YouTube. Debería estar reproduciéndose en otra pestaña."
+        first = results_list[0] or {}
+        video_id = (first.get("id") or "").strip()
+        if not video_id:
+            spoken = "No pude identificar un video válido para reproducir."
+            return True, spoken
+
+        play_result = _run_youtube_action("play", video_id)
+        if not play_result:
+            spoken = "Falló el intento de reproducción en YouTube."
+            return True, spoken
+
+        spoken = "Te abrí la búsqueda y además el primer video en YouTube."
         return True, spoken
 
     return True
