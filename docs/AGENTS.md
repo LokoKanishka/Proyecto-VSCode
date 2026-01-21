@@ -12,6 +12,7 @@
 - **Desktop Automation**: Open applications, browse files, control windows
 - **Web Search**: Query the internet via local SearXNG instance with DuckDuckGo fallback
 - **YouTube Integration**: Find and play videos directly from voice commands
+- **Spotify Control**: Control native Spotify app via MPRIS/playerctl
 - **Conversation Memory**: Maintains chat history for contextual responses
 - **Multi-step Commands**: Handle complex instructions (e.g., "open Firefox and search for cats")
 

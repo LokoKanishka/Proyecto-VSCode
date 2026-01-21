@@ -30,6 +30,7 @@ from lucy_agents.desktop_bridge import run_desktop_command
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 YOUTUBE_CONTROLLER = PROJECT_ROOT / "scripts" / "lucy_youtube_controller.py"
+SPOTIFY_CONTROLLER = PROJECT_ROOT / "scripts" / "lucy_spotify_controller.sh"
 
 
 def _env_bool(name: str, default: bool = True) -> bool:
@@ -156,6 +157,32 @@ def _run_youtube_action(command: str, payload: str) -> dict | None:
         return None
 
 
+def _run_spotify_action(command: str, payload: str = "") -> bool:
+    """Execute Spotify actions via the local controller script."""
+    script = str(SPOTIFY_CONTROLLER)
+    if not Path(script).exists():
+        print(f"[LucyVoiceActions] ERROR_NO_SPOTIFY_CONTROLLER {script}", file=sys.stderr, flush=True)
+        return False
+
+    cmd = [script, command]
+    if payload:
+        cmd.append(payload)
+
+    try:
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=15)
+    except subprocess.TimeoutExpired:
+        print("[LucyVoiceActions] Spotify controller timeout", file=sys.stderr, flush=True)
+        return False
+
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        msg = stderr if stderr else f"rc={proc.returncode}"
+        print(f"[LucyVoiceActions] Spotify controller failed: {msg}", file=sys.stderr, flush=True)
+        return False
+
+    return True
+
+
 def _youtube_action_from_command(command: str) -> tuple[str, str] | None:
     """Translate a desktop xdg-open YouTube command into controller action."""
     try:
@@ -173,6 +200,35 @@ def _youtube_action_from_command(command: str) -> tuple[str, str] | None:
         query = unquote_plus(raw).strip()
         return ("search", query) if query else None
     return ("play", url)
+
+
+def _spotify_action_from_command(command: str) -> tuple[str, str] | None:
+    """Translate a desktop xdg-open Spotify command into controller action."""
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    if not argv or argv[0] != "xdg-open" or len(argv) < 2:
+        return None
+    url = argv[1]
+
+    if url.startswith("spotify:"):
+        if url.startswith("spotify:search:"):
+            raw = url.split("spotify:search:", 1)[1]
+            query = unquote_plus(raw).strip()
+            return ("search", query) if query else None
+        return ("play_uri", url)
+
+    parsed = urlparse(url)
+    if "open.spotify.com" not in (parsed.netloc or ""):
+        return None
+
+    if parsed.path.startswith("/search/"):
+        raw = parsed.path.split("/search/", 1)[1].strip("/")
+        query = unquote_plus(raw).strip()
+        return ("search", query) if query else None
+
+    return ("play_uri", url)
 
 
 def _extract_chatgpt_answer(raw: str) -> str | None:
@@ -211,13 +267,13 @@ def _ask_chatgpt_ui(question: str) -> tuple[bool, str]:
 
 @dataclass
 class PlannedAction:
-    tool: str  # por ahora siempre "desktop"
+    tool: str  # "desktop" | "youtube" | "spotify" | "web_agent"
     command: str  # comando para el Desktop Agent
     description: str  # para logs humanos (opcional)
 
 
 # Motor recordado para búsquedas posteriores ("ahora busca X")
-LAST_SEARCH_ENGINE: Optional[str] = None  # "google" | "youtube" | "searxng" | None
+LAST_SEARCH_ENGINE: Optional[str] = None  # "google" | "youtube" | "spotify" | "searxng" | None
 
 
 def _normalize(text: str) -> str:
@@ -504,6 +560,8 @@ def _extract_query_for_engine(t: str, engine: str) -> str:
         engine_pat = r"(?:google)"
     elif engine == "youtube":
         engine_pat = r"(?:youtube|you\s*tube)"
+    elif engine == "spotify":
+        engine_pat = r"(?:spotify)"
     else:
         return ""
 
@@ -544,6 +602,24 @@ def _extract_google_query(t: str) -> str:
     """
     m = re.search(
         r"(?:busc[aá](?:r)?|busqu(?:e|es|en))(?:me|melo|mela|nos|lo|la)?\s+(.+?)(?:\s+(?:en|por)\s+google\b|$)",
+        t,
+    )
+    if not m:
+        return ""
+    q = _clean_query(m.group(1))
+    q = _postprocess_extracted_query(t, q)
+    return q
+
+
+def _extract_spotify_play_query(t: str) -> str:
+    """
+    Extrae una query para Spotify desde verbos de reproduccion:
+    - "pone X en spotify"
+    - "reproduci X en spotify"
+    - "escucha X en spotify"
+    """
+    m = re.search(
+        r"(?:pon[eé]|pone|poner|reproduc(?:i|í|ir|ime|irme)|escuch[aá])\s+(.+?)\s+(?:en\s+)?spotify\b",
         t,
     )
     if not m:
@@ -720,6 +796,7 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
     has_search = _has_search_verb(t)
     has_google = "google" in t
     has_youtube = "youtube" in t
+    has_spotify = "spotify" in t
     has_web = _has_web_hint(t)
 
     # ---------- 2.1 Google ----------
@@ -773,10 +850,67 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
         )
         LAST_SEARCH_ENGINE = "youtube"
 
-    # ---------- 2.2.5 Web (SearXNG local) ----------
+    # ---------- 2.2.5 Spotify ----------
+
+    spotify_query = ""
+    if has_spotify and (has_search or "pon" in t or "reproduc" in t or "escuch" in t):
+        spotify_query = _extract_query_for_engine(t, "spotify") or _extract_spotify_play_query(t)
+
+    if spotify_query:
+        actions.append(
+            PlannedAction(
+                tool="spotify",
+                command="search",
+                description=spotify_query,
+            )
+        )
+        LAST_SEARCH_ENGINE = "spotify"
+    elif has_spotify and _has_open_verb(t):
+        actions.append(
+            PlannedAction(
+                tool="spotify",
+                command="open",
+                description="Abrir Spotify",
+            )
+        )
+        LAST_SEARCH_ENGINE = "spotify"
+    elif has_spotify and any(w in t for w in ("paus", "pause", "deten", "stop")):
+        actions.append(
+            PlannedAction(
+                tool="spotify",
+                command="pause",
+                description="Pausar Spotify",
+            )
+        )
+    elif has_spotify and any(w in t for w in ("siguiente", "next")):
+        actions.append(
+            PlannedAction(
+                tool="spotify",
+                command="next",
+                description="Siguiente en Spotify",
+            )
+        )
+    elif has_spotify and any(w in t for w in ("anterior", "prev", "previo")):
+        actions.append(
+            PlannedAction(
+                tool="spotify",
+                command="prev",
+                description="Anterior en Spotify",
+            )
+        )
+    elif has_spotify and any(w in t for w in ("play", "reproduc", "pon")):
+        actions.append(
+            PlannedAction(
+                tool="spotify",
+                command="play",
+                description="Reproducir Spotify",
+            )
+        )
+
+    # ---------- 2.3 Web (SearXNG local) ----------
 
     searx_query = ""
-    if has_search and not has_google and not has_youtube:
+    if has_search and not has_google and not has_youtube and not has_spotify:
         # Si explícitamente dice web/red/internet, forzamos SearXNG aunque haya motor recordado.
         if has_web or not LAST_SEARCH_ENGINE:
             searx_query = _extract_web_query(t) or _extract_query_after_buscar(t)
@@ -798,27 +932,36 @@ def _plan_from_text(text: str) -> List[PlannedAction]:
 
     # ---------- 2.3 Buscar usando el último motor recordado ----------
 
-    if has_search and not has_google and not has_youtube and LAST_SEARCH_ENGINE:
+    if has_search and not has_google and not has_youtube and not has_spotify and LAST_SEARCH_ENGINE:
         query = _extract_query_after_buscar(t)
         if query:
-            encoded = _encode_query(query)
-            if LAST_SEARCH_ENGINE == "google":
-                url = _build_google_search_url(query)
-                desc = f"Buscar en Google (motor recordado): '{query}'"
-            elif LAST_SEARCH_ENGINE == "searxng":
-                url = _build_searxng_search_url(query)
-                desc = f"Buscar en la web (SearXNG, motor recordado): '{query}'"
-            else:  # youtube
-                url = f"https://www.youtube.com/results?search_query={encoded}"
-                desc = f"Buscar en YouTube (motor recordado): '{query}'"
-
-            actions.append(
-                PlannedAction(
-                    tool="desktop",
-                    command=f"xdg-open {url}",
-                    description=desc,
+            if LAST_SEARCH_ENGINE == "spotify":
+                actions.append(
+                    PlannedAction(
+                        tool="spotify",
+                        command="search",
+                        description=query,
+                    )
                 )
-            )
+            else:
+                encoded = _encode_query(query)
+                if LAST_SEARCH_ENGINE == "google":
+                    url = _build_google_search_url(query)
+                    desc = f"Buscar en Google (motor recordado): '{query}'"
+                elif LAST_SEARCH_ENGINE == "searxng":
+                    url = _build_searxng_search_url(query)
+                    desc = f"Buscar en la web (SearXNG, motor recordado): '{query}'"
+                else:  # youtube
+                    url = f"https://www.youtube.com/results?search_query={encoded}"
+                    desc = f"Buscar en YouTube (motor recordado): '{query}'"
+
+                actions.append(
+                    PlannedAction(
+                        tool="desktop",
+                        command=f"xdg-open {url}",
+                        description=desc,
+                    )
+                )
 
     # ---------- 2.4 Abrir proyecto de Lucy en VS Code ----------
 
@@ -956,7 +1099,7 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     - Ejecuta todas las acciones en orden.
     - Devuelve True si hubo al menos una acción, False si no hubo ninguna.
 
-    IMPORTANTE: Solo se ocupa de tool "desktop".
+    IMPORTANTE: Se ocupa de tool "desktop" y también de YouTube/Spotify si los detecta.
     """
     text = text or ""
     t = text.strip()
@@ -998,6 +1141,11 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
             "[LucyVoiceActions] Pedido simple de YouTube; se usa plan de escritorio (xdg-open).",
             flush=True,
         )
+    elif "spotify" in lowered:
+        print(
+            "[LucyVoiceActions] Pedido de Spotify detectado; se usa plan local.",
+            flush=True,
+        )
 
     plan = _plan_from_text(t)
     if not plan:
@@ -1030,11 +1178,21 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
                     flush=True,
                 )
             else:
-                rc = run_desktop_command(act.command)
-                print(
-                    f"[LucyVoiceActions] Resultado ({act.tool}) {act.command!r}: {rc}",
-                    flush=True,
-                )
+                sp_action = _spotify_action_from_command(act.command)
+                if sp_action:
+                    sp_cmd, sp_payload = sp_action
+                    ok = _run_spotify_action(sp_cmd, sp_payload)
+                    rc = 0 if ok else 3
+                    print(
+                        f"[LucyVoiceActions] Resultado (spotify) {sp_cmd!r} {sp_payload!r}: {rc}",
+                        flush=True,
+                    )
+                else:
+                    rc = run_desktop_command(act.command)
+                    print(
+                        f"[LucyVoiceActions] Resultado ({act.tool}) {act.command!r}: {rc}",
+                        flush=True,
+                    )
         elif act.tool in {"youtube", "web_agent"}:
             yt_cmd = "play" if act.command == "play" else "search"
             yt_payload = (act.description or "").strip() or (act.command or "").strip()
@@ -1045,6 +1203,17 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
                 yt_last_results = result
             print(
                 f"[LucyVoiceActions] Resultado (youtube) {yt_cmd!r} {yt_payload!r}: {rc}",
+                flush=True,
+            )
+        elif act.tool == "spotify":
+            sp_cmd = (act.command or "").strip() or "open"
+            sp_payload = (act.description or "").strip()
+            if sp_cmd not in {"search", "play_uri"}:
+                sp_payload = ""
+            ok = _run_spotify_action(sp_cmd, sp_payload)
+            rc = 0 if ok else 3
+            print(
+                f"[LucyVoiceActions] Resultado (spotify) {sp_cmd!r} {sp_payload!r}: {rc}",
                 flush=True,
             )
         else:

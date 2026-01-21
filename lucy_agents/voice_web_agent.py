@@ -66,7 +66,12 @@ SYSTEM_PROMPT = (
     "Respondés de forma clara, breve y precisa, sin tratar al usuario como niño. "
     "Herramienta YouTube: "
     "tool='youtube' command='search' description='termino de busqueda' para listar resultados; "
-    "tool='youtube' command='play' description='ID o URL' para reproducir un video."
+    "tool='youtube' command='play' description='ID o URL' para reproducir un video. "
+    "Herramienta Spotify: "
+    "tool='spotify' command='open' para abrir la app; "
+    "tool='spotify' command='play' o 'pause' para reproducir/pausar; "
+    "tool='spotify' command='next' o 'prev' para cambiar de tema; "
+    "tool='spotify' command='search' description='artista o cancion' para buscar."
 )
 
 
