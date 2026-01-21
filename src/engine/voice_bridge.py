@@ -6,30 +6,26 @@ import torch
 import wave
 import sys
 
-# --- CONFIGURACIÓN DE AUDIO ---
+# --- CONFIGURACIÓN ---
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 512 
 CHUNK_BYTES = CHUNK_SIZE * 2 
 
-# PARÁMETROS DE FLUIDEZ
+# PARÁMETROS DE INTERRUPCIÓN
 SPEECH_THRESHOLD = 0.5
 MIN_SPEECH_DURATION_MS = 250
-MAX_PAUSE_MS = 800          
+MAX_PAUSE_MS = 800
+INTERRUPTION_SENSITIVITY = 0.6 # Un poco más alto para evitar auto-interrupciones por eco leve
 
 class LucyVoiceBridge:
     def __init__(self):
         self.asr_model = None
         self.vad_model = None
         
-        # --- DETECCIÓN DE MIMIC3 ---
-        # Buscamos el ejecutable dentro del entorno virtual para evitar errores
+        # Detección de Mimic3
         self.mimic_path = os.path.join(os.path.dirname(sys.executable), "mimic3")
         if not os.path.exists(self.mimic_path):
-            # Fallback: intentar buscarlo en el sistema global
             self.mimic_path = "mimic3"
-            print("⚠️ Mimic3 no encontrado en venv, usando global.")
-        else:
-            print(f"✅ Motor de Voz encontrado: {self.mimic_path}")
         
         print("⬇️ [Engine] Cargando Sistemas...")
         try:
@@ -43,12 +39,18 @@ class LucyVoiceBridge:
                                                    onnx=False)
             self.get_speech_timestamps, _, _, _, _ = utils
             
-            print("✅ [Engine] SISTEMA HÍBRIDO LISTO.")
+            print("✅ [Engine] SISTEMA FULL-DUPLEX LISTO.")
         except Exception as e:
             print(f"❌ [Engine] Error Carga: {e}")
 
     def stop_listening(self):
         pass
+
+    def _get_arecord_cmd(self):
+        return [
+            "arecord", "-D", "default", "-f", "S16_LE", 
+            "-r", str(SAMPLE_RATE), "-c", "1", "-t", "raw", "-q"
+        ]
 
     def listen_continuous(self):
         if not self.asr_model or not self.vad_model: return None
@@ -56,22 +58,16 @@ class LucyVoiceBridge:
         try: self.vad_model.reset_states()
         except: pass
 
-        print(f"\n🟢 [VAD] ESCUCHANDO... (Vía arecord nativo)")
+        print(f"\n🟢 [VAD] ESCUCHANDO... (Esperando tu orden)")
         
         full_audio = []
         is_speaking = False
         silence_start_time = None
         speech_start_time = None
-        
         min_speech_s = MIN_SPEECH_DURATION_MS / 1000.0
         max_pause_s = MAX_PAUSE_MS / 1000.0
         
-        cmd = [
-            "arecord", "-D", "default", "-f", "S16_LE", 
-            "-r", str(SAMPLE_RATE), "-c", "1", "-t", "raw", "-q"
-        ]
-        
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        process = subprocess.Popen(self._get_arecord_cmd(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         
         try:
             while True:
@@ -82,11 +78,8 @@ class LucyVoiceBridge:
                 audio_float32 = audio_int16.astype(np.float32) / 32768.0
                 audio_tensor = torch.from_numpy(audio_float32)
 
-                try:
-                    speech_prob = self.vad_model(audio_tensor, SAMPLE_RATE).item()
-                except:
-                    self.vad_model.reset_states()
-                    speech_prob = 0.0
+                try: speech_prob = self.vad_model(audio_tensor, SAMPLE_RATE).item()
+                except: speech_prob = 0.0
 
                 current_time = time.time()
 
@@ -95,34 +88,25 @@ class LucyVoiceBridge:
                         is_speaking = True
                         speech_start_time = current_time
                         print("   🗣️ Voz detectada...", end="\r")
-                    
                     silence_start_time = None
                     full_audio.append(audio_float32)
-                
                 else:
                     if is_speaking:
-                        if silence_start_time is None:
-                            silence_start_time = current_time
-                        
+                        if silence_start_time is None: silence_start_time = current_time
                         full_audio.append(audio_float32) 
-                        
-                        silence_duration = current_time - silence_start_time
-                        if silence_duration > max_pause_s:
-                            total_speech_duration = current_time - speech_start_time - silence_duration
-                            if total_speech_duration < min_speech_s:
+                        if (current_time - silence_start_time) > max_pause_s:
+                            total = current_time - speech_start_time - (current_time - silence_start_time)
+                            if total < min_speech_s:
                                 is_speaking = False
                                 full_audio = []
                                 continue
-                            
-                            print(f"\n✅ Fin de frase ({total_speech_duration:.1f}s). Transcribiendo...")
+                            print(f"\n✅ Fin de frase ({total:.1f}s). Transcribiendo...")
                             break
-                            
         finally:
             process.terminate()
             process.wait()
 
         if not full_audio: return None
-
         audio_data = np.concatenate(full_audio)
         
         try:
@@ -131,40 +115,63 @@ class LucyVoiceBridge:
                 initial_prompt="Diálogo fluido."
             )
             text = " ".join([segment.text for segment in segments]).strip()
-            
             ignored = ["thank you", "subtitles", "you", "copyright"]
             if not text or text.lower() in ignored: return None
-            
             return text
-
-        except Exception as e:
-            print(f"❌ Error Whisper: {e}")
-            return None
+        except: return None
 
     def say(self, text):
         if not text: return
         wav = os.path.abspath("response.wav")
         
-        print(f"🔊 Generando audio...")
+        # 1. GENERAR AUDIO (Rápido)
+        # print(f"🔊 Generando...")
         try:
-            # USAMOS LA RUTA DETECTADA EN EL __INIT__
-            result = subprocess.run(
-                [self.mimic_path, "--voice", "es_ES/m-ailabs_low#karen_savage", text], 
-                stdout=open(wav, "wb"),
-                stderr=subprocess.PIPE
-            )
-            
-            if result.returncode != 0:
-                print(f"❌ Error Mimic3: {result.stderr.decode()}")
-                return
+            subprocess.run([self.mimic_path, "--voice", "es_ES/m-ailabs_low#karen_savage", text], 
+                           stdout=open(wav, "wb"), stderr=subprocess.PIPE)
+        except: return
 
-            if os.path.exists(wav) and os.path.getsize(wav) > 0:
-                print("▶️ Reproduciendo...")
-                subprocess.run(["aplay", "-q", wav])
-            else:
-                print("⚠️ Audio vacío.")
+        if not os.path.exists(wav): return
 
-        except Exception as e:
-            print(f"❌ Error Output: {e}")
+        # 2. REPRODUCIR CON CAPACIDAD DE INTERRUPCIÓN
+        print("▶️ Hablando... (Puedes interrumpirme)")
         
-        time.sleep(0.3) 
+        # Lanzamos el reproductor en SEGUNDO PLANO (Non-blocking)
+        player_process = subprocess.Popen(["aplay", "-q", wav])
+        
+        # Lanzamos el GRABADOR para detectar interrupciones
+        monitor_process = subprocess.Popen(self._get_arecord_cmd(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        
+        interrupted = False
+        
+        try:
+            # Mientras Lucy habla...
+            while player_process.poll() is None:
+                # Leemos el micrófono
+                raw_bytes = monitor_process.stdout.read(CHUNK_BYTES)
+                if not raw_bytes or len(raw_bytes) != CHUNK_BYTES: continue
+                
+                # Chequeamos si hay voz humana
+                audio_int16 = np.frombuffer(raw_bytes, dtype=np.int16)
+                audio_float32 = audio_int16.astype(np.float32) / 32768.0
+                audio_tensor = torch.from_numpy(audio_float32)
+                
+                try: prob = self.vad_model(audio_tensor, SAMPLE_RATE).item()
+                except: prob = 0.0
+                
+                # SI DETECTAMOS VOZ -> INTERRUPCIÓN
+                if prob > INTERRUPTION_SENSITIVITY:
+                    print("\n✋ INTERRUPCIÓN DETECTADA. Callando...")
+                    player_process.terminate() # Matar audio
+                    interrupted = True
+                    break
+        finally:
+            # Limpieza
+            if player_process.poll() is None: player_process.terminate()
+            monitor_process.terminate()
+            monitor_process.wait()
+        
+        if interrupted:
+            # Pequeña pausa para que el usuario termine de decir su palabra de interrupción
+            # y el bucle principal lo capture limpio.
+            time.sleep(0.1)
