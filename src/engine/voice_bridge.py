@@ -4,14 +4,14 @@ import os
 import time
 import torch
 import wave
+import sys
 
-# --- CONFIGURACIÓN HÍBRIDA (LINUX NATIVE + AI) ---
+# --- CONFIGURACIÓN DE AUDIO ---
 SAMPLE_RATE = 16000
-CHUNK_SIZE = 512  # Tamaño de bloque para Silero (512 muestras)
-# En bytes: 512 muestras * 2 bytes (16-bit) = 1024 bytes
+CHUNK_SIZE = 512 
 CHUNK_BYTES = CHUNK_SIZE * 2 
 
-# PARÁMETROS DE FLUIDEZ (Estilo Géminis)
+# PARÁMETROS DE FLUIDEZ
 SPEECH_THRESHOLD = 0.5
 MIN_SPEECH_DURATION_MS = 250
 MAX_PAUSE_MS = 800          
@@ -20,6 +20,16 @@ class LucyVoiceBridge:
     def __init__(self):
         self.asr_model = None
         self.vad_model = None
+        
+        # --- DETECCIÓN DE MIMIC3 ---
+        # Buscamos el ejecutable dentro del entorno virtual para evitar errores
+        self.mimic_path = os.path.join(os.path.dirname(sys.executable), "mimic3")
+        if not os.path.exists(self.mimic_path):
+            # Fallback: intentar buscarlo en el sistema global
+            self.mimic_path = "mimic3"
+            print("⚠️ Mimic3 no encontrado en venv, usando global.")
+        else:
+            print(f"✅ Motor de Voz encontrado: {self.mimic_path}")
         
         print("⬇️ [Engine] Cargando Sistemas...")
         try:
@@ -43,7 +53,6 @@ class LucyVoiceBridge:
     def listen_continuous(self):
         if not self.asr_model or not self.vad_model: return None
         
-        # Resetear memoria neuronal
         try: self.vad_model.reset_states()
         except: pass
 
@@ -57,37 +66,22 @@ class LucyVoiceBridge:
         min_speech_s = MIN_SPEECH_DURATION_MS / 1000.0
         max_pause_s = MAX_PAUSE_MS / 1000.0
         
-        # --- LA MAGIA: USAR ARECORD NATIVO ---
-        # Lanzamos el proceso de Linux en segundo plano y leemos su salida
         cmd = [
-            "arecord", 
-            "-D", "default", 
-            "-f", "S16_LE", 
-            "-r", str(SAMPLE_RATE), 
-            "-c", "1", 
-            "-t", "raw", 
-            "-q" # Quiet mode (sin texto en pantalla)
+            "arecord", "-D", "default", "-f", "S16_LE", 
+            "-r", str(SAMPLE_RATE), "-c", "1", "-t", "raw", "-q"
         ]
         
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         
         try:
             while True:
-                # Leemos exactamente 1024 bytes (512 samples) del tubo
                 raw_bytes = process.stdout.read(CHUNK_BYTES)
-                
-                if not raw_bytes or len(raw_bytes) != CHUNK_BYTES:
-                    continue
+                if not raw_bytes or len(raw_bytes) != CHUNK_BYTES: continue
 
-                # Convertir bytes a Numpy Float32 (Normalizado -1.0 a 1.0)
-                # Int16 va de -32768 a 32767
                 audio_int16 = np.frombuffer(raw_bytes, dtype=np.int16)
                 audio_float32 = audio_int16.astype(np.float32) / 32768.0
-                
-                # Convertir a Tensor para la IA
                 audio_tensor = torch.from_numpy(audio_float32)
 
-                # --- ANÁLISIS VAD ---
                 try:
                     speech_prob = self.vad_model(audio_tensor, SAMPLE_RATE).item()
                 except:
@@ -115,7 +109,6 @@ class LucyVoiceBridge:
                         silence_duration = current_time - silence_start_time
                         if silence_duration > max_pause_s:
                             total_speech_duration = current_time - speech_start_time - silence_duration
-                            
                             if total_speech_duration < min_speech_s:
                                 is_speaking = False
                                 full_audio = []
@@ -125,13 +118,11 @@ class LucyVoiceBridge:
                             break
                             
         finally:
-            # IMPORTANTE: Matar el proceso de arecord al terminar para no dejar zombies
             process.terminate()
             process.wait()
 
         if not full_audio: return None
 
-        # --- TRANSCRIPCIÓN ---
         audio_data = np.concatenate(full_audio)
         
         try:
@@ -142,9 +133,7 @@ class LucyVoiceBridge:
             text = " ".join([segment.text for segment in segments]).strip()
             
             ignored = ["thank you", "subtitles", "you", "copyright"]
-            if not text or text.lower() in ignored:
-                # print("   🗑️ (Silencio/Ruido ignorado)")
-                return None
+            if not text or text.lower() in ignored: return None
             
             return text
 
@@ -155,9 +144,27 @@ class LucyVoiceBridge:
     def say(self, text):
         if not text: return
         wav = os.path.abspath("response.wav")
+        
+        print(f"🔊 Generando audio...")
         try:
-            subprocess.run(["mimic3", "--voice", "es_ES/m-ailabs_low#karen_savage", text], stdout=open(wav, "wb"))
-            if os.path.exists(wav): 
-                subprocess.run(["paplay", wav])
-        except: pass
+            # USAMOS LA RUTA DETECTADA EN EL __INIT__
+            result = subprocess.run(
+                [self.mimic_path, "--voice", "es_ES/m-ailabs_low#karen_savage", text], 
+                stdout=open(wav, "wb"),
+                stderr=subprocess.PIPE
+            )
+            
+            if result.returncode != 0:
+                print(f"❌ Error Mimic3: {result.stderr.decode()}")
+                return
+
+            if os.path.exists(wav) and os.path.getsize(wav) > 0:
+                print("▶️ Reproduciendo...")
+                subprocess.run(["aplay", "-q", wav])
+            else:
+                print("⚠️ Audio vacío.")
+
+        except Exception as e:
+            print(f"❌ Error Output: {e}")
+        
         time.sleep(0.3) 
