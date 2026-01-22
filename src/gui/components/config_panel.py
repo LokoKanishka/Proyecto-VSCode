@@ -33,7 +33,7 @@ class ConfigPanel(ctk.CTkFrame):
         
         self.model_selector = ctk.CTkOptionMenu(
             self.content_frame, 
-            values=["tinyllama", "phi3", "llama3"],
+            values=["qwen2:1.5b", "phi3", "llama3", "tinyllama"],
             command=self.change_model,
             fg_color="#0a0a0a",
             button_color="#00ff41",
@@ -44,7 +44,7 @@ class ConfigPanel(ctk.CTkFrame):
             font=("Consolas", 12),
             corner_radius=2
         )
-        self.model_selector.set("tinyllama")
+        self.model_selector.set("qwen2:1.5b")
         self.model_selector.pack(pady=(5, 20), fill="x")
 
         ctk.CTkLabel(self.content_frame, text="> SYS_OVERRIDE:", font=("Consolas", 12), text_color="#00ff41").pack(anchor="w")

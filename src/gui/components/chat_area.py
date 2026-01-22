@@ -103,7 +103,7 @@ class ChatArea(ctk.CTkFrame):
             def on_voice_text(text):
                 self.master.after(0, lambda: self.display_message("USER", text))
                 self.master.after(0, lambda: self.process_ai_response_thread(text))
-            threading.Thread(target=self.voice_bridge.start_listening_loop, args=(on_voice_text,), daemon=True).start()
+            threading.Thread(target=self.voice_bridge.listen_once, args=(on_voice_text,), daemon=True).start()
         else:
             self.is_mic_active = False
             self.voice_bridge.stop_listening()

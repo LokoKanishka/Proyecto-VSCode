@@ -2,7 +2,7 @@ import requests
 import json
 
 class OllamaEngine:
-    def __init__(self, model="tinyllama", host="http://127.0.0.1:11434"):
+    def __init__(self, model="qwen2:1.5b", host="http://127.0.0.1:11434"):
         self.model = model
         self.host = host
         print(f"🧠 [Engine] Cerebro listo ({model}).")
@@ -31,11 +31,17 @@ class OllamaEngine:
         """
         url = f"{self.host}/api/chat"
         
-        # Inyectar instrucción de idioma si no está
-        if chat_history and chat_history[0]["role"] != "system":
-            chat_history.insert(0, {"role": "system", "content": "Eres Lucy, una asistente IA con estética Cyberpunk. Responde SIEMPRE en español, de forma breve y cortante."})
-        elif chat_history and "español" not in chat_history[0]["content"].lower():
-            chat_history[0]["content"] += " Responde siempre en español."
+        # INSTRUCCIÓN DE PERSONALIDAD (System Prompt)
+        system_msg = {
+            "role": "system", 
+            "content": "Eres Lucy, una asistente IA Cyberpunk. Respondes SIEMPRE en español. Tus respuestas son breves, útiles y con actitud. No traduzcas al inglés."
+        }
+
+        # Inyectar o reemplazar el system prompt
+        if not chat_history or chat_history[0]["role"] != "system":
+            chat_history.insert(0, system_msg)
+        else:
+            chat_history[0] = system_msg
 
         payload = {
             "model": self.model,
