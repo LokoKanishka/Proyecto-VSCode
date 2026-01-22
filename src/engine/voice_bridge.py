@@ -1,104 +1,177 @@
-import threading
 import subprocess
 import numpy as np
-import sounddevice as sd
 import os
 import time
+import torch
+import wave
+import sys
 
-# --- CONFIGURACIÓN ELÁSTICA ---
+# --- CONFIGURACIÓN ---
 SAMPLE_RATE = 16000
-DIGITAL_GAIN = 5.0
-SILENCE_THRESHOLD = 0.6
-SILENCE_TIMEOUT = 2.0  # Espera 2 segundos de silencio antes de cortar
-MAX_RECORD_TIME = 30   # Te deja hablar hasta 30 segundos
+CHUNK_SIZE = 512 
+CHUNK_BYTES = CHUNK_SIZE * 2 
+
+# PARÁMETROS DE INTERRUPCIÓN
+SPEECH_THRESHOLD = 0.5
+MIN_SPEECH_DURATION_MS = 250
+MAX_PAUSE_MS = 800
+INTERRUPTION_SENSITIVITY = 0.6 # Un poco más alto para evitar auto-interrupciones por eco leve
 
 class LucyVoiceBridge:
-    def __init__(self, audio_processor=None):
+    def __init__(self):
         self.asr_model = None
-        self.should_record = False
+        self.vad_model = None
+        
+        # Detección de Mimic3
+        self.mimic_path = os.path.join(os.path.dirname(sys.executable), "mimic3")
+        if not os.path.exists(self.mimic_path):
+            self.mimic_path = "mimic3"
+        
+        print("⬇️ [Engine] Cargando Sistemas...")
         try:
             from faster_whisper import WhisperModel
-            print("⬇️ [Engine] Cargando Whisper 'small'...")
             self.asr_model = WhisperModel("small", device="cpu", compute_type="int8")
-            print("✅ [Engine] OÍDO LISTO.")
+            
+            print("⬇️ [Engine] Cargando Silero VAD...")
+            self.vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
+                                                   model='silero_vad',
+                                                   force_reload=False,
+                                                   onnx=False)
+            self.get_speech_timestamps, _, _, _, _ = utils
+            
+            print("✅ [Engine] SISTEMA FULL-DUPLEX LISTO.")
         except Exception as e:
             print(f"❌ [Engine] Error Carga: {e}")
 
     def stop_listening(self):
-        self.should_record = False
+        pass
 
-    def listen_once(self, callback_text):
-        if not self.asr_model: return
-        self.should_record = True
-        print(f"🟢 [Mic] ESCUCHANDO... (Habla tranquilo)")
+    def _get_arecord_cmd(self):
+        return [
+            "arecord", "-D", "default", "-f", "S16_LE", 
+            "-r", str(SAMPLE_RATE), "-c", "1", "-t", "raw", "-q"
+        ]
+
+    def listen_continuous(self):
+        if not self.asr_model or not self.vad_model: return None
+        
+        try: self.vad_model.reset_states()
+        except: pass
+
+        print(f"\n🟢 [VAD] ESCUCHANDO... (Esperando tu orden)")
         
         full_audio = []
-        start_time = time.time()
-        last_sound_time = time.time()
+        is_speaking = False
+        silence_start_time = None
+        speech_start_time = None
+        min_speech_s = MIN_SPEECH_DURATION_MS / 1000.0
+        max_pause_s = MAX_PAUSE_MS / 1000.0
         
-        while self.should_record:
-            try:
-                chunk = sd.rec(int(0.2 * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype='float32')
-                sd.wait()
-            except: break
-            
-            chunk = chunk.flatten() * DIGITAL_GAIN
-            vol = np.linalg.norm(chunk) * 10
-            
-            # Si hay voz, reseteamos el reloj de silencio
-            if vol > SILENCE_THRESHOLD:
-                last_sound_time = time.time()
-                print(f"   🎤 Voz detectada ({vol:.1f})...", end="\r")
-            
-            full_audio.append(chunk)
-            
-            # Condición 1: Silencio prolongado
-            if time.time() - last_sound_time > SILENCE_TIMEOUT and len(full_audio) > 10:
-                print("\n✂️ Silencio detectado. Procesando...")
-                break
-                
-            # Condición 2: Tiempo máximo
-            if time.time() - start_time > MAX_RECORD_TIME:
-                print("\n⚠️ Tiempo límite.")
-                break
+        process = subprocess.Popen(self._get_arecord_cmd(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         
-        if not full_audio: return
-
-        audio_data = np.concatenate(full_audio)
-        if np.max(np.abs(audio_data)) < 0.1: return
-
-        max_val = np.max(np.abs(audio_data))
-        if max_val > 0: audio_data = audio_data / max_val
-
         try:
-            # Transcribir
+            while True:
+                raw_bytes = process.stdout.read(CHUNK_BYTES)
+                if not raw_bytes or len(raw_bytes) != CHUNK_BYTES: continue
+
+                audio_int16 = np.frombuffer(raw_bytes, dtype=np.int16)
+                audio_float32 = audio_int16.astype(np.float32) / 32768.0
+                audio_tensor = torch.from_numpy(audio_float32)
+
+                try: speech_prob = self.vad_model(audio_tensor, SAMPLE_RATE).item()
+                except: speech_prob = 0.0
+
+                current_time = time.time()
+
+                if speech_prob > SPEECH_THRESHOLD:
+                    if not is_speaking:
+                        is_speaking = True
+                        speech_start_time = current_time
+                        print("   🗣️ Voz detectada...", end="\r")
+                    silence_start_time = None
+                    full_audio.append(audio_float32)
+                else:
+                    if is_speaking:
+                        if silence_start_time is None: silence_start_time = current_time
+                        full_audio.append(audio_float32) 
+                        if (current_time - silence_start_time) > max_pause_s:
+                            total = current_time - speech_start_time - (current_time - silence_start_time)
+                            if total < min_speech_s:
+                                is_speaking = False
+                                full_audio = []
+                                continue
+                            print(f"\n✅ Fin de frase ({total:.1f}s). Transcribiendo...")
+                            break
+        finally:
+            process.terminate()
+            process.wait()
+
+        if not full_audio: return None
+        audio_data = np.concatenate(full_audio)
+        
+        try:
             segments, info = self.asr_model.transcribe(
                 audio_data, beam_size=5, language="es", condition_on_previous_text=False,
-                initial_prompt="Conversación en español, transcripción completa."
+                initial_prompt="Diálogo fluido."
             )
             text = " ".join([segment.text for segment in segments]).strip()
-            
-            # Filtro Anti-Basura
-            ignored = ["thank you", "hello", "you", "subtitles"]
-            if text.lower() in ignored or len(text) < 2:
-                print(f"🗑️ Ignorado: {text}")
-                return
-                
-            print(f"📝 [Transcripción] '{text}'")
-            if text: callback_text(text)
-
-        except Exception as e:
-            print(f"❌ Error: {e}")
+            ignored = ["thank you", "subtitles", "you", "copyright"]
+            if not text or text.lower() in ignored: return None
+            return text
+        except: return None
 
     def say(self, text):
         if not text: return
-        threading.Thread(target=self._speak_thread, args=(text,)).start()
-
-    def _speak_thread(self, text):
-        wav_file = os.path.abspath("response.wav")
+        wav = os.path.abspath("response.wav")
+        
+        # 1. GENERAR AUDIO (Rápido)
+        # print(f"🔊 Generando...")
         try:
-            subprocess.run(["mimic3", "--voice", "es_ES/m-ailabs_low#karen_savage", text], stdout=open(wav_file, "wb"))
-            if os.path.exists(wav_file):
-                # Usamos paplay según sugerencia previa
-                subprocess.run(["paplay", wav_file])
-        except: pass
+            subprocess.run([self.mimic_path, "--voice", "es_ES/m-ailabs_low#karen_savage", text], 
+                           stdout=open(wav, "wb"), stderr=subprocess.PIPE)
+        except: return
+
+        if not os.path.exists(wav): return
+
+        # 2. REPRODUCIR CON CAPACIDAD DE INTERRUPCIÓN
+        print("▶️ Hablando... (Puedes interrumpirme)")
+        
+        # Lanzamos el reproductor en SEGUNDO PLANO (Non-blocking)
+        player_process = subprocess.Popen(["aplay", "-q", wav])
+        
+        # Lanzamos el GRABADOR para detectar interrupciones
+        monitor_process = subprocess.Popen(self._get_arecord_cmd(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        
+        interrupted = False
+        
+        try:
+            # Mientras Lucy habla...
+            while player_process.poll() is None:
+                # Leemos el micrófono
+                raw_bytes = monitor_process.stdout.read(CHUNK_BYTES)
+                if not raw_bytes or len(raw_bytes) != CHUNK_BYTES: continue
+                
+                # Chequeamos si hay voz humana
+                audio_int16 = np.frombuffer(raw_bytes, dtype=np.int16)
+                audio_float32 = audio_int16.astype(np.float32) / 32768.0
+                audio_tensor = torch.from_numpy(audio_float32)
+                
+                try: prob = self.vad_model(audio_tensor, SAMPLE_RATE).item()
+                except: prob = 0.0
+                
+                # SI DETECTAMOS VOZ -> INTERRUPCIÓN
+                if prob > INTERRUPTION_SENSITIVITY:
+                    print("\n✋ INTERRUPCIÓN DETECTADA. Callando...")
+                    player_process.terminate() # Matar audio
+                    interrupted = True
+                    break
+        finally:
+            # Limpieza
+            if player_process.poll() is None: player_process.terminate()
+            monitor_process.terminate()
+            monitor_process.wait()
+        
+        if interrupted:
+            # Pequeña pausa para que el usuario termine de decir su palabra de interrupción
+            # y el bucle principal lo capture limpio.
+            time.sleep(0.1)

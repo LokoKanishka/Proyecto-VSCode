@@ -1,20 +1,10 @@
 #!/bin/bash
-
-echo "🔋 Iniciando Protocolo Lucy..."
-
-# 1. Asegurar Audio
-echo "🔊 Verificando PulseAudio..."
-if ! pactl info > /dev/null 2>&1; then
-    pulseaudio --start
-    echo "   ✅ PulseAudio reiniciado."
+export PYTHONPATH=/home/xdie/Proyecto-VSCode
+echo "🚀 Verificando sintaxis..."
+if .venv/bin/python3 -m py_compile src/engine/voice_bridge.py; then
+    echo "✅ Código Válido. Ejecutando..."
+    .venv/bin/python3 src/gui/main.py
 else
-    echo "   ✅ Audio OK."
+    echo "❌ ERROR FATAL DE SINTAXIS. Revisa el copiado/pegado."
+    read -p "Presiona Enter para salir..."
 fi
-
-# 2. Configurar Entorno
-export PYTHONPATH=$(pwd)
-source .venv/bin/activate
-
-# 3. Lanzar
-echo "🚀 Ejecutando Interfaz..."
-python3 src/gui/main.py

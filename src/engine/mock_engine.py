@@ -13,8 +13,8 @@ class MockEngine(AbstractEngine):
         print("[MockEngine] Model loaded successfully.")
         return True
 
-    def generate_response(self, messages: list) -> Generator[str, None, None]:
-        print(f"[MockEngine] Generating response (Context: {len(messages)} msgs)")
+    def generate_response(self, prompt: str, history: list=[]) -> Generator[str, None, None]:
+        print(f"[MockEngine] Generating response for: {prompt} (Context: {len(history)} msgs)")
         
         # Hardcoded response to simulate AI
         dummy_response = (

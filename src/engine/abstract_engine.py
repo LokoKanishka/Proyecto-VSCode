@@ -14,9 +14,9 @@ class AbstractEngine(ABC):
         pass
 
     @abstractmethod
-    def generate_response(self, messages: list) -> Generator[str, None, None]:
+    def generate_response(self, prompt: str, history: list) -> Generator[str, None, None]:
         """
         Yields chunks of text (tokens) for streaming responses.
-        messages: List of dicts [{"role": "user", "content": "..."}, ...]
+        history: List of dicts [{"role": "user", "content": "..."}, ...]
         """
         pass

@@ -1,145 +1,113 @@
 import customtkinter as ctk
-import threading
-from PIL import Image
-import os
-from src.gui.components.message_bubble import MessageBubble
-from src.gui.components.audio_visualizer import AudioVisualizer
 from src.engine.voice_bridge import LucyVoiceBridge
+import threading
+import time
 
 class ChatArea(ctk.CTkFrame):
     def __init__(self, master, engine=None, audio_processor=None, **kwargs):
         super().__init__(master, **kwargs)
-        self.engine = engine 
-        self.audio_processor = audio_processor
-        self.voice_bridge = LucyVoiceBridge(audio_processor=self.audio_processor)
-        self.is_mic_active = False
-        self.chat_history = []
+        self.engine = engine
+        self.voice_bridge = LucyVoiceBridge()
+        self.is_running = False
         
-        # Fondo Industrial
-        self.configure(fg_color="#080808") 
-        
+        # PALABRAS CLAVE PARA DORMIR
+        self.sleep_triggers = [
+            "dormí", "dormite", "duérmete", "duermete", 
+            "descansa", "apágate", "silencio", "hasta mañana",
+            "stop", "basta"
+        ]
+
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1) 
-        self.grid_rowconfigure(1, weight=0) 
-        
-        # Frame del Historial
-        self.history_container = ctk.CTkFrame(
-            self, 
-            fg_color="#000000", 
-            border_color="#333333", 
-            border_width=2,
-            corner_radius=0
+        self.grid_rowconfigure(0, weight=1)
+
+        self.chat_display = ctk.CTkTextbox(
+            self, font=("Consolas", 14), text_color="#00ff41", fg_color="#000000"
         )
-        self.history_container.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
-        self.history_container.grid_columnconfigure(0, weight=1)
-        self.history_container.grid_rowconfigure(0, weight=1)
+        self.chat_display.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.chat_display.insert("0.0", ">>> SISTEMA LUCY ONLINE (COMANDOS DE VOZ ACTIVOS)_\n")
+        self.chat_display.configure(state="disabled")
 
-        self.chat_history_frame = ctk.CTkScrollableFrame(
-            self.history_container, 
-            label_text="[ REMOTE_DATA_LINK_16.4 ]",
-            label_font=("Consolas", 14, "bold"),
-            fg_color="transparent",
-            label_fg_color="#00ff41", 
-            label_text_color="#000000",
-            corner_radius=0
+        self.record_btn = ctk.CTkButton(
+            self,
+            text="🔴 INICIAR CONVERSACIÓN",
+            font=("Consolas", 14, "bold"),
+            fg_color="#330000",
+            hover_color="#550000",
+            height=50,
+            command=self.toggle_conversation
         )
-        self.chat_history_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        self.record_btn.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
 
-        # --- ZONA DE CONTROL (Estilo Gemini) ---
-        self.control_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.control_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 20))
-        self.control_frame.grid_columnconfigure(0, weight=1)
-
-        # Visualizador de Ondas (Fondo para el botón)
-        self.viz_container = ctk.CTkFrame(self.control_frame, fg_color="transparent", height=120)
-        self.viz_container.grid(row=0, column=0, sticky="ew")
-        
-        if self.audio_processor:
-            self.visualizer = AudioVisualizer(self.viz_container, self.audio_processor, height=120)
-            self.visualizer.pack(fill="both", expand=True)
-
-        # Micrófono Flotante
-        img_path = os.path.abspath("assets/mic_style.png")
-        self.mic_image = None
-        if os.path.exists(img_path):
-            try:
-                pil_img = Image.open(img_path)
-                self.mic_image = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(100, 100))
-            except: pass
-
-        self.mic_btn = ctk.CTkButton(
-            self.viz_container, 
-            text="START" if not self.mic_image else "", 
-            image=self.mic_image,
-            width=110, height=110, 
-            fg_color="transparent", 
-            hover_color="#111111",
-            border_width=0,
-            corner_radius=55,
-            command=self.toggle_voice_loop
-        )
-        # Lo ponemos justo en el centro del visualizador
-        self.mic_btn.place(relx=0.5, rely=0.5, anchor="center")
-
-        # Entrada manual
-        self.entry_box = ctk.CTkEntry(
-            self.control_frame, 
-            placeholder_text=">>> CMD_OVERRIDE...", 
-            fg_color="#000000", 
-            text_color="#00ff41",
-            border_color="#00ff41",
-            border_width=1,
-            font=("Consolas", 14),
-            height=40,
-            corner_radius=2
-        )
-        self.entry_box.grid(row=1, column=0, sticky="ew", pady=(15,0))
-        self.entry_box.bind("<Return>", self.send_manual_message)
-
-    def toggle_voice_loop(self):
-        if not self.is_mic_active:
-            self.is_mic_active = True
-            self.mic_btn.configure(border_width=2, border_color="#ff0000")
-            def on_voice_text(text):
-                self.master.after(0, lambda: self.display_message("USER", text))
-                self.master.after(0, lambda: self.process_ai_response_thread(text))
-            threading.Thread(target=self.voice_bridge.listen_once, args=(on_voice_text,), daemon=True).start()
+    def toggle_conversation(self):
+        if not self.is_running:
+            self.is_running = True
+            self.record_btn.configure(text="🟢 ESCUCHANDO... (Di 'Lucy Dormí' para cortar)", fg_color="#004400")
+            threading.Thread(target=self._conversation_loop, daemon=True).start()
         else:
-            self.is_mic_active = False
-            self.voice_bridge.stop_listening()
-            self.mic_btn.configure(border_width=0)
+            self.stop_conversation_logic()
 
-    def send_manual_message(self, event=None):
-        text = self.entry_box.get()
-        if not text: return
-        self.entry_box.delete(0, "end")
-        self.display_message("USER", text)
-        threading.Thread(target=self.process_ai_response_thread, args=(text,), daemon=True).start()
+    def stop_conversation_logic(self):
+        """Lógica centralizada para detener el bucle"""
+        self.is_running = False
+        self.voice_bridge.stop_listening()
+        self.after(0, lambda: self.record_btn.configure(text="🔴 DETENIENDO...", fg_color="#555500"))
 
-    def process_ai_response_thread(self, user_text):
-        full_response = ""
-        self.master.after(0, lambda: self.display_message("LUCY", ">>> ANALYZING_DATASTREAM...", is_stream=True))
-        try:
-            if not self.engine: return
-            if not self.chat_history:
-                self.chat_history.append({"role": "system", "content": "Eres Lucy, asistente Cyberpunk. SIEMPRE EN ESPAÑOL. Breve."})
-            self.chat_history.append({"role": "user", "content": user_text})
-
-            for chunk in self.engine.generate_response(self.chat_history): 
-                full_response += chunk
-                self.master.after(0, lambda c=full_response: self.update_last_message(c))
+    def _conversation_loop(self):
+        print("⚡ [LOOP] Iniciado.")
+        
+        while self.is_running:
+            # 1. ESCUCHAR
+            user_text = self.voice_bridge.listen_continuous()
             
-            self.chat_history.append({"role": "assistant", "content": full_response})
-            if full_response:
-                self.voice_bridge.say(full_response)
-        except Exception as e:
-            self.master.after(0, lambda: self.update_last_message(f"SYSTEM_FATAL_ERROR: {e}"))
+            if not self.is_running: break
+            
+            if user_text:
+                self.safe_write_chat(f"TÚ: {user_text}")
+                
+                # --- 2. VERIFICAR COMANDO "DORMÍ" ---
+                # Pasamos a minúsculas y chequeamos si alguna palabra clave está presente
+                text_clean = user_text.lower()
+                is_sleep_command = any(trigger in text_clean for trigger in self.sleep_triggers)
+                
+                if is_sleep_command:
+                    print(f"💤 Comando detectado: {user_text}")
+                    self.safe_write_chat("LUCY: [SISTEMA EN REPOSO]")
+                    
+                    # Respuesta final antes de morir
+                    self.voice_bridge.say("Entendido. Quedo a la espera.")
+                    
+                    # Cortamos el bucle
+                    self.is_running = False
+                    break
+                # ------------------------------------
 
-    def display_message(self, sender, text, is_stream=False):
-        bubble = MessageBubble(self.chat_history_frame, text=text, is_user=(sender == "USER"))
-        bubble.pack(pady=10, padx=15, fill="x", anchor="e" if sender == "USER" else "w")
-        self.master.after(100, lambda: self.chat_history_frame._parent_canvas.yview_moveto(1.0))
+                # 3. PENSAR Y HABLAR (Si no fue comando de dormir)
+                if self.engine:
+                    self.safe_write_chat("LUCY: ...")
+                    full_response = ""
+                    try:
+                        for chunk in self.engine.generate_response(user_text):
+                            full_response += chunk
+                        
+                        self.safe_write_chat(f"\nLUCY: {full_response}\n")
+                        self.voice_bridge.say(full_response)
+                        
+                    except Exception as e:
+                        print(f"Error IA: {e}")
 
-    def update_last_message(self, new_text):
-        widgets = self.chat_history_frame.winfo_children()
-        if widgets: widgets[-1].update_text(new_text)
+            time.sleep(0.2)
+
+        # Restaurar botón al salir del bucle
+        self.after(0, lambda: self.record_btn.configure(text="🔴 INICIAR CONVERSACIÓN", fg_color="#330000"))
+        print("⚡ [LOOP] Terminado.")
+
+    def safe_write_chat(self, msg):
+        self.after(0, lambda: self._write_chat_impl(msg))
+
+    def _write_chat_impl(self, msg):
+        try:
+            self.chat_display.configure(state="normal")
+            self.chat_display.insert("end", f"{msg}\n")
+            self.chat_display.see("end")
+            self.chat_display.configure(state="disabled")
+        except: pass

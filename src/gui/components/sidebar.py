@@ -1,55 +1,35 @@
 import customtkinter as ctk
 
 class Sidebar(ctk.CTkFrame):
-    def __init__(self, master, **kwargs):
-        # Ticket 11: Unified with force_ui.py geometry
+    def __init__(self, master, callback_new_chat=None, callback_settings=None, **kwargs):
+        # AQUI ESTA LA CLAVE: width=300 y pack_propagate(False)
         super().__init__(master, width=300, corner_radius=0, **kwargs)
-        self.pack_propagate(False) # Force 300px width
+        self.callback_new_chat = callback_new_chat
+        self.callback_settings = callback_settings
+        
+        self.grid_rowconfigure(4, weight=1)
+        self.pack_propagate(False) 
 
-        # Titulo (Cyberpunk Style)
-        self.logo_label = ctk.CTkLabel(
-            self, 
-            text="LUCY Studio", 
-            font=ctk.CTkFont(family="Courier New", size=24, weight="bold"),
-            text_color="#00ff41" # Matrix Green
-        )
+        # Título
+        self.logo_label = ctk.CTkLabel(self, text="LUCY Studio", font=ctk.CTkFont(size=22, weight="bold"))
         self.logo_label.pack(pady=(30, 20), padx=20, anchor="w")
 
-        # Navigation Buttons
-        self.btn_new = self._create_cyber_button("New Chat", command=self._on_new_chat)
-        self.btn_search = self._create_cyber_button("Search History")
-        self.btn_models = self._create_cyber_button("My Models")
+        # Botones (Anchos y con texto completo)
+        self.btn_new = ctk.CTkButton(self, text="New Chat", height=45, anchor="w", fg_color="transparent", border_width=1, text_color=("gray10", "#DCE4EE"), command=self.on_new_chat)
+        self.btn_new.pack(fill="x", padx=20, pady=10)
 
-        # Spacer
-        self.spacer = ctk.CTkFrame(self, fg_color="transparent", height=0)
-        self.spacer.pack(expand=True, fill="both")
+        self.btn_search = ctk.CTkButton(self, text="Search History", height=45, anchor="w", fg_color="transparent", text_color=("gray10", "#DCE4EE"))
+        self.btn_search.pack(fill="x", padx=20, pady=10)
 
-        # Settings abajo
-        self.btn_settings = self._create_cyber_button("Settings", side="bottom")
+        self.btn_models = ctk.CTkButton(self, text="My Models", height=45, anchor="w", fg_color="transparent", text_color=("gray10", "#DCE4EE"))
+        self.btn_models.pack(fill="x", padx=20, pady=10)
 
-    def _create_cyber_button(self, text, command=None, side="top"):
-        btn = ctk.CTkButton(
-            self, 
-            text=f"> {text}", 
-            height=50, 
-            anchor="w", 
-            fg_color="transparent", 
-            border_width=1, 
-            border_color="#1f1f1f",
-            text_color="#00ff41",
-            hover_color="#1a1a1a",
-            font=("Courier New", 13, "bold"),
-            command=command
-        )
-        if side == "bottom":
-            btn.pack(side="bottom", fill="x", padx=20, pady=30)
-        else:
-            btn.pack(side="top", fill="x", padx=20, pady=10)
-        return btn
+        # Settings
+        self.btn_settings = ctk.CTkButton(self, text="Settings", height=45, anchor="w", fg_color="transparent", text_color=("gray10", "#DCE4EE"), command=self.on_settings)
+        self.btn_settings.pack(side="bottom", fill="x", padx=20, pady=30)
 
-    def _on_new_chat(self):
-        """Triggers context reset in ChatArea."""
-        if hasattr(self.master, "chat_area"):
-            self.master.chat_area.reset_context()
-        elif hasattr(self.master.master, "chat_area"): # If nested in a container
-            self.master.master.chat_area.reset_context()
+    def on_new_chat(self):
+        if self.callback_new_chat: self.callback_new_chat()
+        
+    def on_settings(self):
+        if self.callback_settings: self.callback_settings()
