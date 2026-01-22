@@ -22,15 +22,18 @@ class LucyVoiceBridge:
         self.asr_model = None
         self.vad_model = None
         
-        # Detección de Mimic3
-        self.mimic_path = os.path.join(os.path.dirname(sys.executable), "mimic3")
-        if not os.path.exists(self.mimic_path):
-            self.mimic_path = "mimic3"
+        # Detección de Mimic3 (preferimos venv de voz)
+        mimic_candidates = [
+            "/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/.venv-lucy-voz/bin/mimic3",
+            os.path.join(os.path.dirname(sys.executable), "mimic3"),
+            "mimic3",
+        ]
+        self.mimic_path = next((p for p in mimic_candidates if os.path.exists(p)), "mimic3")
         
         print("⬇️ [Engine] Cargando Sistemas...")
         try:
             from faster_whisper import WhisperModel
-            self.asr_model = WhisperModel("small", device="cpu", compute_type="int8")
+            self.asr_model = WhisperModel("medium", device="cuda", compute_type="float16")
             
             print("⬇️ [Engine] Cargando Silero VAD...")
             self.vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
@@ -111,8 +114,11 @@ class LucyVoiceBridge:
         
         try:
             segments, info = self.asr_model.transcribe(
-                audio_data, beam_size=5, language="es", condition_on_previous_text=False,
-                initial_prompt="Diálogo fluido."
+                audio_data,
+                beam_size=5,
+                language="es",
+                condition_on_previous_text=False,
+                initial_prompt="Lucy, Basilisco de Roko, Bitcoin, IA, Linux, Ubuntu, Python."
             )
             text = " ".join([segment.text for segment in segments]).strip()
             ignored = ["thank you", "subtitles", "you", "copyright"]
@@ -127,9 +133,14 @@ class LucyVoiceBridge:
         # 1. GENERAR AUDIO (Rápido)
         # print(f"🔊 Generando...")
         try:
-            subprocess.run([self.mimic_path, "--voice", "es_ES/m-ailabs_low#karen_savage", text], 
-                           stdout=open(wav, "wb"), stderr=subprocess.PIPE)
-        except: return
+            with open(wav, "wb") as wav_file:
+                subprocess.run(
+                    [self.mimic_path, "--voice", "es_ES/m-ailabs_low#karen_savage", text],
+                    stdout=wav_file,
+                    stderr=subprocess.DEVNULL
+                )
+        except:
+            return
 
         if not os.path.exists(wav): return
 
@@ -137,7 +148,11 @@ class LucyVoiceBridge:
         print("▶️ Hablando... (Puedes interrumpirme)")
         
         # Lanzamos el reproductor en SEGUNDO PLANO (Non-blocking)
-        player_process = subprocess.Popen(["aplay", "-q", wav])
+        player_process = subprocess.Popen(
+            ["aplay", "-q", wav],
+            stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL
+        )
         
         # Lanzamos el GRABADOR para detectar interrupciones
         monitor_process = subprocess.Popen(self._get_arecord_cmd(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -167,7 +182,14 @@ class LucyVoiceBridge:
                     break
         finally:
             # Limpieza
-            if player_process.poll() is None: player_process.terminate()
+            if player_process.poll() is None:
+                player_process.terminate()
+                try:
+                    player_process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    player_process.kill()
+            else:
+                player_process.wait()
             monitor_process.terminate()
             monitor_process.wait()
         
