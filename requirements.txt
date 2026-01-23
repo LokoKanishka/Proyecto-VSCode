@@ -6,3 +6,7 @@ PyYAML
 tenacity
 trafilatura
 webrtcvad>=2.0.10
+# UI additions
+customtkinter
+pillow
+loguru
