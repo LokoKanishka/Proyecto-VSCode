@@ -44,6 +44,7 @@ MODE 3: VISION
   - Step 2: Identify the target's grid cell (e.g., "D4").
   - Step 3: Click with `perform_action(action="move_and_click", grid="D4")`
     (or `perform_action(action="click_grid", grid_id="D4")`).
+- For exact values, use `capture_region(grid="D4")` to zoom before reading.
 
 MODE 4: RESEARCH MEMORY
 - After reading a screen or a section, summarize it briefly with:
@@ -267,6 +268,19 @@ class OllamaEngine:
                                                     self.swarm.set_profile("general")
                                             except Exception as e:
                                                 logger.error(f"Error analizando imagen: {e}")
+                                        elif func_name == "capture_region":
+                                            try:
+                                                payload = json.loads(result)
+                                                image_path = payload.get("path")
+                                                if image_path:
+                                                    analysis = self._analyze_zoom(image_path)
+                                                    result = (
+                                                        f"Zoom realizado en {image_path}. "
+                                                        f"LECTURA DE ALTA PRECISION: {analysis}"
+                                                    )
+                                                    self.swarm.set_profile("general")
+                                            except Exception as e:
+                                                logger.error(f"Error analizando zoom: {e}")
                                         elif func_name == "remember":
                                             if messages and messages[0].get("role") == "system":
                                                 messages[0]["content"] = self._build_system_prompt()
@@ -350,6 +364,7 @@ class OllamaEngine:
             allowed_tools.add("launch_app")
         if allow_vision:
             allowed_tools.add("capture_screen")
+            allowed_tools.add("capture_region")
         allowed_tools.add("remember")
 
         response_tokens = []
@@ -434,8 +449,22 @@ class OllamaEngine:
                                 f"Captura realizada en {image_path}. "
                                 f"ANALISIS VISUAL DE LA IA: {analysis}"
                             )
+                            self.swarm.set_profile("general")
                     except Exception as e:
                         logger.error(f"Error analizando imagen: {e}")
+                if tool == "capture_region":
+                    try:
+                        payload = json.loads(result)
+                        image_path = payload.get("path")
+                        if image_path:
+                            analysis = self._analyze_zoom(image_path)
+                            result = (
+                                f"Zoom realizado en {image_path}. "
+                                f"LECTURA DE ALTA PRECISION: {analysis}"
+                            )
+                            self.swarm.set_profile("general")
+                    except Exception as e:
+                        logger.error(f"Error analizando zoom: {e}")
                 if tool == "remember":
                     if history and history[0].get("role") == "system":
                         history[0]["content"] = self._build_system_prompt()
@@ -472,7 +501,10 @@ class OllamaEngine:
             "- Columns: A, B, C, D...\n"
             "- Rows: 1, 2, 3, 4...\n\n"
             "YOUR TASK: Identify key elements and their GRID COORDINATES.\n"
-            "FORMAT: \"Element Name: [Coordinate]\"\n\n"
+            "FORMAT: \"Element Name: [Coordinate]\" (use A1..H10 only).\n"
+            "Be concise. Prefer browser content and numeric values. Ignore terminals/editors unless asked.\n"
+            "If a clear numeric value is visible (price, population, etc.), include:\n"
+            "- Value: <number> [Coordinate]\n\n"
             "Example:\n"
             "- Terminal Window: [C4]\n"
             "- VS Code Sidebar: [A2]\n"
@@ -500,6 +532,40 @@ class OllamaEngine:
         except Exception as e:
             logger.error(f"❌ Error en analisis visual: {e}")
             return f"Error analizando la imagen: {e}"
+
+    def _analyze_zoom(self, image_path: str) -> str:
+        """Lee un valor puntual desde un recorte de pantalla."""
+        if not os.path.exists(image_path):
+            return "Error: La imagen de zoom no existe en disco."
+
+        self.swarm.set_profile("vision")
+        prompt = (
+            "LEER VALOR EXACTO.\n"
+            "En la imagen hay un dato puntual (precio, poblacion, etc.).\n"
+            "Ignora todo lo demas y devuelve SOLO el valor tal como se ve.\n"
+            "Si no hay un valor claro, responde: 'No veo un valor claro'.\n"
+            "Responde en español.\n"
+        )
+
+        logger.info(f"🔎 Analizando zoom {image_path} con {self.vision_model}...")
+        try:
+            client = self.ollama_client or ollama
+            response = client.chat(
+                model=self.vision_model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                        "images": [image_path],
+                    }
+                ],
+            )
+            description = response["message"]["content"]
+            logger.info(f"🔎 Resultado zoom: {description[:100]}...")
+            return description
+        except Exception as e:
+            logger.error(f"❌ Error en analisis zoom: {e}")
+            return f"Error analizando zoom: {e}"
 
     def set_model(self, model_name):
         self.model = model_name

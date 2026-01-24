@@ -12,6 +12,7 @@ from loguru import logger
 from src.skills.base_skill import BaseSkill
 from src.skills.desktop_action import DesktopHand
 from src.skills.desktop_vision import DesktopEye
+from src.skills.grid_mapper import GridMapper
 
 
 class DesktopVisionSkill(BaseSkill):
@@ -333,14 +334,83 @@ class DesktopLaunchSkill(BaseSkill):
             return f"Error lanzando app ({name}): {exc}"
 
 
+class DesktopZoomSkill(BaseSkill):
+    def __init__(self):
+        self._default_path = "/tmp/lucy_zoom.jpg"
+
+    @property
+    def name(self) -> str:
+        return "capture_region"
+
+    @property
+    def description(self) -> str:
+        return "Captura un recorte de una celda de la grilla para lectura precisa."
+
+    @property
+    def parameters(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "grid": {
+                    "type": "string",
+                    "description": "Coordenada de grilla (ej: C4).",
+                },
+                "grid_id": {
+                    "type": "string",
+                    "description": "Alias de grid para recorte (ej: C4).",
+                },
+                "grid_code": {
+                    "type": "string",
+                    "description": "Alias de grid para recorte (ej: C4).",
+                },
+                "padding": {
+                    "type": "integer",
+                    "description": "Padding en pixeles alrededor de la celda.",
+                    "default": 60,
+                },
+                "out_path": {
+                    "type": "string",
+                    "description": "Ruta de salida para guardar el recorte.",
+                },
+            },
+            "required": [],
+        }
+
+    def execute(self, **kwargs) -> str:
+        grid = (
+            kwargs.get("grid")
+            or kwargs.get("grid_id")
+            or kwargs.get("grid_code")
+            or kwargs.get("coordinate")
+            or kwargs.get("location")
+        )
+        padding = int(kwargs.get("padding", 60) or 60)
+        out_path = kwargs.get("out_path") or self._default_path
+        if not grid:
+            return "Error: se requiere grid para capture_region."
+
+        try:
+            left, top, width, height = GridMapper.get_cell_bounds(str(grid))
+            left = max(left - padding, 0)
+            top = max(top - padding, 0)
+            width = width + padding * 2
+            height = height + padding * 2
+            zoom_img = pyautogui.screenshot(region=(left, top, width, height))
+            zoom_img.save(out_path)
+            return json.dumps({"path": out_path}, ensure_ascii=False)
+        except Exception as exc:
+            return f"Error en capture_region: {exc}"
+
+
 class DesktopSkillWrapper:
     def __init__(self):
         self.vision_skill = DesktopVisionSkill()
         self.action_skill = DesktopActionSkill()
         self.launch_skill = DesktopLaunchSkill()
+        self.zoom_skill = DesktopZoomSkill()
 
     def tools(self) -> List[BaseSkill]:
-        return [self.vision_skill, self.action_skill, self.launch_skill]
+        return [self.vision_skill, self.action_skill, self.launch_skill, self.zoom_skill]
 
     def capture_screen(self, overlay_grid: bool = True) -> str:
         return self.vision_skill.execute(overlay_grid=overlay_grid)
