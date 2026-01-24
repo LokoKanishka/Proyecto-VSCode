@@ -11,6 +11,7 @@ import ollama
 
 from src.skills.base_skill import BaseSkill
 from src.skills.desktop_skill_wrapper import DesktopSkillWrapper
+from src.skills.research_memory import ResearchMemorySkill
 from src.engine.voice_bridge import LucyVoiceBridge
 from src.engine.semantic_router import SemanticRouter
 
@@ -36,6 +37,17 @@ MODE 2: ACTION (CRITICAL)
 MODE 3: VISION
 - If `capture_screen` returns a description, THAT IS YOUR REALITY.
 - NEVER say "I cannot see". Use the description to answer.
+- For precise clicking, use the grid overlay:
+  - Step 1: `capture_screen(overlay_grid=true)` (or `grid=true`).
+  - Step 2: Identify the target's grid cell (e.g., "D4").
+  - Step 3: Click with `perform_action(action="move_and_click", grid="D4")`
+    (or `perform_action(action="click_grid", grid_id="D4")`).
+
+MODE 4: RESEARCH MEMORY
+- After reading a screen or a section, summarize it briefly with:
+  `remember(text="...")`
+- Use the accumulated memory to answer long readings.
+- If the user asks to clear memory, respond: "Memoria borrada."
 
 STRICT RULES:
 - Speak Spanish.
@@ -50,6 +62,7 @@ class OllamaEngine:
         self.generate_url = f"{host}/api/generate"
         self.skills: Dict[str, BaseSkill] = {}
         self.router = SemanticRouter()
+        self.research_memory: List[str] = []
         
         logger.info(f"🚀 OllamaEngine Monolítico inicializado (Modelo: {self.model})")
         
@@ -60,6 +73,7 @@ class OllamaEngine:
         self.desktop_skills = DesktopSkillWrapper()
         for skill in self.desktop_skills.tools():
             self.register_skill(skill)
+        self.register_skill(ResearchMemorySkill(self.research_memory))
 
         # Modelo de vision (configurable por entorno)
         self.vision_model = os.getenv("LUCY_VISION_MODEL", "llava:latest")
@@ -103,6 +117,14 @@ class OllamaEngine:
             "subir volumen", "bajar volumen", "silencio", "mute",
             "apagar", "reiniciar", "cerrar todo", "maximizar ventana"
         ])
+        self.router.register_route("memory_control", [
+            "olvida todo", "olvidá todo", "olvida la memoria", "olvidá la memoria",
+            "limpia memoria", "limpiá memoria", "limpia la memoria", "limpiá la memoria",
+            "borra memoria", "borrá memoria", "borra la memoria", "borrá la memoria",
+            "reset memoria", "reseteá memoria", "reinicia memoria", "reiniciá memoria",
+            "resetear memoria", "olvida lo anterior", "olvidá lo anterior",
+            "borra lo que recuerdes", "borrá lo que recuerdes",
+        ])
         self.router.register_route("vision", [
             "que ves en la pantalla", "analiza lo que hay en el monitor", "describe la imagen",
             "mira la pantalla y dime", "identifica lo que ves"
@@ -111,6 +133,24 @@ class OllamaEngine:
             "abrir navegador", "ejecuta la terminal", "abre la calculadora",
             "minimiza las ventanas", "toma una captura de pantalla", "abre spotify"
         ])
+
+    def _should_clear_memory(self, prompt: str) -> bool:
+        text = prompt.lower()
+        keywords = [
+            "olvida todo", "olvidá todo", "olvida la memoria", "olvidá la memoria",
+            "limpia memoria", "limpiá memoria", "limpia la memoria", "limpiá la memoria",
+            "borra memoria", "borrá memoria", "borra la memoria", "borrá la memoria",
+            "reset memoria", "resetear memoria", "reinicia memoria", "reiniciá memoria",
+            "olvida lo anterior", "olvidá lo anterior", "borra lo que recuerdes",
+            "borrá lo que recuerdes",
+        ]
+        return any(k in text for k in keywords)
+
+    def _build_system_prompt(self) -> str:
+        if not self.research_memory:
+            return SYSTEM_PROMPT
+        memory_lines = "\n".join(f"- {item}" for item in self.research_memory)
+        return f"{SYSTEM_PROMPT}\n\n### CURRENT KNOWLEDGE ###\n{memory_lines}"
 
     def register_skill(self, skill: BaseSkill):
         """Registra una habilidad para que el LLM pueda usarla."""
@@ -204,6 +244,9 @@ class OllamaEngine:
                                                     )
                                             except Exception as e:
                                                 logger.error(f"Error analizando imagen: {e}")
+                                        elif func_name == "remember":
+                                            if messages and messages[0].get("role") == "system":
+                                                messages[0]["content"] = self._build_system_prompt()
                                         
                                         # Añadir llamada y resultado al historial
                                         messages.append(msg)
@@ -247,6 +290,17 @@ class OllamaEngine:
         intent = self.router.route(prompt)
         logger.info(f"Intención detectada por Router: {intent}")
 
+        if intent == "memory_control" or self._should_clear_memory(prompt):
+            self.research_memory.clear()
+            response_text = "Memoria borrada."
+            if self.tts_enabled and self.speech:
+                try:
+                    self.speech.say(response_text)
+                except Exception as e:
+                    logger.warning(f"🔇 Error al hablar: {e}")
+            yield response_text
+            return
+
         if intent == "vision" and os.getenv("LUCY_VISION_DIRECT", "0") == "1":
             yield from self._handle_vision(prompt, status_callback)
             return
@@ -255,7 +309,7 @@ class OllamaEngine:
         if history is None:
             history = []
         if not history or history[0].get("role") != "system":
-            history.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
+            history.insert(0, {"role": "system", "content": self._build_system_prompt()})
         
         history.append({"role": "user", "content": prompt})
         
@@ -267,6 +321,7 @@ class OllamaEngine:
             allowed_tools.add("perform_action")
         if allow_vision:
             allowed_tools.add("capture_screen")
+        allowed_tools.add("remember")
 
         response_tokens = []
         for token in self.chat(history, allowed_tools=allowed_tools):

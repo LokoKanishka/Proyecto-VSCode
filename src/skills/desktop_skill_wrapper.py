@@ -6,6 +6,7 @@ from shutil import which
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+import pyautogui
 from loguru import logger
 
 from src.skills.base_skill import BaseSkill
@@ -34,12 +35,18 @@ class DesktopVisionSkill(BaseSkill):
                     "type": "boolean",
                     "description": "Si es true, dibuja una grilla con etiquetas A1..H10.",
                     "default": True,
-                }
+                },
+                "grid": {
+                    "type": "boolean",
+                    "description": "Alias de overlay_grid para pedir grilla.",
+                },
             },
             "required": [],
         }
 
-    def execute(self, overlay_grid: bool = True) -> str:
+    def execute(self, overlay_grid: bool = True, grid: Optional[bool] = None) -> str:
+        if grid is not None:
+            overlay_grid = bool(grid)
         logger.info("Capturando escritorio (overlay_grid=%s)", overlay_grid)
         try:
             path = self._eye.capture(overlay_grid=overlay_grid)
@@ -130,13 +137,21 @@ class DesktopActionSkill(BaseSkill):
                 "action": {
                     "type": "string",
                     "description": "Acción a ejecutar.",
-                    "enum": ["move_and_click", "type", "scroll", "hotkey"],
+                    "enum": ["move_and_click", "click", "click_grid", "type", "scroll", "hotkey"],
                 },
                 "x": {"type": "integer", "description": "Coordenada X."},
                 "y": {"type": "integer", "description": "Coordenada Y."},
                 "grid": {
                     "type": "string",
                     "description": "Coordenada de grilla (ej: C4).",
+                },
+                "grid_id": {
+                    "type": "string",
+                    "description": "Alias de grid para click en grilla (ej: C4).",
+                },
+                "grid_code": {
+                    "type": "string",
+                    "description": "Alias de grid para click en grilla (ej: C4).",
                 },
                 "text": {"type": "string", "description": "Texto a escribir."},
                 "clicks": {"type": "integer", "description": "Clicks de scroll (positivo/negativo)."},
@@ -161,7 +176,15 @@ class DesktopActionSkill(BaseSkill):
 
     def execute(self, **kwargs) -> str:
         action = kwargs.get("action") or kwargs.get("action_type") or kwargs.get("command")
-        grid = kwargs.get("grid") or kwargs.get("coordinate") or kwargs.get("location")
+        if action in {"click", "click_grid"}:
+            action = "move_and_click"
+        grid = (
+            kwargs.get("grid")
+            or kwargs.get("grid_id")
+            or kwargs.get("grid_code")
+            or kwargs.get("coordinate")
+            or kwargs.get("location")
+        )
         x = kwargs.get("x")
         y = kwargs.get("y")
         text = kwargs.get("text")
@@ -220,20 +243,32 @@ class DesktopActionSkill(BaseSkill):
                     return "Error: se requiere lista de teclas para hotkey."
 
                 clean_keys = []
+                requires_focus = False
                 for k in raw_keys:
                     k = str(k).lower().strip()
                     if k in {"baja", "scroll", "down", "pagedown", "avpag", "^[[6~"}:
                         clean_keys.append("pagedown")
+                        requires_focus = True
                     elif k in {"sube", "up", "pageup", "repag", "^[[5~"}:
                         clean_keys.append("pageup")
+                        requires_focus = True
                     elif k in {"enter", "return", "entrar"}:
                         clean_keys.append("enter")
                     elif k in {"espacio", "space"}:
                         clean_keys.append("space")
+                        requires_focus = True
                     else:
                         clean_keys.append(k)
 
                 logger.info(f"⌨️ Teclas normalizadas: {clean_keys}")
+
+                if requires_focus:
+                    try:
+                        sw, sh = pyautogui.size()
+                        pyautogui.click(sw // 2, sh // 2)
+                        time.sleep(0.2)
+                    except Exception as exc:
+                        logger.warning("No se pudo asegurar el foco antes del hotkey: %s", exc)
 
                 keys_lower = [k.lower() for k in clean_keys]
                 if "ctrl" in keys_lower and ("l" in keys_lower or "f6" in keys_lower):
