@@ -15,6 +15,7 @@ from src.skills.research_memory import ResearchMemorySkill
 from src.engine.voice_bridge import LucyVoiceBridge
 from src.engine.semantic_router import SemanticRouter
 from src.engine.swarm_manager import SwarmManager
+from src.engine.thought_engine import Planner
 
 SYSTEM_PROMPT = """
 YOU ARE LUCY, an autonomous AI operator running locally on an RTX 5090.
@@ -31,9 +32,8 @@ MODE 2: ACTION (CRITICAL)
   - SCROLL DOWN / READ MORE: `perform_action(action="hotkey", text="pagedown")`.
   - SCROLL UP: `perform_action(action="hotkey", text="pageup")`.
 - App Launching:
-  - Call `perform_action` with action="hotkey" and text="winleft".
-  - Call `perform_action` with action="type" and text="<app name>".
-  - Call `perform_action` with action="hotkey" and text="enter".
+  - Prefer direct launch: `launch_app(app_name="firefox", url="https://...")`.
+  - Only use keyboard launcher as fallback.
 
 MODE 3: VISION
 - If `capture_screen` returns a description, THAT IS YOUR REALITY.
@@ -66,6 +66,7 @@ class OllamaEngine:
             self.ollama_client = ollama.Client(host=self.host)
         except Exception:
             self.ollama_client = None
+        self.planner = Planner(self.swarm, model=self.model, host=self.host)
         self.skills: Dict[str, BaseSkill] = {}
         self.router = SemanticRouter()
         self.research_memory: List[str] = []
@@ -139,6 +140,11 @@ class OllamaEngine:
             "abrir navegador", "ejecuta la terminal", "abre la calculadora",
             "minimiza las ventanas", "toma una captura de pantalla", "abre spotify"
         ])
+        self.router.register_route("complex_task", [
+            "investiga sobre", "buscame precios de", "averigua el precio de",
+            "entra a", "anda a", "planifica un viaje", "compara precios",
+            "busca en internet", "busca en la web", "recolecta informacion",
+        ])
 
     def _should_clear_memory(self, prompt: str) -> bool:
         text = prompt.lower()
@@ -149,6 +155,15 @@ class OllamaEngine:
             "reset memoria", "resetear memoria", "reinicia memoria", "reiniciá memoria",
             "olvida lo anterior", "olvidá lo anterior", "borra lo que recuerdes",
             "borrá lo que recuerdes",
+        ]
+        return any(k in text for k in keywords)
+
+    def _should_plan(self, prompt: str) -> bool:
+        text = prompt.lower()
+        keywords = [
+            "investiga", "averigua", "busca", "buscame", "buscá",
+            "compara", "compará", "entra a", "anda a", "planifica",
+            "armame", "organiza", "recolecta", "averiguame",
         ]
         return any(k in text for k in keywords)
 
@@ -312,6 +327,10 @@ class OllamaEngine:
             yield from self._handle_vision(prompt, status_callback)
             return
 
+        if intent == "complex_task" or self._should_plan(prompt):
+            yield from self._handle_complex_task(prompt, history, status_callback)
+            return
+
         # 2. Cognición con Herramientas
         self.swarm.set_profile("general")
         if history is None:
@@ -327,6 +346,7 @@ class OllamaEngine:
         allowed_tools = set()
         if allow_actions:
             allowed_tools.add("perform_action")
+            allowed_tools.add("launch_app")
         if allow_vision:
             allowed_tools.add("capture_screen")
         allowed_tools.add("remember")
@@ -378,6 +398,67 @@ class OllamaEngine:
             logger.error(f"Error en visión: {e}")
             yield f"Error al intentar ver la pantalla: {str(e)}"
 
+    def _handle_complex_task(
+        self,
+        prompt: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        status_callback=None,
+    ) -> Generator[str, None, None]:
+        if status_callback:
+            status_callback("🧭 Planificando...")
+
+        plan = self.planner.plan(prompt)
+        if not plan:
+            yield "No pude planificar esa tarea. ¿Querés intentar con una instruccion mas concreta?"
+            return
+        logger.info("🧭 Plan generado ({} pasos).", len(plan))
+
+        if status_callback:
+            status_callback("🛠️ Ejecutando plan...")
+
+        for step in plan:
+            tool = step.get("tool")
+            args = step.get("args") or {}
+            if tool not in self.skills:
+                continue
+            try:
+                result = self.skills[tool].execute(**args)
+                if tool == "capture_screen":
+                    try:
+                        payload = json.loads(result)
+                        image_path = payload.get("path")
+                        if image_path:
+                            analysis = self._analyze_image(image_path)
+                            result = (
+                                f"Captura realizada en {image_path}. "
+                                f"ANALISIS VISUAL DE LA IA: {analysis}"
+                            )
+                    except Exception as e:
+                        logger.error(f"Error analizando imagen: {e}")
+                if tool == "remember":
+                    if history and history[0].get("role") == "system":
+                        history[0]["content"] = self._build_system_prompt()
+            except Exception as exc:
+                logger.warning("Error ejecutando paso del plan ({}): {}", tool, exc)
+
+        if history is None:
+            history = []
+        if not history or history[0].get("role") != "system":
+            history.insert(0, {"role": "system", "content": self._build_system_prompt()})
+
+        history.append({"role": "user", "content": prompt})
+        response_tokens = []
+        for token in self.chat(history, allowed_tools=set()):
+            response_tokens.append(token)
+            yield token
+
+        response_text = "".join(response_tokens).strip()
+        if self.tts_enabled and self.speech and response_text:
+            try:
+                self.speech.say(response_text)
+            except Exception as e:
+                logger.warning(f"🔇 Error al hablar: {e}")
+
     def _analyze_image(self, image_path: str) -> str:
         """Analiza una imagen local con el modelo de visión configurado."""
         if not os.path.exists(image_path):
@@ -395,6 +476,7 @@ class OllamaEngine:
             "- Terminal Window: [C4]\n"
             "- VS Code Sidebar: [A2]\n"
             "- Web Browser: [F5]\n\n"
+            "IMPORTANT: Coordinates MUST be in A1..H10 format. Do NOT use numeric pairs like [2][2].\n"
             "Describe what is open and WHERE it is using the grid."
         )
 
@@ -421,6 +503,7 @@ class OllamaEngine:
     def set_model(self, model_name):
         self.model = model_name
         self.swarm.main_model = model_name
+        self.planner.model = model_name
 
 # --- COMPATIBILITY WRAPPER ---
 _global_engine = None

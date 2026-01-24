@@ -288,13 +288,59 @@ class DesktopActionSkill(BaseSkill):
             return f"Error ejecutando accion: {exc}"
 
 
+class DesktopLaunchSkill(BaseSkill):
+    def __init__(self):
+        self._default_app = "firefox"
+
+    @property
+    def name(self) -> str:
+        return "launch_app"
+
+    @property
+    def description(self) -> str:
+        return "Lanza una aplicación directamente (mejor que usar teclado)."
+
+    @property
+    def parameters(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string",
+                    "description": "Nombre del binario (ej: firefox, code).",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "URL o archivo a abrir con la app.",
+                },
+            },
+            "required": [],
+        }
+
+    def execute(self, app_name: Optional[str] = None, url: Optional[str] = None, **kwargs) -> str:
+        name = (app_name or "").strip() or self._default_app
+        if which(name) is None:
+            return f"Error: app no encontrada ({name})."
+
+        command = [name]
+        if url:
+            command.append(str(url))
+
+        try:
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return f"OK: app lanzada ({name})."
+        except Exception as exc:
+            return f"Error lanzando app ({name}): {exc}"
+
+
 class DesktopSkillWrapper:
     def __init__(self):
         self.vision_skill = DesktopVisionSkill()
         self.action_skill = DesktopActionSkill()
+        self.launch_skill = DesktopLaunchSkill()
 
     def tools(self) -> List[BaseSkill]:
-        return [self.vision_skill, self.action_skill]
+        return [self.vision_skill, self.action_skill, self.launch_skill]
 
     def capture_screen(self, overlay_grid: bool = True) -> str:
         return self.vision_skill.execute(overlay_grid=overlay_grid)
