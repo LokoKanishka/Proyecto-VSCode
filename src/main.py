@@ -1,109 +1,112 @@
+import json
+import logging
 import os
 import sys
-import logging
-import time
-import speech_recognition as sr
-import pyttsx3
-from faster_whisper import WhisperModel
-from src.engine.ollama_engine import process_intent
+from pathlib import Path
 
-# --- CONFIGURACIÓN WINDOWS ---
-# Ajuste automático: Si hay CUDA (NVIDIA) úsalo, si no, CPU.
-try:
-    import torch
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-except ImportError:
-    DEVICE = "cpu"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-MODEL_SIZE = "medium"
-COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
+from src.engine.ollama_engine import OllamaEngine
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
-logger = logging.getLogger("LucyOS")
+logging.basicConfig(level=logging.ERROR, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger("LUCY_MAIN")
+logger.setLevel(logging.INFO)
 
-class LucyBody:
-    def __init__(self):
-        logger.info(f" 🟢 Inicializando Lucy en Windows (Device: {DEVICE})...")
-        
-        # 1. Motor de Voz (Nativo Windows)
-        try:
-            self.engine = pyttsx3.init()
-            # Seleccionar voz en español si existe
-            voices = self.engine.getProperty('voices')
-            for v in voices:
-                if "spanish" in v.name.lower() or "es-" in v.id.lower():
-                    self.engine.setProperty('voice', v.id)
+
+def _run_prompt(engine: OllamaEngine, prompt: str) -> str:
+    response_tokens = []
+    for token in engine.generate_response(prompt):
+        response_tokens.append(token)
+        print(token, end="", flush=True)
+    print("")
+    return "".join(response_tokens)
+
+def _manual_vision(engine: OllamaEngine) -> None:
+    try:
+        result = engine.desktop_skills.capture_screen()
+        payload = json.loads(result)
+        image_path = payload.get("path")
+        if not image_path:
+            print("⚠️ No se pudo obtener la ruta de la captura.")
+            return
+
+        analysis = engine._analyze_image(image_path)
+        print(f"👁️ Captura: {image_path}")
+        print(f"🧠 Análisis: {analysis}")
+        if engine.tts_enabled and engine.speech:
+            engine.speech.say(analysis)
+    except Exception as exc:
+        print(f"⚠️ Error en /vision: {exc}")
+
+
+def process_interaction(engine: OllamaEngine, user_input: str) -> bool:
+    if not user_input or not user_input.strip():
+        return True
+
+    lowered = user_input.lower().strip()
+    if lowered in {"salir", "exit", "/quit", "apágate", "apagáte"}:
+        print("👋 Apagando sistemas...")
+        if engine.tts_enabled and engine.speech:
+            engine.speech.say("Desconectando sistemas. Hasta luego.")
+        return False
+    if lowered == "/vision":
+        print("🟢 Capturando pantalla...")
+        _manual_vision(engine)
+        return True
+
+    print(f"\n👤 Usuario: {user_input}")
+    print("🧠 Lucy pensando...")
+    print("🤖 Lucy: ", end="", flush=True)
+    _run_prompt(engine, user_input)
+    return True
+
+
+def main() -> None:
+    print("\n===========================================")
+    print(" 🤖 LUCY AGI - SISTEMA DE ESCRITORIO LOCAL")
+    print("    (RTX 5090 | Vision & Action)          ")
+    print("===========================================")
+
+    voice_mode = os.getenv("LUCY_VOICE_MODE", "0") == "1"
+
+    try:
+        model_name = os.getenv("LUCY_OLLAMA_MODEL", "llama3.1:8b")
+        print(f"⚙️  Cargando Cerebro ({model_name})...")
+        engine = OllamaEngine(model=model_name)
+        print("✅ Sistemas en línea.")
+    except Exception as exc:
+        print(f"❌ Error crítico inicializando: {exc}")
+        return
+
+    try:
+        if voice_mode:
+            if not engine.speech:
+                print("❌ Error: Modo Voz activado pero el puente de audio falló.")
+                return
+
+            print("👂 Escuchando continuamente... (Habla claro)")
+            while True:
+                text_segment = engine.speech.listen_continuous()
+                if not text_segment:
+                    continue
+                print(f"🎤 Oído: {text_segment}")
+                should_continue = process_interaction(engine, text_segment)
+                if not should_continue:
                     break
-            self.engine.setProperty('rate', 150) # Velocidad un poco más rápida
-        except Exception as e:
-            logger.error(f"Error iniciando TTS: {e}")
-            sys.exit(1)
-        
-        # 2. Cargar Oído (Whisper)
-        try:
-            logger.info(f"👂 Cargando Whisper {MODEL_SIZE}...")
-            self.ear = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
-        except Exception as e:
-            logger.error(f"❌ Error Whisper: {e}")
-            logger.info("Intentando fallback a CPU int8...")
-            self.ear = WhisperModel("tiny", device="cpu", compute_type="int8")
+        else:
+            print("⌨️  Escribí tus comandos (Ctrl+C para salir)")
+            while True:
+                user_input = input("\n👉 Tú: ")
+                should_continue = process_interaction(engine, user_input)
+                if not should_continue:
+                    break
+    except KeyboardInterrupt:
+        print("\n🛑 Interrupción de usuario.")
+    except Exception as exc:
+        print(f"\n❌ Error fatal en main loop: {exc}")
 
-        # 3. Micrófono
-        self.recognizer = sr.Recognizer()
-
-    def listen(self):
-        with sr.Microphone() as source:
-            logger.info("🎤 Escuchando... (Hable ahora)")
-            try:
-                # Ajuste rápido de ruido
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
-                
-                # Guardar temporal
-                with open("temp_audio.wav", "wb") as f:
-                    f.write(audio.get_wav_data())
-                return "temp_audio.wav"
-            except sr.WaitTimeoutError:
-                return None
-            except Exception as e:
-                logger.error(f"Error Mic: {e}")
-                return None
-
-    def transcribe(self, audio_path):
-        if not audio_path: return ""
-        try:
-            segments, _ = self.ear.transcribe(audio_path, beam_size=5)
-            text = " ".join([segment.text for segment in segments]).strip()
-            if text: logger.info(f"👂 Oído: '{text}'")
-            return text
-        except Exception as e:
-            logger.error(f"Error Transcripción: {e}")
-            return ""
-
-    def speak(self, text):
-        if not text: return
-        logger.info(f"🗣️ Lucy: {text}")
-        try:
-            self.engine.say(text)
-            self.engine.runAndWait()
-        except Exception as e:
-            logger.error(f"Error Voz: {e}")
-
-    def run(self):
-        logger.info("🚀 SISTEMA ONLINE. Di 'Hola Lucy'.")
-        while True:
-            try:
-                audio = self.listen()
-                if audio:
-                    text = self.transcribe(audio)
-                    if len(text) > 2:
-                        # Procesar con el Cerebro Monolítico
-                        response = process_intent(text)
-                        self.speak(response)
-            except KeyboardInterrupt:
-                logger.info("Apagando...")
-                break
 
 if __name__ == "__main__":
-    lucy = LucyBody()
-    lucy.run()
+    main()

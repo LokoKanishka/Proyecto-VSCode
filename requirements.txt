@@ -20,3 +20,4 @@ uvicorn
 pandas
 duckduckgo-search
 numpy
+pyautogui
