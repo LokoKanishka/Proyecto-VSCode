@@ -177,6 +177,21 @@ class OllamaEngine:
         memory_lines = "\n".join(f"- {item}" for item in self.research_memory)
         return f"{SYSTEM_PROMPT}\n\n### CURRENT KNOWLEDGE ###\n{memory_lines}"
 
+    @staticmethod
+    def _precision_requested(prompt: str) -> bool:
+        lowered = (prompt or "").lower()
+        keywords = ["precio", "valor", "exacto", "cuanto", "cuánto", "poblacion", "población"]
+        return any(k in lowered for k in keywords)
+
+    @staticmethod
+    def _extract_cell_from_analysis(text: str) -> Optional[str]:
+        if not text:
+            return None
+        match = re.search(r"\[([A-H](?:10|[1-9]))\]", text, re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+        return None
+
     def register_skill(self, skill: BaseSkill):
         """Registra una habilidad para que el LLM pueda usarla."""
         self.skills[skill.name] = skill
@@ -434,6 +449,7 @@ class OllamaEngine:
         if status_callback:
             status_callback("🛠️ Ejecutando plan...")
 
+        force_precision = self._precision_requested(prompt)
         for step in plan:
             tool = step.get("tool")
             args = step.get("args") or {}
@@ -452,6 +468,26 @@ class OllamaEngine:
                                 f"ANALISIS VISUAL DE LA IA: {analysis}"
                             )
                             self.swarm.set_profile("general")
+                            if force_precision:
+                                target_cell = self._extract_cell_from_analysis(analysis)
+                                if target_cell:
+                                    zoom_result = self.skills["capture_region"].execute(
+                                        grid=target_cell
+                                    )
+                                    try:
+                                        zoom_payload = json.loads(zoom_result)
+                                        zoom_path = zoom_payload.get("path")
+                                        if zoom_path:
+                                            zoom_analysis = self._analyze_zoom(zoom_path)
+                                            result = (
+                                                f"{result} "
+                                                f"ZOOM AUTOMATICO: {zoom_analysis}"
+                                            )
+                                            self.swarm.set_profile("general")
+                                    except Exception as zoom_exc:
+                                        logger.warning(
+                                            "Error procesando zoom automatico: %s", zoom_exc
+                                        )
                     except Exception as e:
                         logger.error(f"Error analizando imagen: {e}")
                 if tool == "capture_region":
