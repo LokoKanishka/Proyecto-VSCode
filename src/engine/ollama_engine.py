@@ -74,6 +74,7 @@ class OllamaEngine:
         self.skills: Dict[str, BaseSkill] = {}
         self.router = SemanticRouter()
         self.research_memory: List[str] = []
+        self.max_tool_iterations = int(os.getenv("LUCY_MAX_TOOL_ITERATIONS", "8"))
         
         logger.info(f"🚀 OllamaEngine Monolítico inicializado (Modelo: {self.model})")
         
@@ -385,7 +386,11 @@ class OllamaEngine:
         allowed_tools.add("remember")
 
         response_tokens = []
-        for token in self.chat(history, allowed_tools=allowed_tools):
+        for token in self.chat(
+            history,
+            allowed_tools=allowed_tools,
+            max_tool_iterations=self.max_tool_iterations,
+        ):
             response_tokens.append(token)
             yield token
 
