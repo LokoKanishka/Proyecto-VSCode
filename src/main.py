@@ -72,9 +72,13 @@ def main() -> None:
     voice_mode = os.getenv("LUCY_VOICE_MODE", "0") == "1"
 
     try:
-        model_name = os.getenv("LUCY_OLLAMA_MODEL", "llama3.1:8b")
-        print(f"⚙️  Cargando Cerebro ({model_name})...")
-        engine = OllamaEngine(model=model_name)
+        model_name = os.getenv("LUCY_MAIN_MODEL") or os.getenv("LUCY_OLLAMA_MODEL")
+        if model_name:
+            print(f"⚙️  Cargando Cerebro ({model_name})...")
+            engine = OllamaEngine(model=model_name)
+        else:
+            print("⚙️  Cargando Cerebro (config.yaml o default)...")
+            engine = OllamaEngine()
         print("✅ Sistemas en línea.")
     except Exception as exc:
         print(f"❌ Error crítico inicializando: {exc}")

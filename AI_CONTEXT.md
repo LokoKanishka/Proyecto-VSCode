@@ -1,28 +1,54 @@
-# AI CONTEXT & ROADMAP - LUCY AGI
-> ESTADO ACTUAL: FASE 3 - NAVEGACIÓN WEB
-> ARQUITECTURA: MONOLITO PYTHON + ENJAMBRE (SWARM) LOCAL
+# LUCY AGI - AI CONTEXT FILE
+> IMPORTANTE: leer este archivo al inicio de cada sesion. Contiene el estado real del proyecto y decisiones clave.
 
-## 1. Misión
-Crear una AGI de escritorio 100% local (Soberanía Digital) usando RTX 5090.
-Sin APIs externas. Control total de mouse/teclado y visión.
+## 1. Identidad del Proyecto
+- Nombre: Lucy AGI (agente de escritorio local).
+- Hardware: RTX 5090 (32GB VRAM), Ryzen 9, 128GB RAM.
+- OS: Ubuntu Linux (X11).
+- Filosofia: 100% local, privacidad total, action-first (actuar antes de narrar).
 
-## 2. Estrategia Técnica
-- **Cerebro:** Llama-3-70B (Manager) + SLMs (Workers).
-- **Visión:** Llama-3.2-Vision con `capture_screen` y Grid Overlay (A1..H10).
-- **Acción:** PyAutoGUI con `GridMapper` para traducción de coordenadas (C4 -> x,y).
-- **Voz:** Mimic3 (TTS) + Faster-Whisper (STT).
+## 2. Stack Actual (2026-01-24)
+- Orquestador: Python, monolito en `src/main.py` (modo voz o texto).
+- Cerebro (texto): Swarm Mode. Main: `qwen2.5:14b`.
+- Ojos (vision): `llama3.2-vision` (Swarm Mode).
+- Oido (ASR): Whisper + Silero VAD.
+- Boca (TTS): Mimic3 (local).
+- Manos (accion): PyAutoGUI (teclado, mouse, screenshots).
 
-## 3. Estado de Módulos
-- [x] Oído (Whisper + Torchaudio): OPERATIVO
-- [x] Voz (Mimic3 + VoiceBridge): OPERATIVO (Requiere `libespeak-ng1`)
-- [x] Cerebro (Ollama CLI): OPERATIVO (Anti-loop implementado)
-- [x] Visión (desktop_vision.py): OPERATIVO (Detecta coordenadas)
-- [x] Acción (desktop_action.py): OPERATIVO (Click autónomo funcional)
-- [IN_PROGRESS] Navegación Web: Enseñando a usar Firefox.
+## 3. Estado por Fases
+| Fase | Nombre | Estado | Logros |
+| --- | --- | --- | --- |
+| 1 | Sentidos basicos | OK | Whisper + Mimic3 operativos. |
+| 2 | Cerebro local | OK | OllamaEngine integrado. |
+| 3 | Cuerpo digital | OK | Acciones fisicas en escritorio. |
+| 4 | Memoria & grounding | OK | Buffer de investigacion + grilla visual + limpieza de memoria. |
+| 5 | Swarm / model swapping | OK | Swapping dinamico (keep_alive), latencia ~2s, gestion de VRAM. |
 
-## 4. Notas de Despliegue
-- Para TTS: `sudo apt-get install libespeak-ng1` y `pip install mycroft-mimic3-tts torchaudio`.
-- Variable de Entorno: `LUCY_TTS_ENABLED=1` controla la voz.
+## 4. Archivos Clave
+- `src/main.py`: punto de entrada (voz o texto).
+- `src/engine/ollama_engine.py`: motor principal (tools, memoria, vision).
+- `src/engine/swarm_manager.py`: gestiona perfiles de modelos (general/vision).
+- `src/skills/desktop_skill_wrapper.py`: acciones y captura de pantalla.
+- `src/skills/research_memory.py`: memoria corta de investigacion.
+- `config.yaml`: configuracion central (modelos, voz, VAD, etc).
 
-## 5. Protocolo con Gemini
-- Si Gemini propone algo que ya existe en el repo, avisarlo explícitamente antes de implementar.
+## 5. Decisiones Tecnicas (No Cambiar sin Motivo)
+1. Accion primero: si el usuario pide hacer, se ejecuta antes de hablar.
+2. Scroll fisico: `pagedown` / `pageup` en vez de scroll por pixeles.
+3. Vision con grilla: usar `capture_screen(overlay_grid=true)` y clicks por coordenadas (A1..H10).
+4. Memoria de investigacion: solo via tool `remember`, no auto-guardar por defecto.
+
+## 6. Swarm Manager (Resumen)
+- `SwarmManager` usa Ollama `/api/chat` con `keep_alive` para cargar/descargar modelos.
+- Perfiles: `general` (mantiene main, descarga vision) y `vision` (mantiene vision, descarga main).
+- Modelos configurables:
+  - `LUCY_MAIN_MODEL` o `LUCY_OLLAMA_MODEL` (main).
+  - `LUCY_VISION_MODEL` o `ollama_vision_model` en `config.yaml` (vision).
+  - `LUCY_OLLAMA_HOST` o `ollama_host` (host).
+
+## 7. Proximo Paso (To-Do)
+- [ ] Validar swaps reales de VRAM (logs de switch y sin OOM).
+- [ ] Ajustar modelos por defecto si se decide `qwen2.5:14b`.
+- [ ] Tests manuales completos: vision + remember + resumen final.
+
+Ultima actualizacion: 2026-01-24

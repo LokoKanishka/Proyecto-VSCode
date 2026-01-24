@@ -14,6 +14,7 @@ from src.skills.desktop_skill_wrapper import DesktopSkillWrapper
 from src.skills.research_memory import ResearchMemorySkill
 from src.engine.voice_bridge import LucyVoiceBridge
 from src.engine.semantic_router import SemanticRouter
+from src.engine.swarm_manager import SwarmManager
 
 SYSTEM_PROMPT = """
 YOU ARE LUCY, an autonomous AI operator running locally on an RTX 5090.
@@ -55,11 +56,16 @@ STRICT RULES:
 """.strip()
 
 class OllamaEngine:
-    def __init__(self, model="llama3.1", host="http://localhost:11434"):
-        self.host = host
-        self.model = model
-        self.api_url = f"{host}/api/chat" # Usamos /api/chat para herramientas
-        self.generate_url = f"{host}/api/generate"
+    def __init__(self, model: Optional[str] = None, host: Optional[str] = None, vision_model: Optional[str] = None):
+        self.swarm = SwarmManager(host=host, main_model=model, vision_model=vision_model)
+        self.host = self.swarm.host
+        self.model = self.swarm.main_model
+        self.api_url = f"{self.host}/api/chat" # Usamos /api/chat para herramientas
+        self.generate_url = f"{self.host}/api/generate"
+        try:
+            self.ollama_client = ollama.Client(host=self.host)
+        except Exception:
+            self.ollama_client = None
         self.skills: Dict[str, BaseSkill] = {}
         self.router = SemanticRouter()
         self.research_memory: List[str] = []
@@ -75,8 +81,8 @@ class OllamaEngine:
             self.register_skill(skill)
         self.register_skill(ResearchMemorySkill(self.research_memory))
 
-        # Modelo de vision (configurable por entorno)
-        self.vision_model = os.getenv("LUCY_VISION_MODEL", "llava:latest")
+        # Modelo de vision (configurable por entorno o config.yaml)
+        self.vision_model = self.swarm.vision_model
 
         # Inicializar voz (Mimic3)
         self.tts_enabled = os.getenv("LUCY_TTS_ENABLED", "1") == "1"
@@ -242,6 +248,7 @@ class OllamaEngine:
                                                         f"Captura realizada en {image_path}. "
                                                         f"ANALISIS VISUAL DE LA IA: {analysis}"
                                                     )
+                                                    self.swarm.set_profile("general")
                                             except Exception as e:
                                                 logger.error(f"Error analizando imagen: {e}")
                                         elif func_name == "remember":
@@ -306,6 +313,7 @@ class OllamaEngine:
             return
 
         # 2. Cognición con Herramientas
+        self.swarm.set_profile("general")
         if history is None:
             history = []
         if not history or history[0].get("role") != "system":
@@ -348,8 +356,9 @@ class OllamaEngine:
             # Usamos un prompt de sistema duro para visión
             vision_prompt = f"Describe detalladamente lo que ves en la pantalla relacionado con: {prompt}. Responde solo en español."
             
+            self.swarm.set_profile("vision")
             payload = {
-                "model": "llava", 
+                "model": self.vision_model,
                 "prompt": vision_prompt,
                 "images": [img_str],
                 "stream": True,
@@ -374,6 +383,7 @@ class OllamaEngine:
         if not os.path.exists(image_path):
             return "Error: La imagen capturada no existe en disco."
 
+        self.swarm.set_profile("vision")
         prompt = (
             "ACT AS A UI NAVIGATOR.\n"
             "Analyze the screenshot. There is a RED/CYAN GRID overlaid.\n"
@@ -390,7 +400,8 @@ class OllamaEngine:
 
         logger.info(f"👁️ Analizando imagen {image_path} con {self.vision_model}...")
         try:
-            response = ollama.chat(
+            client = self.ollama_client or ollama
+            response = client.chat(
                 model=self.vision_model,
                 messages=[
                     {
@@ -409,6 +420,7 @@ class OllamaEngine:
 
     def set_model(self, model_name):
         self.model = model_name
+        self.swarm.main_model = model_name
 
 # --- COMPATIBILITY WRAPPER ---
 _global_engine = None
