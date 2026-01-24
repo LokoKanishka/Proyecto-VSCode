@@ -14,6 +14,10 @@ class GridMapper:
             raise ValueError("Grid code vacio")
 
         code = grid_code.strip().upper()
+        if not any(ch.isdigit() for ch in code):
+            raise ValueError(
+                f"Formato incorrecto: '{grid_code}'. Usa coordenadas tipo A1 o [2,2]."
+            )
         match = re.match(r"^([A-Z])(\d{1,2})$", code)
         if match:
             col_letter, row_str = match.groups()
