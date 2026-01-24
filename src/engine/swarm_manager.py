@@ -39,14 +39,24 @@ class SwarmManager:
             or self._config.get("ollama_vision_model")
             or "llava:latest"
         )
+        swarm_cfg = self._config.get("swarm", {}) if isinstance(self._config.get("swarm"), dict) else {}
+        self.persistent = self._parse_bool(
+            os.getenv("LUCY_SWARM_PERSIST"),
+            swarm_cfg.get("persistent_models", True),
+        )
+        self.keep_alive = self._parse_int(
+            os.getenv("LUCY_SWARM_KEEP_ALIVE"),
+            swarm_cfg.get("keep_alive", -1),
+        )
         self.timeout_s = timeout_s
         self._active_profile: Optional[str] = None
 
         logger.info(
-            "🧠 SwarmManager listo (host={}, main={}, vision={})",
+            "🧠 SwarmManager listo (host={}, main={}, vision={}, persistente={})",
             self.host,
             self.main_model,
             self.vision_model,
+            self.persistent,
         )
 
     def set_profile(self, profile_name: str) -> None:
@@ -58,13 +68,19 @@ class SwarmManager:
 
         logger.info("🔀 Swarm: cambiando a perfil '{}'", profile_name)
         if profile_name == "general":
-            self._touch_model(self.main_model, keep_alive=-1, label="main")
+            self._touch_model(self.main_model, keep_alive=self.keep_alive, label="main")
             if self.vision_model and self.vision_model != self.main_model:
-                self._touch_model(self.vision_model, keep_alive=0, label="vision")
+                if self.persistent:
+                    self._touch_model(self.vision_model, keep_alive=self.keep_alive, label="vision")
+                else:
+                    self._touch_model(self.vision_model, keep_alive=0, label="vision")
         elif profile_name == "vision":
-            self._touch_model(self.vision_model, keep_alive=-1, label="vision")
+            self._touch_model(self.vision_model, keep_alive=self.keep_alive, label="vision")
             if self.main_model and self.main_model != self.vision_model:
-                self._touch_model(self.main_model, keep_alive=0, label="main")
+                if self.persistent:
+                    self._touch_model(self.main_model, keep_alive=self.keep_alive, label="main")
+                else:
+                    self._touch_model(self.main_model, keep_alive=0, label="main")
 
         self._active_profile = profile_name
 
@@ -99,3 +115,18 @@ class SwarmManager:
         except Exception as exc:
             logger.warning("No se pudo leer {}: {}", config_path, exc)
             return {}
+
+    @staticmethod
+    def _parse_bool(value: Optional[str], default: bool) -> bool:
+        if value is None:
+            return bool(default)
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _parse_int(value: Optional[str], default: int) -> int:
+        if value is None:
+            return int(default)
+        try:
+            return int(str(value).strip())
+        except Exception:
+            return int(default)

@@ -3,6 +3,7 @@ import requests
 import datetime
 import os
 import base64
+import re
 from io import BytesIO
 from typing import List, Dict, Any, Optional, Generator, Set
 from loguru import logger
@@ -497,21 +498,17 @@ class OllamaEngine:
 
         self.swarm.set_profile("vision")
         prompt = (
-            "ACT AS A UI NAVIGATOR.\n"
-            "Analyze the screenshot. There is a RED/CYAN GRID overlaid.\n"
-            "- Columns: A, B, C, D...\n"
-            "- Rows: 1, 2, 3, 4...\n\n"
-            "YOUR TASK: Identify key elements and their GRID COORDINATES.\n"
-            "FORMAT: \"Element Name: [Coordinate]\" (use A1..H10 only).\n"
-            "Be concise. Prefer browser content and numeric values. Ignore terminals/editors unless asked.\n"
-            "If a clear numeric value is visible (price, population, etc.), include:\n"
-            "- Value: <number> [Coordinate]\n\n"
-            "Example:\n"
-            "- Terminal Window: [C4]\n"
-            "- VS Code Sidebar: [A2]\n"
-            "- Web Browser: [F5]\n\n"
-            "IMPORTANT: Coordinates MUST be in A1..H10 format. Do NOT use numeric pairs like [2][2].\n"
-            "Describe what is open and WHERE it is using the grid."
+            "SOS UN SENSOR OPTICO.\n"
+            "Hay una grilla ROJA/CIAN con coordenadas A1..H10.\n"
+            "PROHIBIDO: saludar, explicar, dar consejos, narrar.\n"
+            "Responde con maximo 6 lineas. Formato:\n"
+            "- <Etiqueta>: [A1]\n"
+            "- <Etiqueta>: <valor> [A1]\n"
+            "Prioriza contenido del navegador y valores numericos visibles.\n"
+            "Ignora terminales/editores salvo que el usuario lo pida.\n"
+            "Si ves un valor claro (precio, poblacion, etc.), ponelo como primera linea:\n"
+            "- Valor: <numero> [A1]\n"
+            "IMPORTANT: usa SOLO A1..H10. No uses pares numericos como [2][2]."
         )
 
         logger.info(f"👁️ Analizando imagen {image_path} con {self.vision_model}...")
@@ -542,10 +539,8 @@ class OllamaEngine:
         self.swarm.set_profile("vision")
         prompt = (
             "LEER VALOR EXACTO.\n"
-            "En la imagen hay un dato puntual (precio, poblacion, etc.).\n"
             "Ignora todo lo demas y devuelve SOLO el valor tal como se ve.\n"
-            "Si no hay un valor claro, responde: 'No veo un valor claro'.\n"
-            "Responde en español.\n"
+            "Si no hay un valor claro, responde: NOT_FOUND.\n"
         )
 
         logger.info(f"🔎 Analizando zoom {image_path} con {self.vision_model}...")
@@ -562,11 +557,33 @@ class OllamaEngine:
                 ],
             )
             description = response["message"]["content"]
+            description = self._sanitize_zoom_output(description)
             logger.info(f"🔎 Resultado zoom: {description[:100]}...")
             return description
         except Exception as e:
             logger.error(f"❌ Error en analisis zoom: {e}")
             return f"Error analizando zoom: {e}"
+
+    @staticmethod
+    def _sanitize_zoom_output(text: str) -> str:
+        raw = (text or "").strip()
+        if not raw:
+            return "NOT_FOUND"
+        lowered = raw.lower()
+        banned = [
+            "bookmark",
+            "favorito",
+            "browser",
+            "settings",
+            "chrome",
+            "edge",
+            "tutorial",
+        ]
+        if any(word in lowered for word in banned):
+            return "NOT_FOUND"
+        if len(raw) > 120 and not re.search(r"\d", raw):
+            return "NOT_FOUND"
+        return raw
 
     def set_model(self, model_name):
         self.model = model_name

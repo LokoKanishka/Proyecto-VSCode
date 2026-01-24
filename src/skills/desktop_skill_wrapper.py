@@ -361,6 +361,10 @@ class DesktopZoomSkill(BaseSkill):
         return {
             "type": "object",
             "properties": {
+                "cell_label": {
+                    "type": "string",
+                    "description": "Alias de grid (ej: C4).",
+                },
                 "grid": {
                     "type": "string",
                     "description": "Coordenada de grilla (ej: C4).",
@@ -388,7 +392,8 @@ class DesktopZoomSkill(BaseSkill):
 
     def execute(self, **kwargs) -> str:
         grid = (
-            kwargs.get("grid")
+            kwargs.get("cell_label")
+            or kwargs.get("grid")
             or kwargs.get("grid_id")
             or kwargs.get("grid_code")
             or kwargs.get("coordinate")

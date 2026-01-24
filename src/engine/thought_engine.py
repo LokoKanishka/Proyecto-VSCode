@@ -117,4 +117,36 @@ class Planner:
             if not isinstance(tool, str) or not isinstance(args, dict):
                 continue
             clean.append({"tool": tool, "args": args})
-        return clean
+        has_direct_url = any(
+            step["tool"] == "launch_app" and step["args"].get("url") for step in clean
+        )
+        if not has_direct_url:
+            return clean
+
+        filtered: List[Dict[str, Any]] = []
+        for step in clean:
+            if step["tool"] != "perform_action":
+                filtered.append(step)
+                continue
+
+            args = step.get("args") or {}
+            action = str(args.get("action") or args.get("action_type") or args.get("command") or "").lower()
+            text = str(args.get("text") or "")
+            keys = args.get("keys")
+
+            if action == "hotkey":
+                if isinstance(keys, list):
+                    key_list = [str(k).lower() for k in keys]
+                else:
+                    key_list = [k for k in text.lower().replace("+", " ").split() if k]
+                if "ctrl" in key_list and ("l" in key_list or "f6" in key_list):
+                    continue
+
+            if action == "type":
+                lowered = text.strip().lower()
+                if lowered.startswith("http") or lowered.startswith("www.") or lowered.startswith("/#"):
+                    continue
+
+            filtered.append(step)
+
+        return filtered

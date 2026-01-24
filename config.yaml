@@ -78,3 +78,8 @@ voice_modular:
 #   2. Save as new model: ollama create my-custom-model -f Modelfile
 #   3. Set ollama_model: "my-custom-model"
 # See docs/LUCY-LLM-GPT-OSS-LORA.md for details
+
+# Swarm / VRAM management
+# swarm:
+#   persistent_models: true   # Mantener modelos calientes en VRAM
+#   keep_alive: -1            # -1 = no descargar mientras haya VRAM
