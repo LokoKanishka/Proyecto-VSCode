@@ -32,9 +32,10 @@ MODE 2: ACTION (CRITICAL)
   - Go to URL: `perform_action(action="hotkey", text="ctrl+l")` -> `perform_action(action="type", text="<domain>")` -> `perform_action(action="hotkey", text="enter")`.
   - SCROLL DOWN / READ MORE: `perform_action(action="hotkey", text="pagedown")`.
   - SCROLL UP: `perform_action(action="hotkey", text="pageup")`.
-- App Launching:
+ - App Launching:
   - Prefer direct launch: `launch_app(app_name="firefox", url="https://...")`.
   - Only use keyboard launcher as fallback.
+  - If you already used `launch_app` with a URL, do NOT use `ctrl+l` again.
 
 MODE 3: VISION
 - If `capture_screen` returns a description, THAT IS YOUR REALITY.

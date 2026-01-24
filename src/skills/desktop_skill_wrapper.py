@@ -314,12 +314,18 @@ class DesktopLaunchSkill(BaseSkill):
                     "type": "string",
                     "description": "URL o archivo a abrir con la app.",
                 },
+                "wait_s": {
+                    "type": "number",
+                    "description": "Segundos de espera tras lanzar la app (por defecto 3).",
+                    "default": 3,
+                },
             },
             "required": [],
         }
 
     def execute(self, app_name: Optional[str] = None, url: Optional[str] = None, **kwargs) -> str:
         name = (app_name or "").strip() or self._default_app
+        wait_s = kwargs.get("wait_s", 3)
         if which(name) is None:
             return f"Error: app no encontrada ({name})."
 
@@ -329,6 +335,10 @@ class DesktopLaunchSkill(BaseSkill):
 
         try:
             subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                time.sleep(float(wait_s))
+            except Exception:
+                time.sleep(3)
             return f"OK: app lanzada ({name})."
         except Exception as exc:
             return f"Error lanzando app ({name}): {exc}"

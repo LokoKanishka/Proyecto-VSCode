@@ -53,6 +53,7 @@ class Planner:
             "- Usa SOLO Firefox (no Chrome/Edge).\n"
             "- Si necesitas hacer click, USA un grid A1..H10 real. No inventes etiquetas.\n"
             "- Si el usuario pide un valor exacto, luego de ubicar la celda usa capture_region para confirmarlo.\n"
+            "- Si ya usaste launch_app con URL, NO uses ctrl+l ni reescribas la direccion.\n"
             "- Usa remember para guardar datos clave que luego se usaran en la respuesta.\n"
             "- Si necesitas leer, usa capture_screen antes.\n"
             "- Para navegar dentro del browser: perform_action hotkey ctrl+l, luego type la URL, luego hotkey enter.\n"
