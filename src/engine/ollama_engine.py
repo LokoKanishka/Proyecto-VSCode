@@ -590,9 +590,8 @@ class OllamaEngine:
 
         self.swarm.set_profile("vision")
         prompt = (
-            "LEER VALOR EXACTO.\n"
-            "Ignora todo lo demas y devuelve SOLO el valor tal como se ve.\n"
-            "Si no hay un valor claro, responde: NOT_FOUND.\n"
+            "OCR TASK. EXTRACT NUMERIC VALUE ONLY.\n"
+            "Do not explain. If unclear, output: NOT_FOUND.\n"
         )
 
         logger.info(f"🔎 Analizando zoom {image_path} con {self.vision_model}...")
@@ -603,6 +602,12 @@ class OllamaEngine:
     def _sanitize_zoom_output(text: str) -> str:
         raw = (text or "").strip()
         if not raw:
+            return "NOT_FOUND"
+        # Filtra respuestas "cero" que suelen ser alucinaciones del OCR.
+        zero_like = re.sub(r"[^0-9]", "", raw)
+        if zero_like and set(zero_like) == {"0"}:
+            return "NOT_FOUND"
+        if raw in {"0", "0.0", "0.00", "$0", "$0.00", "0,0", "0,00"}:
             return "NOT_FOUND"
         lowered = raw.lower()
         banned = [
