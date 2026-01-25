@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, Generator, Set
 from loguru import logger
 import pyautogui
 import ollama
+from PIL import Image
 
 from src.skills.base_skill import BaseSkill
 from src.skills.desktop_skill_wrapper import DesktopSkillWrapper
@@ -169,6 +170,7 @@ class OllamaEngine:
             "investiga", "averigua", "busca", "buscame", "buscá",
             "compara", "compará", "entra a", "anda a", "planifica",
             "armame", "organiza", "recolecta", "averiguame",
+            "precio", "valor", "exacto", "bitcoin", "cotizacion", "cotización",
         ]
         return any(k in text for k in keywords)
 
@@ -553,24 +555,7 @@ class OllamaEngine:
         )
 
         logger.info(f"👁️ Analizando imagen {image_path} con {self.vision_model}...")
-        try:
-            client = self.ollama_client or ollama
-            response = client.chat(
-                model=self.vision_model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                        "images": [image_path],
-                    }
-                ],
-            )
-            description = response["message"]["content"]
-            logger.info(f"👁️ Resultado visual: {description[:100]}...")
-            return description
-        except Exception as e:
-            logger.error(f"❌ Error en analisis visual: {e}")
-            return f"Error analizando la imagen: {e}"
+        return self._vision_chat(prompt, image_path, prefix="visual")
 
     def _analyze_zoom(self, image_path: str) -> str:
         """Lee un valor puntual desde un recorte de pantalla."""
@@ -585,25 +570,8 @@ class OllamaEngine:
         )
 
         logger.info(f"🔎 Analizando zoom {image_path} con {self.vision_model}...")
-        try:
-            client = self.ollama_client or ollama
-            response = client.chat(
-                model=self.vision_model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                        "images": [image_path],
-                    }
-                ],
-            )
-            description = response["message"]["content"]
-            description = self._sanitize_zoom_output(description)
-            logger.info(f"🔎 Resultado zoom: {description[:100]}...")
-            return description
-        except Exception as e:
-            logger.error(f"❌ Error en analisis zoom: {e}")
-            return f"Error analizando zoom: {e}"
+        description = self._vision_chat(prompt, image_path, prefix="zoom")
+        return self._sanitize_zoom_output(description)
 
     @staticmethod
     def _sanitize_zoom_output(text: str) -> str:
@@ -625,6 +593,46 @@ class OllamaEngine:
         if len(raw) > 120 and not re.search(r"\d", raw):
             return "NOT_FOUND"
         return raw
+
+    def _vision_chat(self, prompt: str, image_path: str, prefix: str = "vision") -> str:
+        timeout_s = float(os.getenv("LUCY_VISION_TIMEOUT_S", "25"))
+        max_side = int(os.getenv("LUCY_VISION_MAX_SIDE", "0") or 0)
+        image_b64 = None
+        try:
+            if max_side and max_side > 0:
+                with Image.open(image_path) as img:
+                    img = img.convert("RGB")
+                    if max(img.size) > max_side:
+                        img.thumbnail((max_side, max_side))
+                    buf = BytesIO()
+                    img.save(buf, format="JPEG", quality=85)
+                    image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            if image_b64 is None:
+                with open(image_path, "rb") as fh:
+                    image_b64 = base64.b64encode(fh.read()).decode("utf-8")
+        except Exception as exc:
+            logger.error("❌ Error preparando imagen para vision: {}", exc)
+            return "NOT_FOUND"
+
+        payload = {
+            "model": self.vision_model,
+            "messages": [
+                {"role": "user", "content": prompt, "images": [image_b64]},
+            ],
+            "stream": False,
+            "options": {"temperature": 0.0},
+        }
+
+        try:
+            response = requests.post(self.api_url, json=payload, timeout=timeout_s)
+            response.raise_for_status()
+            data = response.json()
+            content = data.get("message", {}).get("content", "")
+            logger.info("👁️ Resultado {}: {}...", prefix, content[:100])
+            return content
+        except Exception as exc:
+            logger.error("❌ Error en vision {}: {}", prefix, exc)
+            return "NOT_FOUND"
 
     def set_model(self, model_name):
         self.model = model_name
