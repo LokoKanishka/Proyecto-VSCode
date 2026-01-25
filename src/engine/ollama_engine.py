@@ -4,6 +4,7 @@ import datetime
 import os
 import base64
 import re
+import time
 from io import BytesIO
 from typing import List, Dict, Any, Optional, Generator, Set
 from loguru import logger
@@ -456,6 +457,7 @@ class OllamaEngine:
         if status_callback:
             status_callback("🛠️ Ejecutando plan...")
 
+        precision_failed = False
         force_precision = self._precision_requested(prompt)
         for step in plan:
             tool = step.get("tool")
@@ -477,6 +479,17 @@ class OllamaEngine:
                             self.swarm.set_profile("general")
                             if force_precision:
                                 target_cell = self._extract_cell_from_analysis(analysis)
+                                if not target_cell:
+                                    time.sleep(1.0)
+                                    retry = self.skills["capture_screen"].execute(grid=True)
+                                    try:
+                                        retry_payload = json.loads(retry)
+                                        retry_path = retry_payload.get("path")
+                                        if retry_path:
+                                            retry_analysis = self._analyze_image(retry_path)
+                                            target_cell = self._extract_cell_from_analysis(retry_analysis)
+                                    except Exception:
+                                        target_cell = None
                                 if target_cell:
                                     zoom_result = self.skills["capture_region"].execute(
                                         grid=target_cell
@@ -495,6 +508,9 @@ class OllamaEngine:
                                         logger.warning(
                                             "Error procesando zoom automatico: %s", zoom_exc
                                         )
+                                else:
+                                    precision_failed = True
+                                    break
                     except Exception as e:
                         logger.error(f"Error analizando imagen: {e}")
                 if tool == "capture_region":
@@ -515,6 +531,16 @@ class OllamaEngine:
                         history[0]["content"] = self._build_system_prompt()
             except Exception as exc:
                 logger.warning("Error ejecutando paso del plan ({}): {}", tool, exc)
+
+        if precision_failed:
+            response_text = "No pude leer el valor con claridad. ¿Querés que lo reintente?"
+            if self.tts_enabled and self.speech:
+                try:
+                    self.speech.say(response_text)
+                except Exception as e:
+                    logger.warning(f"🔇 Error al hablar: {e}")
+            yield response_text
+            return
 
         if history is None:
             history = []
@@ -594,6 +620,21 @@ class OllamaEngine:
             return "NOT_FOUND"
         return raw
 
+    @staticmethod
+    def _is_refusal(text: str) -> bool:
+        if not text:
+            return True
+        lowered = text.lower()
+        triggers = [
+            "no puedo ayudar",
+            "no puedo ayudar con eso",
+            "no puedo ayudar con esto",
+            "lo siento",
+            "no tengo permiso",
+            "no estoy autorizado",
+        ]
+        return any(t in lowered for t in triggers)
+
     def _vision_chat(self, prompt: str, image_path: str, prefix: str = "vision") -> str:
         timeout_s = float(os.getenv("LUCY_VISION_TIMEOUT_S", "25"))
         max_side = int(os.getenv("LUCY_VISION_MAX_SIDE", "0") or 0)
@@ -628,6 +669,9 @@ class OllamaEngine:
             response.raise_for_status()
             data = response.json()
             content = data.get("message", {}).get("content", "")
+            if self._is_refusal(content):
+                logger.warning("⚠️ Vision devolvio rechazo. Marcando NOT_FOUND.")
+                return "NOT_FOUND"
             logger.info("👁️ Resultado {}: {}...", prefix, content[:100])
             return content
         except Exception as exc:
