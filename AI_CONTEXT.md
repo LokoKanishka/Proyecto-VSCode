@@ -1,30 +1,31 @@
 # 🧠 LUCY AGI - AI CONTEXT FILE (SAVE POINT)
-> **ESTADO:** FASE 6 (OPTIMIZACIÓN DE PRECISIÓN)
-> **HARDWARE:** RTX 5090 (32GB VRAM) - SWARM PERSISTENTE ACTIVO.
+> **ESTADO:** FASE 6 COMPLETADA (VISIÓN Y PRECISIÓN) ✅
+> **HITOS:** Swarm Persistente + Jailbreak Visual + Auto-Focus.
 
-## 1. Arquitectura Actual (Swarm)
-* **Manager:** `swarm_manager.py` mantiene `qwen2.5:14b` y `llama3.2-vision` cargados en VRAM (`keep_alive=-1`).
-* **Concurrency:** `OLLAMA_NUM_PARALLEL=2` para evitar bloqueos.
-* **Vision Pipeline:**
-    1. `capture_screen(grid=True)` -> Localización (GridMapper auto-resolución).
-    2. `capture_region(cell_label)` -> Zoom Quirúrgico (Hawk-Eye).
-    3. `_analyze_zoom` -> OCR del valor.
+## 1. Capacidades Desbloqueadas (Current State)
+* **Swarm 5090:** `qwen2.5:14b` (Cerebro) y `llama3.2-vision` (Ojos) conviven en VRAM (`keep_alive=-1`). Latencia de switch: ~0s.
+* **Hawk-Eye Vision:**
+    * **Grid Mapping:** Calibrado con `pyautogui.size()` y offset de 105px (Firefox UI).
+    * **Auto-Focus:** Clic preventivo en `(sw//2, 10)` antes de capturar para evitar "efecto espejo" con la terminal.
+    * **Zoom:** Recorte quirúrgico de la celda detectada (ej: D4).
+* **OCR Jailbreak:** Prompt "RAW DATA ONLY" + Filtros de salida sanitizados. Llama 3.2 lee precios sin sermones morales.
+* **Orquestación:** `OLLAMA_NUM_PARALLEL=2` permite concurrencia real.
 
-## 2. Último Bloqueo (CRÍTICO)
-* **Síntoma:** El sistema devuelve "No pude leer el valor" tras reintentos.
-* **Causa Raíz:** Llama 3.2 Vision devuelve rechazos de seguridad ("No puedo ayudar con eso") al ver tablas financieras (CoinMarketCap).
-* **Diagnóstico:** El prompt "OCR TASK" no fue suficiente para evadir el guardrail de "Financial Advice" del modelo.
-* **Infraestructura:** FUNCIONA PERFECTO. El zoom se hace, la imagen se guarda, pero el modelo se niega a leerla.
+## 2. Lecciones Aprendidas (Hard Constraints)
+* **Terminal Blindness:** La terminal SIEMPRE debe minimizarse o el script debe hacer auto-focus en la app objetivo.
+* **Vision Refusal:** Los modelos de visión modernos rechazan contextos financieros. Solución: Enmarcar como "Accessibility OCR task".
+* **Planner Loop:** El planificador lineal a veces sigue ejecutando pasos después de tener el dato. Se requiere corte temprano (`return` inmediato al detectar número).
 
-## 3. Próximos Pasos (To-Do Inmediato)
-1.  **Jailbreak Visual:** Modificar el prompt de visión para enmarcarlo como "Data Entry for Visually Impaired" o "Dataset Creation".
-2.  **Debug de Imágenes:** Revisar `/tmp/lucy_zoom.jpg` para confirmar que el recorte no esté cortando números.
-3.  **Alternative Model:** Si Llama 3.2 sigue terco, probar `minicpm-v` (más permisivo).
+## 3. Próximo Objetivo: FASE 7 (Tree of Thoughts)
+* **Meta:** Pasar de ejecución lineal a planificación deliberada.
+* **Concepto:** Generar múltiples caminos posibles -> Evaluar viabilidad -> Ejecutar el mejor.
+* **Stack:** Algoritmo BFS/DFS sobre el `thought_engine.py`.
 
-## 4. Mapa de Archivos Clave Modificados
-* `src/engine/ollama_engine.py`: Interceptor de precisión, retry logic, filtro de rechazos.
-* `src/skills/grid_mapper.py`: Detección automática de resolución `pyautogui.size()`.
-* `run_lucy_swarm.sh`: Script de arranque optimizado para 5090.
+## 4. Mapa de Archivos Clave
+* `src/engine/ollama_engine.py`: Lógica de Jailbreak, Retry y Swarm.
+* `src/skills/desktop_skill_wrapper.py`: Acciones físicas (Click, Type, Focus).
+* `src/utils/grid_mapper.py`: Matemática de la grilla.
+* `run_lucy_swarm.sh`: Script de arranque (Env Vars críticas).
 
 ---
-*Última sesión: Optimización de Swarm y Blindaje de Zoom.*
+*Última actualización: Éxito en lectura de precio Bitcoin (Fase 6).*
