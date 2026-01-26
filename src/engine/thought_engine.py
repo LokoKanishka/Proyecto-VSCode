@@ -391,9 +391,10 @@ class ThoughtEngine:
             node.status = "visited"
         return node
 
-    def search_dfs(self, root_node: ThoughtNode) -> ThoughtNode:
+    def search_dfs(self, root_node: ThoughtNode) -> Optional[ThoughtNode]:
         """DFS con profundidad fija y limite de nodos."""
-        best_node = root_node
+        best_node: Optional[ThoughtNode] = None
+        best_score = -1.0
         visited_nodes = 0
         stack: List[ThoughtNode] = [root_node]
 
@@ -410,8 +411,9 @@ class ThoughtEngine:
                 self.evaluate_node(node)
                 visited_nodes += 1
 
-            if node.score >= best_node.score:
+            if node is not root_node and node.plan_step and node.score > best_score:
                 best_node = node
+                best_score = node.score
 
             if node.score < self.prune_threshold:
                 node.status = "pruned"
