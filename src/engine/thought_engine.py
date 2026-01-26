@@ -285,6 +285,8 @@ class ThoughtEngine:
             "- Para abrir Firefox: launch_app(app_name='firefox', url='https://...') -> capture_screen.\n"
             "- NEVER guess deep URLs (e.g. https://skyscanner.com/flights/...). Always start at the Homepage "
             "(skyscanner.com) and use UI interaction to search.\n"
+            "- If you see input fields (e.g. Origin/Destination), use perform_action('type', ...) to fill them. "
+            "If you see a Search button, click it.\n"
             "- Si necesitas hacer click, USA un grid A1..H10 real. No inventes etiquetas.\n"
         )
 

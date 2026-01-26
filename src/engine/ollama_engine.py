@@ -663,6 +663,11 @@ class OllamaEngine:
             last_result = result
 
             task_state += f"\nStep executed: {tool}. Result: {result}"
+            if tool in {"launch_app", "perform_action"}:
+                time.sleep(2.0)
+                vision_desc = self._capture_and_describe_screen()
+                if vision_desc:
+                    task_state += f"\n[Current Screen]: {vision_desc}"
             if len(task_state) > 5000:
                 task_state = task_state[-5000:]
 
@@ -716,12 +721,32 @@ class OllamaEngine:
         logger.info(f"👁️ Analizando imagen {image_path} con {self.vision_model}...")
         return self._vision_chat(prompt, image_path, prefix="visual")
 
+    def _capture_and_describe_screen(self) -> str:
+        try:
+            if "capture_screen" not in self.skills:
+                return ""
+            result = self.skills["capture_screen"].execute(grid=True)
+            payload = json.loads(result)
+            image_path = payload.get("path")
+            if not image_path:
+                return ""
+            analysis = self._analyze_image(image_path)
+            return f"Visual check: {analysis}"
+        except Exception as exc:
+            logger.warning("Fallo vision update: {}", exc)
+            return ""
+
     @staticmethod
     def _fallback_complex_summary(
         prompt: str,
         last_step: Optional[tuple[str, Dict[str, Any]]],
         last_result: Optional[str],
     ) -> str:
+        if last_result and "error" in last_result.lower():
+            return (
+                "No pude abrir la aplicacion en el escritorio. "
+                f"Detalle: {last_result}"
+            )
         if last_step:
             tool, args = last_step
             if tool == "launch_app":
