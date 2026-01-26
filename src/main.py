@@ -10,9 +10,20 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.engine.ollama_engine import OllamaEngine
 
-logging.basicConfig(level=logging.ERROR, format="%(asctime)s | %(levelname)s | %(message)s")
+LOG_LEVEL = os.getenv("LUCY_LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
 logger = logging.getLogger("LUCY_MAIN")
-logger.setLevel(logging.INFO)
+logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+try:
+    from loguru import logger as loguru_logger
+
+    loguru_logger.remove()
+    loguru_logger.add(sys.stderr, level=LOG_LEVEL)
+except Exception:
+    pass
 
 
 def _run_prompt(engine: OllamaEngine, prompt: str) -> str:

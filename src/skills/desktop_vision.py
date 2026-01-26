@@ -1,5 +1,8 @@
 import os
-from typing import List
+import re
+import shutil
+import subprocess
+from typing import List, Optional, Tuple
 
 import pyautogui
 from PIL import Image, ImageDraw, ImageFont
@@ -11,14 +14,94 @@ class DesktopEye:
         self.rows = rows
         self.col_labels = self._build_col_labels(cols)
 
-    def capture(self, overlay_grid: bool = True, out_path: str = "/tmp/lucy_vision.jpg") -> str:
-        screenshot = pyautogui.screenshot()
+    def capture(
+        self,
+        overlay_grid: bool = True,
+        out_path: str = "/tmp/lucy_vision.jpg",
+        region: Optional[Tuple[int, int, int, int]] = None,
+    ) -> str:
+        region = region or self._active_window_region()
+        if region:
+            screenshot = pyautogui.screenshot(region=region)
+        else:
+            screenshot = pyautogui.screenshot()
         if overlay_grid:
             screenshot = self._apply_grid(screenshot)
 
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         screenshot.convert("RGB").save(out_path, "JPEG", quality=90)
         return out_path
+
+    def _active_window_region(self) -> Optional[Tuple[int, int, int, int]]:
+        if os.environ.get("LUCY_CAPTURE_ACTIVE_WINDOW", "1") != "1":
+            return None
+        if not shutil.which("xdotool") or not shutil.which("xwininfo"):
+            return None
+        info = None
+        try:
+            win = None
+            for cmd in (["xdotool", "getactivewindow"], ["xdotool", "getwindowfocus"]):
+                try:
+                    win = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL).strip()
+                    if win:
+                        break
+                except Exception:
+                    continue
+            if win:
+                info = subprocess.check_output(["xwininfo", "-id", win], text=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            info = None
+
+        if not info and shutil.which("wmctrl"):
+            try:
+                output = subprocess.check_output(["wmctrl", "-lx"], text=True, stderr=subprocess.DEVNULL)
+                preferred = []
+                fallback = []
+                for line in output.splitlines():
+                    lower = line.lower()
+                    if "skyscanner" in lower:
+                        preferred.append(line)
+                    elif "firefox" in lower:
+                        fallback.append(line)
+                for line in preferred + fallback:
+                    parts = line.split()
+                    if not parts:
+                        continue
+                    win_id = parts[0]
+                    try:
+                        info = subprocess.check_output(
+                            ["xwininfo", "-id", win_id],
+                            text=True,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        if info:
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                info = None
+
+        if not info:
+            return None
+
+        def _search(pattern: str) -> Optional[int]:
+            match = re.search(pattern, info)
+            if not match:
+                return None
+            try:
+                return int(match.group(1))
+            except Exception:
+                return None
+
+        x = _search(r"Absolute upper-left X:\s+(-?\d+)")
+        y = _search(r"Absolute upper-left Y:\s+(-?\d+)")
+        width = _search(r"Width:\s+(\d+)")
+        height = _search(r"Height:\s+(\d+)")
+        if x is None or y is None or width is None or height is None:
+            return None
+        if width <= 0 or height <= 0:
+            return None
+        return (x, y, width, height)
 
     def _apply_grid(self, image: Image.Image) -> Image.Image:
         base = image.convert("RGBA")

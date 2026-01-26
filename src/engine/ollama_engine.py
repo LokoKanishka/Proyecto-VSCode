@@ -170,6 +170,10 @@ class OllamaEngine:
             "armame una rutina", "armame una rutina de", "armá una rutina de",
             "quiero que busques y luego", "investigá sobre", "investiga y guardalo",
             "investigá sobre y guardalo", "busca y guardalo",
+            "continuá en", "continua en", "seguí en", "segui en",
+            "continuá en skyscanner", "continua en skyscanner", "seguí en skyscanner", "segui en skyscanner",
+            "completa los campos", "completá los campos", "rellena los campos", "llená el formulario",
+            "buscá vuelos", "busca vuelos", "buscá vuelos en", "busca vuelos en",
         ])
 
     def _should_clear_memory(self, prompt: str) -> bool:
@@ -191,6 +195,7 @@ class OllamaEngine:
             "compara", "compará", "entra a", "anda a", "planifica",
             "planificame", "planificá", "planea", "planeá", "planeame",
             "armame", "armá", "organiza", "organizá", "recolecta", "averiguame",
+            "continuá", "continua", "seguí", "segui", "completa", "completá", "rellena", "llená",
             "precio", "valor", "exacto", "bitcoin", "cotizacion", "cotización",
         ]
         return any(k in text for k in keywords)
@@ -663,11 +668,16 @@ class OllamaEngine:
             last_result = result
 
             task_state += f"\nStep executed: {tool}. Result: {result}"
+            if tool == "perform_action":
+                action_name = str(args.get("action") or "").lower()
+                if action_name in {"move_and_click", "click", "click_grid"}:
+                    task_state += "\n[FOCUS OK]"
             if tool in {"launch_app", "perform_action"}:
-                time.sleep(2.0)
+                wait_s = float(os.getenv("LUCY_UI_WAIT_S", "2.0"))
+                time.sleep(max(0.0, wait_s))
                 vision_desc = self._capture_and_describe_screen()
                 if vision_desc:
-                    task_state += f"\n[Current Screen]: {vision_desc}"
+                    task_state += f"\n[SCREEN UPDATE]: {vision_desc}"
             if len(task_state) > 5000:
                 task_state = task_state[-5000:]
 
@@ -715,6 +725,8 @@ class OllamaEngine:
             "Ignora terminales/editores salvo que el usuario lo pida.\n"
             "Si ves un valor claro (precio, poblacion, etc.), ponelo como primera linea:\n"
             "- Valor: <numero> [A1]\n"
+            "Si ves campos de formulario (Origen/De, Destino/A, Salida/Regreso, Buscar), "
+            "reportalos con su coordenada. Ejemplo: \"- Destino: [C3]\".\n"
             "IMPORTANT: usa SOLO A1..H10. No uses pares numericos como [2][2]."
         )
 
@@ -725,16 +737,58 @@ class OllamaEngine:
         try:
             if "capture_screen" not in self.skills:
                 return ""
-            result = self.skills["capture_screen"].execute(grid=True)
+            result = self.skills["capture_screen"].execute(grid=False)
             payload = json.loads(result)
             image_path = payload.get("path")
             if not image_path:
                 return ""
-            analysis = self._analyze_image(image_path)
-            return f"Visual check: {analysis}"
+            analysis = self._observe_ui_state(image_path)
+            grid_info = ""
+            if analysis:
+                logger.info("👁️ [UI Observer]: {}", analysis)
+                if analysis.lower().startswith("flight form"):
+                    try:
+                        grid_result = self.skills["capture_screen"].execute(grid=True)
+                        grid_payload = json.loads(grid_result)
+                        grid_path = grid_payload.get("path")
+                        if grid_path:
+                            grid_info = self._analyze_image(grid_path)
+                    except Exception:
+                        grid_info = ""
+            if grid_info:
+                return f"{analysis} | GRID: {grid_info}"
+            return analysis
         except Exception as exc:
             logger.warning("Fallo vision update: {}", exc)
             return ""
+
+    def _observe_ui_state(self, image_path: str) -> str:
+        """Describe elementos interactivos visibles para alimentar el ToT."""
+        if not os.path.exists(image_path):
+            return "No visual info available."
+        prompt = (
+            "SYSTEM: You are a UI Navigator agent.\n"
+            "TASK: Analyze this screenshot of a computer interface.\n"
+            "OUTPUT FORMAT: Either:\n"
+            "- \"Flight form: Origin=<...>; Destination=<...>; Depart=<...>; Return=<...>; SearchButton=<...>\"\n"
+            "- or exactly: \"No flight form visible.\"\n"
+            "If fields are visible but empty, use \"EMPTY\" for the value.\n"
+            "CONSTRAINT: Focus only on the MAIN browser window. Ignore other windows and layout details."
+        )
+        try:
+            response = self._vision_chat(
+                prompt,
+                image_path,
+                prefix="ui",
+                allow_refusal=True,
+            )
+            cleaned = (response or "").strip()
+            if not cleaned:
+                return "No visual info available."
+            return cleaned
+        except Exception as exc:
+            logger.error("❌ Error en UI Observer: {}", exc)
+            return "No visual info available."
 
     @staticmethod
     def _fallback_complex_summary(
@@ -854,7 +908,13 @@ class OllamaEngine:
         ]
         return any(t in lowered for t in triggers)
 
-    def _vision_chat(self, prompt: str, image_path: str, prefix: str = "vision") -> str:
+    def _vision_chat(
+        self,
+        prompt: str,
+        image_path: str,
+        prefix: str = "vision",
+        allow_refusal: bool = False,
+    ) -> str:
         timeout_s = float(os.getenv("LUCY_VISION_TIMEOUT_S", "25"))
         max_side = int(os.getenv("LUCY_VISION_MAX_SIDE", "0") or 0)
         image_b64 = None
@@ -888,7 +948,7 @@ class OllamaEngine:
             response.raise_for_status()
             data = response.json()
             content = data.get("message", {}).get("content", "")
-            if self._is_refusal(content):
+            if not allow_refusal and self._is_refusal(content):
                 logger.warning("⚠️ Vision devolvio rechazo. Marcando NOT_FOUND.")
                 return "NOT_FOUND"
             logger.info("👁️ Resultado {}: {}...", prefix, content[:100])

@@ -281,12 +281,18 @@ class ThoughtEngine:
             "- launch_app: {app_name: \"firefox\", url?: \"https://...\"}\n"
             "- capture_region: {grid: \"C4\", padding?: 60}\n"
             "RULES:\n"
-            "- Regla #0 (cold start): NO asumas apps abiertas. Si la tarea es web, ABRI Firefox primero.\n"
+            "- Regla #0 (cold start): NO asumas apps abiertas. Si la tarea es web y NO hay evidencia de navegador "
+            "abierto o un [SCREEN UPDATE], ABRI Firefox primero.\n"
+            "- Si el estado indica 'app lanzada (firefox)' o ya hay [SCREEN UPDATE], NO vuelvas a launch_app.\n"
             "- Para abrir Firefox: launch_app(app_name='firefox', url='https://...') -> capture_screen.\n"
             "- NEVER guess deep URLs (e.g. https://skyscanner.com/flights/...). Always start at the Homepage "
             "(skyscanner.com) and use UI interaction to search.\n"
+            "- NO inventes ciudades/aeropuertos. Usa solo destinos/origenes mencionados por el usuario. "
+            "Si falta informacion, pedila o espera una captura con los campos.\n"
             "- If you see input fields (e.g. Origin/Destination), use perform_action('type', ...) to fill them. "
             "If you see a Search button, click it.\n"
+            "- If you need to type into a specific field and don't have focus, do: capture_screen(grid=true) "
+            "then perform_action(click_grid, grid=\"...\") to focus the field, then type.\n"
             "- Si necesitas hacer click, USA un grid A1..H10 real. No inventes etiquetas.\n"
         )
 
@@ -331,7 +337,9 @@ class ThoughtEngine:
 
         children: List[ThoughtNode] = []
         for step in steps:
-            if not self._validate_candidate(step):
+            if not self._validate_candidate(step, node.state_snapshot):
+                continue
+            if self._is_repeat_launch(node, step):
                 continue
             child = ThoughtNode(
                 id=str(uuid.uuid4()),
@@ -346,6 +354,37 @@ class ThoughtEngine:
 
         node.children.extend(children)
         return children
+
+    @staticmethod
+    def _is_repeat_launch(node: ThoughtNode, step: Dict[str, Any], max_hops: int = 2) -> bool:
+        tool = str(step.get("tool") or "").lower()
+        if tool != "launch_app":
+            return False
+        args = step.get("args") or {}
+        if not isinstance(args, dict):
+            return False
+        target_app = str(args.get("app_name") or "").lower()
+        target_url = str(args.get("url") or "").strip()
+        snapshot = (node.state_snapshot or "").lower()
+        if target_app and (
+            f"app lanzada ({target_app})" in snapshot
+            or f"app ya estaba abierta ({target_app})" in snapshot
+        ):
+            return True
+        cur = node
+        hops = 0
+        while cur and hops < max_hops:
+            plan_step = cur.plan_step or {}
+            if isinstance(plan_step, dict) and str(plan_step.get("tool") or "").lower() == "launch_app":
+                prev_args = plan_step.get("args") or {}
+                if isinstance(prev_args, dict):
+                    app = str(prev_args.get("app_name") or "").lower()
+                    url = str(prev_args.get("url") or "").strip()
+                    if app and app == target_app and (not target_url or url == target_url):
+                        return True
+            cur = cur.parent
+            hops += 1
+        return False
 
     def evaluate_node(self, node: ThoughtNode) -> ThoughtNode:
         """Puntúa un nodo con el LLM para decidir viabilidad."""
@@ -456,7 +495,16 @@ class ThoughtEngine:
         return text.replace("```", "").strip()
 
     @staticmethod
-    def _validate_candidate(step: Dict[str, Any]) -> bool:
+    def _text_looks_like_url(text: str) -> bool:
+        lowered = text.lower().strip()
+        if "://" in lowered or lowered.startswith("www."):
+            return True
+        if "." in lowered and " " not in lowered:
+            return True
+        return False
+
+    @staticmethod
+    def _validate_candidate(step: Dict[str, Any], state_snapshot: str = "") -> bool:
         tool = str(step.get("tool") or "")
         args = step.get("args") or {}
         if not isinstance(args, dict):
@@ -464,8 +512,14 @@ class ThoughtEngine:
         action = str(args.get("action") or "").lower()
         if tool == "type" or (tool == "perform_action" and action == "type"):
             text = str(args.get("text") or "")
+            keys = args.get("keys") or []
             if len(text) > 50 or "\n" in text or "```" in text:
                 return False
+            if text and not ThoughtEngine._text_looks_like_url(text):
+                # Require an explicit focus action before typing into fields.
+                snapshot = (state_snapshot or "").lower()
+                if not keys and "[focus ok]" not in snapshot and "click ejecutado" not in snapshot:
+                    return False
         if tool == "capture_screen" and not args.get("grid"):
             return False
         return True

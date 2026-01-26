@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import time
@@ -14,10 +15,236 @@ from src.skills.desktop_action import DesktopHand
 from src.skills.desktop_vision import DesktopEye
 from src.skills.grid_mapper import GridMapper
 
+_LAST_APP_NAME: Optional[str] = None
+
+
+def _set_last_app(name: Optional[str]) -> None:
+    global _LAST_APP_NAME
+    if not name:
+        return
+    _LAST_APP_NAME = str(name).strip().lower() or _LAST_APP_NAME
+
+
+def _get_last_app() -> Optional[str]:
+    return _LAST_APP_NAME
+
 
 class DesktopVisionSkill(BaseSkill):
     def __init__(self, eye: Optional[DesktopEye] = None):
         self._eye = eye or DesktopEye()
+        self._last_focus_attempt = 0.0
+
+    def _log_active_window(self) -> None:
+        if which("xdotool") is None:
+            return
+        try:
+            win = subprocess.check_output(
+                ["xdotool", "getactivewindow"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            if not win:
+                return
+            title = ""
+            try:
+                title = subprocess.check_output(
+                    ["xdotool", "getwindowname", win],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+            except Exception:
+                title = ""
+            logger.info("🪟 Ventana activa: {} {}", win, f"'{title}'" if title else "")
+        except Exception:
+            return
+
+    def _get_active_window_title(self) -> str:
+        if which("xdotool") is None:
+            return ""
+        try:
+            win = subprocess.check_output(
+                ["xdotool", "getactivewindow"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            if not win:
+                return ""
+            return subprocess.check_output(
+                ["xdotool", "getwindowname", win],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        except Exception:
+            return ""
+
+    def _active_window_region(self) -> Optional[tuple[int, int, int, int]]:
+        if which("xwininfo") is None:
+            return None
+        win_id = None
+        if which("xdotool") is not None:
+            for cmd in (["xdotool", "getactivewindow"], ["xdotool", "getwindowfocus"]):
+                try:
+                    win_id = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL).strip()
+                    if win_id:
+                        break
+                except Exception:
+                    continue
+        if not win_id and which("wmctrl") is not None:
+            try:
+                output = subprocess.check_output(["wmctrl", "-lx"], text=True, stderr=subprocess.DEVNULL)
+                for line in output.splitlines():
+                    lower = line.lower()
+                    if "skyscanner" in lower or "firefox" in lower:
+                        win_id = line.split()[0]
+                        break
+            except Exception:
+                win_id = None
+        if not win_id:
+            return None
+        try:
+            info = subprocess.check_output(["xwininfo", "-id", win_id], text=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            return None
+
+        def _search(pattern: str) -> Optional[int]:
+            match = re.search(pattern, info)
+            if not match:
+                return None
+            try:
+                return int(match.group(1))
+            except Exception:
+                return None
+
+        x = _search(r"Absolute upper-left X:\s+(-?\d+)")
+        y = _search(r"Absolute upper-left Y:\s+(-?\d+)")
+        width = _search(r"Width:\s+(\d+)")
+        height = _search(r"Height:\s+(\d+)")
+        if x is None or y is None or width is None or height is None:
+            return None
+        if width <= 0 or height <= 0:
+            return None
+        return (x, y, width, height)
+
+    def _focus_target_window(self) -> None:
+        target = os.environ.get("LUCY_FOCUS_APP") or _get_last_app() or "firefox"
+        target = str(target).strip()
+        if not target:
+            return
+        # Avoid hammering focus every time in tight loops.
+        now = time.time()
+        if now - self._last_focus_attempt < 0.4:
+            return
+        self._last_focus_attempt = now
+
+        class_candidates = [target]
+        name_candidates = [target]
+        if target.lower() == "firefox":
+            class_candidates.extend(["firefox", "Navigator", "navigator"])
+            name_candidates.extend(["Firefox", "Mozilla Firefox"])
+
+        seen = set()
+        class_candidates = [c for c in class_candidates if c and not (c in seen or seen.add(c))]
+        seen = set()
+        name_candidates = [c for c in name_candidates if c and not (c in seen or seen.add(c))]
+
+        def _try_focus_once() -> bool:
+            if target.lower() == "firefox":
+                if which("wmctrl") is not None:
+                    try:
+                        output = subprocess.check_output(
+                            ["wmctrl", "-lx"],
+                            text=True,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        for line in output.splitlines():
+                            if "skyscanner" in line.lower():
+                                win_id = line.split()[0]
+                                result = subprocess.run(
+                                    ["wmctrl", "-ia", win_id],
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                )
+                                if result.returncode == 0:
+                                    if which("xdotool") is not None:
+                                        subprocess.run(
+                                            ["xdotool", "windowraise", win_id],
+                                            stdout=subprocess.DEVNULL,
+                                            stderr=subprocess.DEVNULL,
+                                        )
+                                    return True
+                    except Exception:
+                        pass
+                if which("xdotool") is not None:
+                    for name in ("Skyscanner", "skyscanner"):
+                        result = subprocess.run(
+                            ["xdotool", "search", "--onlyvisible", "--name", name, "windowactivate", "--sync"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        if result.returncode == 0:
+                            return True
+
+            if which("xdotool") is not None:
+                for cls in class_candidates:
+                    result = subprocess.run(
+                        ["xdotool", "search", "--onlyvisible", "--class", cls, "windowactivate", "--sync"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if result.returncode == 0:
+                        return True
+                for name in name_candidates:
+                    result = subprocess.run(
+                        ["xdotool", "search", "--onlyvisible", "--name", name, "windowactivate", "--sync"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if result.returncode == 0:
+                        return True
+            if which("wmctrl") is not None:
+                for name in name_candidates:
+                    result = subprocess.run(
+                        ["wmctrl", "-a", name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if result.returncode == 0:
+                        return True
+            return False
+
+        focused = False
+        deadline = time.time() + float(os.environ.get("LUCY_FOCUS_WAIT_S", "2.0"))
+        while time.time() < deadline and not focused:
+            focused = _try_focus_once()
+            if not focused:
+                time.sleep(0.2)
+
+        title = self._get_active_window_title()
+        if focused:
+            logger.debug("Foco aplicado a ventana objetivo: {}", target)
+        if target.lower() == "firefox" and "skyscanner" not in title.lower():
+            if which("wmctrl") is not None:
+                try:
+                    output = subprocess.check_output(["wmctrl", "-lx"], text=True, stderr=subprocess.DEVNULL)
+                    for line in output.splitlines():
+                        if "skyscanner" in line.lower() and "firefox" in line.lower():
+                            win_id = line.split()[0]
+                            subprocess.run(
+                                ["wmctrl", "-ia", win_id],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+                            if which("xdotool") is not None:
+                                subprocess.run(
+                                    ["xdotool", "windowraise", win_id],
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                )
+                            break
+                except Exception:
+                    pass
+        if focused:
+            time.sleep(0.5)
 
     @property
     def name(self) -> str:
@@ -49,14 +276,29 @@ class DesktopVisionSkill(BaseSkill):
         if grid is not None:
             overlay_grid = bool(grid)
         try:
-            sw, sh = pyautogui.size()
-            pyautogui.click(sw // 2, 10)
-            time.sleep(0.5)
+            self._focus_target_window()
+            self._log_active_window()
+            # Avoid top-bar calendar on GNOME; windowactivate should be enough when cropping active window.
+            if os.getenv("LUCY_SKIP_FOCUS_CLICK", "0") != "1" and os.getenv("LUCY_CAPTURE_ACTIVE_WINDOW", "0") != "1":
+                region = self._active_window_region()
+                if region:
+                    x, y, w, h = region
+                    click_x = x + max(20, w // 2)
+                    # Evita la barra superior global y el UI del navegador.
+                    click_y = y + min(max(80, h // 6), max(80, h - 10))
+                    pyautogui.click(click_x, click_y)
+                else:
+                    sw, sh = pyautogui.size()
+                    pyautogui.click(sw // 2, sh // 2)
+                time.sleep(0.5)
         except Exception as exc:
             logger.warning("No pude enfocar ventana antes de capturar: %s", exc)
-        logger.info("Capturando escritorio (overlay_grid=%s)", overlay_grid)
+        logger.info("Capturando escritorio (overlay_grid={})", overlay_grid)
         try:
-            path = self._eye.capture(overlay_grid=overlay_grid)
+            region = self._active_window_region()
+            if region:
+                logger.info("🎯 Capturando region activa: {}", region)
+            path = self._eye.capture(overlay_grid=overlay_grid, region=region)
             return json.dumps({"path": path}, ensure_ascii=False)
         except Exception as exc:
             logger.error("Error en DesktopVisionSkill: %s", exc)
@@ -127,6 +369,7 @@ class DesktopActionSkill(BaseSkill):
                 subprocess.run(["wmctrl", "-a", "Firefox"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
+        _set_last_app("firefox")
 
     @property
     def name(self) -> str:
@@ -222,6 +465,27 @@ class DesktopActionSkill(BaseSkill):
             if action == "type":
                 if text is None:
                     return "Error: se requiere texto para type."
+                if keys:
+                    raw_keys = keys
+                    if isinstance(raw_keys, str):
+                        raw_keys = [k for k in raw_keys.replace("+", " ").split() if k]
+                    clean_keys = []
+                    for k in raw_keys:
+                        k = str(k).lower().strip()
+                        if k in {"control", "ctrl"}:
+                            clean_keys.append("ctrl")
+                        elif k in {"alt"}:
+                            clean_keys.append("alt")
+                        elif k in {"shift"}:
+                            clean_keys.append("shift")
+                        else:
+                            clean_keys.append(k)
+                    if clean_keys:
+                        logger.info(f"⌨️ Pre-hotkey para type: {clean_keys}")
+                        if "ctrl" in clean_keys and ("l" in clean_keys or "f6" in clean_keys):
+                            self._ensure_firefox()
+                        self._hand.hotkey(*clean_keys)
+                        time.sleep(0.1)
                 cleaned = self._sanitize_typed_text(str(text))
                 if cleaned != text:
                     logger.info(f"Texto normalizado para tipeo: '{text}' -> '{cleaned}'")
@@ -299,6 +563,18 @@ class DesktopLaunchSkill(BaseSkill):
     def __init__(self):
         self._default_app = "firefox"
 
+    def _verify_process(self, name: str) -> Optional[bool]:
+        if which("pgrep") is None:
+            return None
+        try:
+            result = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True)
+            if result.returncode == 0:
+                return True
+            result = subprocess.run(["pgrep", "-f", name], capture_output=True, text=True)
+            return result.returncode == 0
+        except Exception:
+            return None
+
     @property
     def name(self) -> str:
         return "launch_app"
@@ -331,6 +607,7 @@ class DesktopLaunchSkill(BaseSkill):
 
     def execute(self, app_name: Optional[str] = None, url: Optional[str] = None, **kwargs) -> str:
         name = (app_name or "").strip() or self._default_app
+        _set_last_app(name)
         wait_s = kwargs.get("wait_s", 3)
         if which(name) is None:
             return f"Error: app no encontrada ({name})."
@@ -340,11 +617,60 @@ class DesktopLaunchSkill(BaseSkill):
             command.append(str(url))
 
         try:
+            logger.info(
+                "Lanzando app {} (DISPLAY={}, XAUTHORITY={})",
+                name,
+                os.environ.get("DISPLAY"),
+                os.environ.get("XAUTHORITY"),
+            )
+            running = self._verify_process(name)
+            if running is True:
+                # App ya abierta: enviar URL y enfocar sin abrir nuevas ventanas
+                if url:
+                    if which("xdg-open") is not None:
+                        try:
+                            subprocess.Popen(["xdg-open", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            subprocess.Popen([name, "--new-tab", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        except Exception:
+                            pass
+                if name.lower() == "firefox" and which("wmctrl") is not None:
+                    try:
+                        subprocess.run(
+                            ["wmctrl", "-a", "Firefox"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                    except Exception:
+                        pass
+                return f"OK: app ya estaba abierta ({name})."
             subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             try:
                 time.sleep(float(wait_s))
             except Exception:
                 time.sleep(3)
+            if name.lower() == "firefox" and which("wmctrl") is not None:
+                try:
+                    subprocess.run(
+                        ["wmctrl", "-a", "Firefox"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception:
+                    pass
+            running = self._verify_process(name)
+            if running is False and url and which("xdg-open") is not None:
+                try:
+                    subprocess.Popen(["xdg-open", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    time.sleep(1.5)
+                    running = self._verify_process(name)
+                except Exception:
+                    pass
+            if running is False:
+                return f"Error: app no se abrio ({name})."
             return f"OK: app lanzada ({name})."
         except Exception as exc:
             return f"Error lanzando app ({name}): {exc}"

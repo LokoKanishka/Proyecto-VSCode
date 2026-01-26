@@ -905,6 +905,9 @@ def maybe_handle_desktop_intent(text: str) -> bool | tuple[bool, str]:
     t = text.strip()
     if not t:
         return False
+    if _env_bool("LUCY_DISABLE_VOICE_ACTIONS", default=False):
+        print("[LucyVoiceActions] voice_actions deshabilitado por LUCY_DISABLE_VOICE_ACTIONS=1", flush=True)
+        return False
 
     lowered = t.lower()
     chatgpt_query = _extract_chatgpt_query(t)
