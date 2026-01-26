@@ -497,29 +497,33 @@ class OllamaEngine:
                                     try:
                                         zoom_payload = json.loads(zoom_result)
                                         zoom_path = zoom_payload.get("path")
-                                    if zoom_path:
-                                        zoom_analysis = self._analyze_zoom(zoom_path)
-                                        result = (
-                                            f"{result} "
-                                            f"ZOOM AUTOMATICO: {zoom_analysis}"
-                                        )
-                                        self.swarm.set_profile("general")
-                                        if zoom_analysis and zoom_analysis != "NOT_FOUND" and re.search(
-                                            r"\d", zoom_analysis
-                                        ):
-                                            logger.info(
-                                                "✅ Dato numérico obtenido. Finalizando tarea."
+                                        if zoom_path:
+                                            zoom_analysis = self._analyze_zoom(zoom_path)
+                                            result = (
+                                                f"{result} "
+                                                f"ZOOM AUTOMATICO: {zoom_analysis}"
                                             )
-                                            final_response = (
-                                                f"El valor exacto es: {zoom_analysis}"
-                                            )
-                                            if self.tts_enabled and self.speech:
-                                                try:
-                                                    self.speech.say(final_response)
-                                                except Exception as e:
-                                                    logger.warning(f"🔇 Error al hablar: {e}")
-                                            yield final_response
-                                            return
+                                            self.swarm.set_profile("general")
+                                            if (
+                                                zoom_analysis
+                                                and zoom_analysis != "NOT_FOUND"
+                                                and re.search(r"\d", zoom_analysis)
+                                            ):
+                                                logger.info(
+                                                    "✅ Dato numérico obtenido. Finalizando tarea."
+                                                )
+                                                final_response = (
+                                                    f"El valor exacto es: {zoom_analysis}"
+                                                )
+                                                if self.tts_enabled and self.speech:
+                                                    try:
+                                                        self.speech.say(final_response)
+                                                    except Exception as e:
+                                                        logger.warning(
+                                                            f"🔇 Error al hablar: {e}"
+                                                        )
+                                                yield final_response
+                                                return
                                     except Exception as zoom_exc:
                                         logger.warning(
                                             "Error procesando zoom automatico: %s", zoom_exc
