@@ -263,7 +263,7 @@ class ThoughtEngine:
         self.swarm.set_profile("general")
         system_prompt = (
             "SOS LUCY. Tu tarea es PROPONER opciones de siguiente paso, no ejecutar.\n"
-            "Devuelve SOLO un JSON valido (lista de pasos).\n"
+            "Devuelve SOLO un JSON valido (UNA unica lista).\n"
             "Cada paso debe tener: {\"tool\": \"...\", \"args\": {...}}.\n"
             "Herramientas disponibles:\n"
             "- perform_action: {action: \"hotkey\"|\"type\"|\"scroll\"|\"move_and_click\"|\"click_grid\", "
@@ -277,6 +277,10 @@ class ThoughtEngine:
             "- Para abrir Firefox: launch_app(app_name='firefox', url='https://...') -> capture_screen.\n"
             "- Si necesitas hacer click, USA un grid A1..H10 real. No inventes etiquetas.\n"
             "- No incluyas explicaciones ni texto fuera del JSON.\n"
+            "- Formato estricto: una sola lista JSON. Sin markdown, sin texto extra.\n"
+            "Ejemplo: "
+            "[{\"tool\": \"launch_app\", \"args\": {\"app_name\": \"firefox\", \"url\": \"https://...\"}}, "
+            "{\"tool\": \"capture_screen\", \"args\": {}}]\n"
         )
 
         messages = [
