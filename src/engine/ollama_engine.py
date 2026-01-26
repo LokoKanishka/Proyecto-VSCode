@@ -18,7 +18,7 @@ from src.skills.research_memory import ResearchMemorySkill
 from src.engine.voice_bridge import LucyVoiceBridge
 from src.engine.semantic_router import SemanticRouter
 from src.engine.swarm_manager import SwarmManager
-from src.engine.thought_engine import Planner
+from src.engine.thought_engine import Planner, ThoughtEngine, ThoughtNode
 
 SYSTEM_PROMPT = """
 YOU ARE LUCY, an autonomous AI operator running locally on an RTX 5090.
@@ -73,6 +73,7 @@ class OllamaEngine:
         except Exception:
             self.ollama_client = None
         self.planner = Planner(self.swarm, model=self.model, host=self.host)
+        self.brain = ThoughtEngine(self.swarm, model=self.model, host=self.host)
         self.skills: Dict[str, BaseSkill] = {}
         self.router = SemanticRouter()
         self.research_memory: List[str] = []
@@ -446,24 +447,43 @@ class OllamaEngine:
         status_callback=None,
     ) -> Generator[str, None, None]:
         if status_callback:
-            status_callback("🧭 Planificando...")
+            status_callback("🧭 Pensando...")
 
-        plan = self.planner.plan(prompt)
-        if not plan:
-            yield "No pude planificar esa tarea. ¿Querés intentar con una instruccion mas concreta?"
-            return
-        logger.info("🧭 Plan generado ({} pasos).", len(plan))
-
-        if status_callback:
-            status_callback("🛠️ Ejecutando plan...")
+        if history is None:
+            history = []
 
         precision_failed = False
+        executed_any = False
         force_precision = self._precision_requested(prompt)
-        for step in plan:
-            tool = step.get("tool")
-            args = step.get("args") or {}
+        task_state = f"User Request: {prompt}"
+        if self.research_memory:
+            task_state += f"\nMemory: {' | '.join(self.research_memory[-5:])}"
+
+        for step_count in range(self.max_tool_iterations):
+            root = ThoughtNode(
+                id=f"root-{step_count}",
+                parent=None,
+                plan_step={},
+                state_snapshot=task_state,
+                score=1.0,
+                depth=0,
+            )
+            best_node = self.brain.search_dfs(root)
+            if not best_node or not best_node.plan_step:
+                logger.error("El cerebro se quedó en blanco.")
+                break
+
+            tool = best_node.plan_step.get("tool")
+            args = best_node.plan_step.get("args") or {}
             if tool not in self.skills:
+                logger.warning("Tool desconocida en ToT: {}", tool)
+                task_state += f"\nStep proposed: {tool} (no disponible)."
                 continue
+
+            executed_any = True
+            if status_callback:
+                status_callback(f"🛠️ Ejecutando: {tool}...")
+
             try:
                 result = self.skills[tool].execute(**args)
                 if tool == "capture_screen":
@@ -561,6 +581,12 @@ class OllamaEngine:
                         history[0]["content"] = self._build_system_prompt()
             except Exception as exc:
                 logger.warning("Error ejecutando paso del plan ({}): {}", tool, exc)
+                task_state += f"\nStep failed: {tool}. Error: {exc}"
+                continue
+
+            task_state += f"\nStep executed: {tool}. Result: {result}"
+            if len(task_state) > 5000:
+                task_state = task_state[-5000:]
 
         if precision_failed:
             response_text = "No pude leer el valor con claridad. ¿Querés que lo reintente?"
@@ -570,6 +596,10 @@ class OllamaEngine:
                 except Exception as e:
                     logger.warning(f"🔇 Error al hablar: {e}")
             yield response_text
+            return
+
+        if not executed_any:
+            yield "No pude planificar esa tarea. ¿Querés intentar con una instruccion mas concreta?"
             return
 
         if history is None:
@@ -749,6 +779,8 @@ class OllamaEngine:
         self.model = model_name
         self.swarm.main_model = model_name
         self.planner.model = model_name
+        if hasattr(self, "brain"):
+            self.brain.model = model_name
 
 # --- COMPATIBILITY WRAPPER ---
 _global_engine = None
