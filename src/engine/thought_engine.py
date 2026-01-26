@@ -242,7 +242,7 @@ class ThoughtEngine:
         timeout_s: float = 20.0,
         max_depth: int = 3,
         max_nodes: int = 10,
-        prune_threshold: float = 0.5,
+        prune_threshold: float = 0.3,
     ):
         self.swarm = swarm
         self.model = model
@@ -344,6 +344,8 @@ class ThoughtEngine:
             "SOS LUCY. Evaluá la acción propuesta.\n"
             "Devuelve SOLO JSON valido: {\"score\": 0.0-1.0, \"feedback\": \"...\"}.\n"
             "Criterios: relevancia con el objetivo, seguridad y factibilidad.\n"
+            "SE LAXO: si la acción mueve la tarea hacia adelante aunque sea un poco, "
+            "usa un score > 0.6.\n"
         )
         payload = {
             "estado": node.state_snapshot,
@@ -400,8 +402,13 @@ class ThoughtEngine:
             if node.status != "unvisited":
                 continue
 
-            self.evaluate_node(node)
-            visited_nodes += 1
+            if node.parent is None and not node.plan_step:
+                node.score = 1.0
+                node.status = "visited"
+                visited_nodes += 1
+            else:
+                self.evaluate_node(node)
+                visited_nodes += 1
 
             if node.score >= best_node.score:
                 best_node = node
