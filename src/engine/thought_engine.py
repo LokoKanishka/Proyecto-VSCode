@@ -283,6 +283,8 @@ class ThoughtEngine:
             "RULES:\n"
             "- Regla #0 (cold start): NO asumas apps abiertas. Si la tarea es web, ABRI Firefox primero.\n"
             "- Para abrir Firefox: launch_app(app_name='firefox', url='https://...') -> capture_screen.\n"
+            "- NEVER guess deep URLs (e.g. https://skyscanner.com/flights/...). Always start at the Homepage "
+            "(skyscanner.com) and use UI interaction to search.\n"
             "- Si necesitas hacer click, USA un grid A1..H10 real. No inventes etiquetas.\n"
         )
 
@@ -452,25 +454,12 @@ class ThoughtEngine:
         if not isinstance(args, dict):
             return False
         action = str(args.get("action") or "").lower()
-        if tool == "perform_action" and action == "type":
+        if tool == "type" or (tool == "perform_action" and action == "type"):
             text = str(args.get("text") or "")
-            if len(text) > 150:
+            if len(text) > 50 or "\n" in text or "```" in text:
                 return False
-            lowered = text.lower()
-            blocked = [
-                "launch_app(",
-                "perform_action(",
-                "capture_screen",
-                "capture_region",
-                "import ",
-                "def ",
-                "class ",
-                "```",
-            ]
-            if any(token in lowered for token in blocked):
-                return False
-            if text.count("\n") >= 2:
-                return False
+        if tool == "capture_screen" and not args.get("grid"):
+            return False
         return True
 
     @staticmethod
