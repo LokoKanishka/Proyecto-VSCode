@@ -48,6 +48,12 @@ class DesktopVisionSkill(BaseSkill):
     def execute(self, overlay_grid: bool = True, grid: Optional[bool] = None) -> str:
         if grid is not None:
             overlay_grid = bool(grid)
+        try:
+            sw, sh = pyautogui.size()
+            pyautogui.click(sw // 2, 10)
+            time.sleep(0.5)
+        except Exception as exc:
+            logger.warning("No pude enfocar ventana antes de capturar: %s", exc)
         logger.info("Capturando escritorio (overlay_grid=%s)", overlay_grid)
         try:
             path = self._eye.capture(overlay_grid=overlay_grid)

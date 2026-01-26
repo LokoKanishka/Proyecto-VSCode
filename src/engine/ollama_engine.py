@@ -497,13 +497,29 @@ class OllamaEngine:
                                     try:
                                         zoom_payload = json.loads(zoom_result)
                                         zoom_path = zoom_payload.get("path")
-                                        if zoom_path:
-                                            zoom_analysis = self._analyze_zoom(zoom_path)
-                                            result = (
-                                                f"{result} "
-                                                f"ZOOM AUTOMATICO: {zoom_analysis}"
+                                    if zoom_path:
+                                        zoom_analysis = self._analyze_zoom(zoom_path)
+                                        result = (
+                                            f"{result} "
+                                            f"ZOOM AUTOMATICO: {zoom_analysis}"
+                                        )
+                                        self.swarm.set_profile("general")
+                                        if zoom_analysis and zoom_analysis != "NOT_FOUND" and re.search(
+                                            r"\d", zoom_analysis
+                                        ):
+                                            logger.info(
+                                                "✅ Dato numérico obtenido. Finalizando tarea."
                                             )
-                                            self.swarm.set_profile("general")
+                                            final_response = (
+                                                f"El valor exacto es: {zoom_analysis}"
+                                            )
+                                            if self.tts_enabled and self.speech:
+                                                try:
+                                                    self.speech.say(final_response)
+                                                except Exception as e:
+                                                    logger.warning(f"🔇 Error al hablar: {e}")
+                                            yield final_response
+                                            return
                                     except Exception as zoom_exc:
                                         logger.warning(
                                             "Error procesando zoom automatico: %s", zoom_exc
@@ -524,6 +540,16 @@ class OllamaEngine:
                                 f"LECTURA DE ALTA PRECISION: {analysis}"
                             )
                             self.swarm.set_profile("general")
+                            if analysis and analysis != "NOT_FOUND" and re.search(r"\d", analysis):
+                                logger.info("✅ Dato numérico obtenido. Finalizando tarea.")
+                                final_response = f"El valor exacto es: {analysis}"
+                                if self.tts_enabled and self.speech:
+                                    try:
+                                        self.speech.say(final_response)
+                                    except Exception as e:
+                                        logger.warning(f"🔇 Error al hablar: {e}")
+                                yield final_response
+                                return
                     except Exception as e:
                         logger.error(f"Error analizando zoom: {e}")
                 if tool == "remember":
@@ -590,8 +616,11 @@ class OllamaEngine:
 
         self.swarm.set_profile("vision")
         prompt = (
-            "OCR TASK. EXTRACT NUMERIC VALUE ONLY.\n"
-            "Do not explain. If unclear, output: NOT_FOUND.\n"
+            "SYSTEM: OCR ENGINE. MODE: RAW DATA ONLY.\n"
+            "INPUT: Image crop of a numeric value.\n"
+            "TASK: Output ONLY the value found. No words, no steps, no markdown.\n"
+            "NEGATIVE CONSTRAINT: Do NOT say 'The image contains', 'Step 1', or 'Price:'.\n"
+            "EXAMPLE OUTPUT: 89,000\n"
         )
 
         logger.info(f"🔎 Analizando zoom {image_path} con {self.vision_model}...")
@@ -603,6 +632,35 @@ class OllamaEngine:
         raw = (text or "").strip()
         if not raw:
             return "NOT_FOUND"
+        quoted = re.findall(r"\"([^\"]+)\"|'([^']+)'", raw)
+        for match in quoted:
+            candidate = next((val for val in match if val), None)
+            if candidate and len(candidate) <= 120 and re.search(r"[A-Za-z0-9]", candidate):
+                raw = candidate.strip()
+                break
+        raw = raw.strip().strip("`")
+        raw = re.sub(r"^[-*#>\s]+", "", raw).strip()
+        raw = re.sub(
+            r"(?i)^(the\s+)?(image|picture)\s+contains\s+(the\s+)?(text|string|value)[:\s-]*",
+            "",
+            raw,
+        ).strip()
+        raw = re.sub(
+            r"(?i)^(text(?:\s+string)?|value|price|result|output|ocr)[:\s-]*",
+            "",
+            raw,
+        ).strip()
+        raw = re.sub(r"(?i)^step\s*\d+[:\s-]*", "", raw).strip()
+        if "\n" in raw:
+            lines = [line.strip() for line in raw.splitlines() if line.strip()]
+            numeric_lines = [
+                line for line in lines if re.search(r"\d", line) and "step" not in line.lower()
+            ]
+            if numeric_lines:
+                raw = min(numeric_lines, key=len)
+            elif lines:
+                raw = lines[0]
+        raw = raw.strip().strip("\"'")
         # Filtra respuestas "cero" que suelen ser alucinaciones del OCR.
         zero_like = re.sub(r"[^0-9]", "", raw)
         if zero_like and set(zero_like) == {"0"}:
