@@ -313,7 +313,7 @@ class ThoughtEngine:
                     timeout_s=self.timeout_s,
                 )
             content = response.get("message", {}).get("content", "")
-            steps = self._parse_candidates(content)
+            steps = self._parse_candidates(self._extract_json_block(content))
         except Exception as exc:
             logger.warning("ThoughtEngine fallo proponiendo pasos: {}", exc)
             steps = []
@@ -324,7 +324,9 @@ class ThoughtEngine:
             )
 
         children: List[ThoughtNode] = []
-        for step in steps[:k]:
+        for step in steps:
+            if not self._validate_candidate(step):
+                continue
             child = ThoughtNode(
                 id=str(uuid.uuid4()),
                 parent=node,
@@ -333,6 +335,8 @@ class ThoughtEngine:
                 depth=node.depth + 1,
             )
             children.append(child)
+            if len(children) >= k:
+                break
 
         node.children.extend(children)
         return children
@@ -427,6 +431,45 @@ class ThoughtEngine:
                 stack.append(child)
 
         return best_node
+
+    @staticmethod
+    def _extract_json_block(raw: str) -> str:
+        text = (raw or "").strip()
+        if "```" not in text:
+            return text
+        # Prefer fenced json block if present
+        matches = re.findall(r"```(?:json)?\\s*(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
+        if matches:
+            return matches[0].strip()
+        return text.replace("```", "").strip()
+
+    @staticmethod
+    def _validate_candidate(step: Dict[str, Any]) -> bool:
+        tool = str(step.get("tool") or "")
+        args = step.get("args") or {}
+        if not isinstance(args, dict):
+            return False
+        action = str(args.get("action") or "").lower()
+        if tool == "perform_action" and action == "type":
+            text = str(args.get("text") or "")
+            if len(text) > 150:
+                return False
+            lowered = text.lower()
+            blocked = [
+                "launch_app(",
+                "perform_action(",
+                "capture_screen",
+                "capture_region",
+                "import ",
+                "def ",
+                "class ",
+                "```",
+            ]
+            if any(token in lowered for token in blocked):
+                return False
+            if text.count("\n") >= 2:
+                return False
+        return True
 
     @staticmethod
     def _parse_candidates(raw: str) -> List[Dict[str, Any]]:
