@@ -262,30 +262,32 @@ class ThoughtEngine:
         """Genera k candidatos de siguiente paso a partir del estado actual."""
         self.swarm.set_profile("general")
         system_prompt = (
-            "SOS LUCY. Tu tarea es PROPONER opciones de siguiente paso, no ejecutar.\n"
-            "Devuelve SOLO un JSON valido (UNA unica lista).\n"
-            "Cada paso debe tener: {\"tool\": \"...\", \"args\": {...}}.\n"
-            "Herramientas disponibles:\n"
+            f"GOAL STATE: {node.state_snapshot}\n"
+            f"TASK: Generate exactly {k} distinct, valid next steps.\n"
+            "OUTPUT FORMAT: A single valid JSON list of objects. "
+            "Do NOT use markdown code blocks. Do NOT write explanations.\n"
+            "JSON STRUCTURE MUST BE EXACTLY LIKE THIS:\n"
+            "[\n"
+            "  {\"tool\": \"tool_name\", \"args\": {\"arg1\": \"value1\"}},\n"
+            "  {\"tool\": \"tool_name\", \"args\": {\"arg1\": \"value1\"}}\n"
+            "]\n"
+            "CRITICAL: Ensure every open brace '{' has a matching closing brace '}'. "
+            "Check your syntax.\n"
+            "TOOLS:\n"
             "- perform_action: {action: \"hotkey\"|\"type\"|\"scroll\"|\"move_and_click\"|\"click_grid\", "
             "text?: str, keys?: [str], clicks?: int, grid?: str, x?: int, y?: int}\n"
             "- capture_screen: {grid?: bool, overlay_grid?: bool}\n"
             "- remember: {text: \"resumen breve\"}\n"
             "- launch_app: {app_name: \"firefox\", url?: \"https://...\"}\n"
             "- capture_region: {grid: \"C4\", padding?: 60}\n"
-            f"Reglas:\n- Proponé {k} opciones distintas.\n"
+            "RULES:\n"
             "- Regla #0 (cold start): NO asumas apps abiertas. Si la tarea es web, ABRI Firefox primero.\n"
             "- Para abrir Firefox: launch_app(app_name='firefox', url='https://...') -> capture_screen.\n"
             "- Si necesitas hacer click, USA un grid A1..H10 real. No inventes etiquetas.\n"
-            "- No incluyas explicaciones ni texto fuera del JSON.\n"
-            "- Formato estricto: una sola lista JSON. Sin markdown, sin texto extra.\n"
-            "Ejemplo: "
-            "[{\"tool\": \"launch_app\", \"args\": {\"app_name\": \"firefox\", \"url\": \"https://...\"}}, "
-            "{\"tool\": \"capture_screen\", \"args\": {}}]\n"
         )
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Estado actual:\n{node.state_snapshot}"},
         ]
 
         content = ""
