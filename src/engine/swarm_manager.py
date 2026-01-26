@@ -2,7 +2,35 @@ import os
 from typing import Any, Dict, Optional
 
 import requests
-from loguru import logger
+try:
+    from loguru import logger
+except Exception:  # pragma: no cover - fallback for minimal envs
+    import logging
+
+    class _LoggerShim:
+        def __init__(self, base_logger: logging.Logger):
+            self._logger = base_logger
+
+        def _log(self, level: int, message: str, *args: Any) -> None:
+            if args:
+                message = message.replace("{}", "%s")
+                self._logger.log(level, message, *args)
+            else:
+                self._logger.log(level, message)
+
+        def debug(self, message: str, *args: Any) -> None:
+            self._log(logging.DEBUG, message, *args)
+
+        def info(self, message: str, *args: Any) -> None:
+            self._log(logging.INFO, message, *args)
+
+        def warning(self, message: str, *args: Any) -> None:
+            self._log(logging.WARNING, message, *args)
+
+        def error(self, message: str, *args: Any) -> None:
+            self._log(logging.ERROR, message, *args)
+
+    logger = _LoggerShim(logging.getLogger(__name__))
 
 try:
     import yaml  # type: ignore

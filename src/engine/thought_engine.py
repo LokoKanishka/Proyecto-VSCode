@@ -1,10 +1,62 @@
 import json
+import uuid
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from loguru import logger
-import ollama
+import requests
+try:
+    from loguru import logger
+except Exception:  # pragma: no cover - fallback for minimal envs
+    import logging
+
+    class _LoggerShim:
+        def __init__(self, base_logger: logging.Logger):
+            self._logger = base_logger
+
+        def _log(self, level: int, message: str, *args: Any) -> None:
+            if args:
+                message = message.replace("{}", "%s")
+                self._logger.log(level, message, *args)
+            else:
+                self._logger.log(level, message)
+
+        def debug(self, message: str, *args: Any) -> None:
+            self._log(logging.DEBUG, message, *args)
+
+        def info(self, message: str, *args: Any) -> None:
+            self._log(logging.INFO, message, *args)
+
+        def warning(self, message: str, *args: Any) -> None:
+            self._log(logging.WARNING, message, *args)
+
+        def error(self, message: str, *args: Any) -> None:
+            self._log(logging.ERROR, message, *args)
+
+    logger = _LoggerShim(logging.getLogger(__name__))
+try:
+    import ollama
+except Exception:  # pragma: no cover - optional dependency
+    ollama = None
 
 from src.engine.swarm_manager import SwarmManager
+
+
+def _chat_http(
+    host: str,
+    model: str,
+    messages: List[Dict[str, Any]],
+    options: Optional[Dict[str, Any]] = None,
+    timeout_s: float = 20.0,
+) -> Dict[str, Any]:
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": options or {},
+    }
+    response = requests.post(f"{host}/api/chat", json=payload, timeout=timeout_s)
+    response.raise_for_status()
+    return response.json()
 
 
 class Planner:
@@ -20,6 +72,8 @@ class Planner:
         self.host = host
         self.timeout_s = timeout_s
         try:
+            if ollama is None:
+                raise RuntimeError("ollama lib not available")
             self.client = ollama.Client(host=host)
         except Exception:
             self.client = None
@@ -65,14 +119,29 @@ class Planner:
             {"role": "user", "content": user_request},
         ]
 
-        client = self.client or ollama
         try:
-            response = client.chat(
-                model=self.model,
-                messages=messages,
-                options={"temperature": 0.2},
-                stream=False,
-            )
+            if self.client:
+                response = self.client.chat(
+                    model=self.model,
+                    messages=messages,
+                    options={"temperature": 0.2},
+                    stream=False,
+                )
+            elif ollama is not None:
+                response = ollama.chat(
+                    model=self.model,
+                    messages=messages,
+                    options={"temperature": 0.2},
+                    stream=False,
+                )
+            else:
+                response = _chat_http(
+                    self.host,
+                    self.model,
+                    messages,
+                    options={"temperature": 0.2},
+                    timeout_s=self.timeout_s,
+                )
             content = response.get("message", {}).get("content", "")
             plan = self._parse_plan(content)
             if not plan:
@@ -103,7 +172,7 @@ class Planner:
                 if isinstance(data, list):
                     return Planner._sanitize_steps(data)
             except Exception:
-                return []
+                pass
         return []
 
     @staticmethod
@@ -150,3 +219,256 @@ class Planner:
             filtered.append(step)
 
         return filtered
+
+
+@dataclass
+class ThoughtNode:
+    id: str
+    parent: Optional["ThoughtNode"]
+    plan_step: Dict[str, Any]
+    state_snapshot: str
+    score: float = 0.0
+    status: str = "unvisited"
+    depth: int = 0
+    children: List["ThoughtNode"] = field(default_factory=list)
+
+
+class ThoughtEngine:
+    def __init__(
+        self,
+        swarm: SwarmManager,
+        model: str,
+        host: str,
+        timeout_s: float = 20.0,
+        max_depth: int = 3,
+        max_nodes: int = 10,
+        prune_threshold: float = 0.5,
+    ):
+        self.swarm = swarm
+        self.model = model
+        self.host = host
+        self.timeout_s = timeout_s
+        self.max_depth = max_depth
+        self.max_nodes = max_nodes
+        self.prune_threshold = prune_threshold
+        try:
+            if ollama is None:
+                raise RuntimeError("ollama lib not available")
+            self.client = ollama.Client(host=host)
+        except Exception:
+            self.client = None
+
+    def propose_next_steps(self, node: ThoughtNode, k: int = 3) -> List[ThoughtNode]:
+        """Genera k candidatos de siguiente paso a partir del estado actual."""
+        self.swarm.set_profile("general")
+        system_prompt = (
+            "SOS LUCY. Tu tarea es PROPONER opciones de siguiente paso, no ejecutar.\n"
+            "Devuelve SOLO un JSON valido (lista de pasos).\n"
+            "Cada paso debe tener: {\"tool\": \"...\", \"args\": {...}}.\n"
+            "Herramientas disponibles:\n"
+            "- perform_action: {action: \"hotkey\"|\"type\"|\"scroll\"|\"move_and_click\"|\"click_grid\", "
+            "text?: str, keys?: [str], clicks?: int, grid?: str, x?: int, y?: int}\n"
+            "- capture_screen: {grid?: bool, overlay_grid?: bool}\n"
+            "- remember: {text: \"resumen breve\"}\n"
+            "- launch_app: {app_name: \"firefox\", url?: \"https://...\"}\n"
+            "- capture_region: {grid: \"C4\", padding?: 60}\n"
+            f"Reglas:\n- Proponé {k} opciones distintas.\n"
+            "- Regla #0 (cold start): NO asumas apps abiertas. Si la tarea es web, ABRI Firefox primero.\n"
+            "- Para abrir Firefox: launch_app(app_name='firefox', url='https://...') -> capture_screen.\n"
+            "- Si necesitas hacer click, USA un grid A1..H10 real. No inventes etiquetas.\n"
+            "- No incluyas explicaciones ni texto fuera del JSON.\n"
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Estado actual:\n{node.state_snapshot}"},
+        ]
+
+        content = ""
+        try:
+            if self.client:
+                response = self.client.chat(
+                    model=self.model,
+                    messages=messages,
+                    options={"temperature": 0.4},
+                    stream=False,
+                )
+            elif ollama is not None:
+                response = ollama.chat(
+                    model=self.model,
+                    messages=messages,
+                    options={"temperature": 0.4},
+                    stream=False,
+                )
+            else:
+                response = _chat_http(
+                    self.host,
+                    self.model,
+                    messages,
+                    options={"temperature": 0.4},
+                    timeout_s=self.timeout_s,
+                )
+            content = response.get("message", {}).get("content", "")
+            steps = self._parse_candidates(content)
+        except Exception as exc:
+            logger.warning("ThoughtEngine fallo proponiendo pasos: {}", exc)
+            steps = []
+        if not steps and content:
+            logger.warning(
+                "ThoughtEngine no pudo parsear candidatos. Respuesta cruda: {}",
+                content[:400],
+            )
+
+        children: List[ThoughtNode] = []
+        for step in steps[:k]:
+            child = ThoughtNode(
+                id=str(uuid.uuid4()),
+                parent=node,
+                plan_step=step,
+                state_snapshot=node.state_snapshot,
+                depth=node.depth + 1,
+            )
+            children.append(child)
+
+        node.children.extend(children)
+        return children
+
+    def evaluate_node(self, node: ThoughtNode) -> ThoughtNode:
+        """Puntúa un nodo con el LLM para decidir viabilidad."""
+        self.swarm.set_profile("general")
+        system_prompt = (
+            "SOS LUCY. Evaluá la acción propuesta.\n"
+            "Devuelve SOLO JSON valido: {\"score\": 0.0-1.0, \"feedback\": \"...\"}.\n"
+            "Criterios: relevancia con el objetivo, seguridad y factibilidad.\n"
+        )
+        payload = {
+            "estado": node.state_snapshot,
+            "accion": node.plan_step,
+        }
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ]
+
+        try:
+            if self.client:
+                response = self.client.chat(
+                    model=self.model,
+                    messages=messages,
+                    options={"temperature": 0.2},
+                    stream=False,
+                )
+            elif ollama is not None:
+                response = ollama.chat(
+                    model=self.model,
+                    messages=messages,
+                    options={"temperature": 0.2},
+                    stream=False,
+                )
+            else:
+                response = _chat_http(
+                    self.host,
+                    self.model,
+                    messages,
+                    options={"temperature": 0.2},
+                    timeout_s=self.timeout_s,
+                )
+            content = response.get("message", {}).get("content", "")
+            score, feedback = self._parse_score(content)
+            node.score = score
+            node.status = "visited"
+            if feedback:
+                logger.debug("Feedback evaluación nodo {}: {}", node.id, feedback)
+        except Exception as exc:
+            logger.warning("ThoughtEngine fallo evaluando nodo: {}", exc)
+            node.score = 0.0
+            node.status = "visited"
+        return node
+
+    def search_dfs(self, root_node: ThoughtNode) -> ThoughtNode:
+        """DFS con profundidad fija y limite de nodos."""
+        best_node = root_node
+        visited_nodes = 0
+        stack: List[ThoughtNode] = [root_node]
+
+        while stack and visited_nodes < self.max_nodes:
+            node = stack.pop()
+            if node.status != "unvisited":
+                continue
+
+            self.evaluate_node(node)
+            visited_nodes += 1
+
+            if node.score >= best_node.score:
+                best_node = node
+
+            if node.score < self.prune_threshold:
+                node.status = "pruned"
+                continue
+
+            if node.depth >= self.max_depth:
+                continue
+
+            children = self.propose_next_steps(node)
+            for child in reversed(children):
+                stack.append(child)
+
+        return best_node
+
+    @staticmethod
+    def _parse_candidates(raw: str) -> List[Dict[str, Any]]:
+        text = (raw or "").strip()
+        if not text:
+            return []
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                return Planner._sanitize_steps(data)
+        except Exception:
+            pass
+        start = text.find("[")
+        end = text.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            try:
+                data = json.loads(text[start : end + 1])
+                if isinstance(data, list):
+                    return Planner._sanitize_steps(data)
+            except Exception:
+                return []
+        decoder = json.JSONDecoder()
+        collected: List[Dict[str, Any]] = []
+        for idx in range(len(text)):
+            if text[idx] not in "[{":
+                continue
+            try:
+                obj, _ = decoder.raw_decode(text[idx:])
+            except Exception:
+                continue
+            if isinstance(obj, list):
+                return Planner._sanitize_steps(obj)
+            if isinstance(obj, dict) and "tool" in obj:
+                collected.append(obj)
+        if collected:
+            return Planner._sanitize_steps(collected)
+        return []
+
+    @staticmethod
+    def _parse_score(raw: str) -> tuple[float, str]:
+        text = (raw or "").strip()
+        if not text:
+            return 0.0, ""
+        try:
+            data = json.loads(text)
+            score = float(data.get("score", 0.0))
+            feedback = str(data.get("feedback") or "")
+            return max(0.0, min(1.0, score)), feedback.strip()
+        except Exception:
+            pass
+        number = None
+        try:
+            number = float(text)
+        except Exception:
+            number = None
+        if number is not None:
+            return max(0.0, min(1.0, number)), ""
+        return 0.0, ""
