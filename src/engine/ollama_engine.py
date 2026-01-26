@@ -63,7 +63,18 @@ STRICT RULES:
 
 class OllamaEngine:
     def __init__(self, model: Optional[str] = None, host: Optional[str] = None, vision_model: Optional[str] = None):
-        self.swarm = SwarmManager(host=host, main_model=model, vision_model=vision_model)
+        timeout_env = os.getenv("LUCY_OLLAMA_TIMEOUT", "30")
+        try:
+            self.ollama_timeout_s = float(timeout_env)
+        except ValueError:
+            self.ollama_timeout_s = 30.0
+
+        self.swarm = SwarmManager(
+            host=host,
+            main_model=model,
+            vision_model=vision_model,
+            timeout_s=self.ollama_timeout_s,
+        )
         self.host = self.swarm.host
         self.model = self.swarm.main_model
         self.api_url = f"{self.host}/api/chat" # Usamos /api/chat para herramientas
@@ -72,8 +83,8 @@ class OllamaEngine:
             self.ollama_client = ollama.Client(host=self.host)
         except Exception:
             self.ollama_client = None
-        self.planner = Planner(self.swarm, model=self.model, host=self.host)
-        self.brain = ThoughtEngine(self.swarm, model=self.model, host=self.host)
+        self.planner = Planner(self.swarm, model=self.model, host=self.host, timeout_s=self.ollama_timeout_s)
+        self.brain = ThoughtEngine(self.swarm, model=self.model, host=self.host, timeout_s=self.ollama_timeout_s)
         self.skills: Dict[str, BaseSkill] = {}
         self.router = SemanticRouter()
         self.research_memory: List[str] = []
@@ -126,7 +137,10 @@ class OllamaEngine:
     def _setup_router(self):
         """Configura las intenciones básicas para el enrutamiento rápido."""
         # Aumentamos el umbral para ser más selectivos
-        self.router.threshold = 0.6
+        try:
+            self.router.threshold = float(os.getenv("LUCY_ROUTER_THRESHOLD", "0.55"))
+        except ValueError:
+            self.router.threshold = 0.55
         
         self.router.register_route("system_control", [
             "subir volumen", "bajar volumen", "silencio", "mute",
@@ -152,6 +166,10 @@ class OllamaEngine:
             "investiga sobre", "buscame precios de", "averigua el precio de",
             "entra a", "anda a", "planifica un viaje", "compara precios",
             "busca en internet", "busca en la web", "recolecta informacion",
+            "planificame un viaje", "planificá un viaje", "planeame un viaje",
+            "armame una rutina", "armame una rutina de", "armá una rutina de",
+            "quiero que busques y luego", "investigá sobre", "investiga y guardalo",
+            "investigá sobre y guardalo", "busca y guardalo",
         ])
 
     def _should_clear_memory(self, prompt: str) -> bool:
@@ -171,7 +189,8 @@ class OllamaEngine:
         keywords = [
             "investiga", "averigua", "busca", "buscame", "buscá",
             "compara", "compará", "entra a", "anda a", "planifica",
-            "armame", "organiza", "recolecta", "averiguame",
+            "planificame", "planificá", "planea", "planeá", "planeame",
+            "armame", "armá", "organiza", "organizá", "recolecta", "averiguame",
             "precio", "valor", "exacto", "bitcoin", "cotizacion", "cotización",
         ]
         return any(k in text for k in keywords)
@@ -228,19 +247,25 @@ class OllamaEngine:
     ) -> Generator[str, None, None]:
         """Bucle de chat principal con soporte para herramientas."""
         tools = self.get_tool_definitions(allowed_tools)
-        
+
         payload = {
             "model": self.model,
             "messages": messages,
             "stream": stream,
-            "tools": tools,
             "options": {"temperature": 0.3}
         }
+        if tools:
+            payload["tools"] = tools
 
         try:
             if stream:
                 full_response = ""
-                with requests.post(self.api_url, json=payload, stream=True) as response:
+                with requests.post(
+                    self.api_url,
+                    json=payload,
+                    stream=True,
+                    timeout=self.ollama_timeout_s,
+                ) as response:
                     response.raise_for_status()
                     for line in response.iter_lines():
                         if not line: continue
@@ -265,13 +290,56 @@ class OllamaEngine:
                                     func_name = tool_call["function"]["name"]
                                     args = tool_call["function"]["arguments"]
                                     
-                                    if allowed_tools is not None and func_name not in allowed_tools:
-                                        logger.warning(
-                                            "Tool '%s' bloqueada por politica para este turno.",
-                                            func_name,
+                                if allowed_tools is not None and func_name not in allowed_tools:
+                                    logger.warning(
+                                        "Tool '%s' bloqueada por politica para este turno.",
+                                        func_name,
+                                    )
+                                    content = (msg.get("content") or "").strip()
+                                    if content:
+                                        yield content
+                                    else:
+                                        fallback_messages = list(messages)
+                                        fallback_messages.append(
+                                            {
+                                                "role": "system",
+                                                "content": "Provide a text summary only. Do NOT use tools.",
+                                            }
                                         )
-                                        yield "No es necesario ejecutar herramientas para responder."
-                                        return
+                                        try:
+                                            fallback_payload = {
+                                                "model": self.model,
+                                                "messages": fallback_messages,
+                                                "stream": False,
+                                                "options": {"temperature": 0.3},
+                                            }
+                                            res = requests.post(
+                                                self.api_url,
+                                                json=fallback_payload,
+                                                timeout=self.ollama_timeout_s,
+                                            )
+                                            res.raise_for_status()
+                                            data = res.json()
+                                            fallback_content = (
+                                                data.get("message", {}).get("content", "").strip()
+                                            )
+                                            if fallback_content:
+                                                yield fallback_content
+                                            else:
+                                                yield (
+                                                    "Intenté usar una herramienta pero estoy en modo solo texto. "
+                                                    f"Aquí está el resumen: {content}"
+                                                )
+                                        except Exception as exc:
+                                            logger.warning(
+                                                "Fallback de resumen en texto falló: {}",
+                                                exc,
+                                            )
+                                            yield (
+                                                "Intenté usar una herramienta pero estoy en modo solo texto. "
+                                                f"Aquí está el resumen: {content}"
+                                            )
+                                    return
 
                                     # Ejecutar la herramienta
                                     if func_name in self.skills:
@@ -329,7 +397,7 @@ class OllamaEngine:
                                 full_response += content
                                 yield content
             else:
-                res = requests.post(self.api_url, json=payload)
+                res = requests.post(self.api_url, json=payload, timeout=self.ollama_timeout_s)
                 res.raise_for_status()
                 # Implementar lógica no-stream si es necesario
                 pass
@@ -429,7 +497,12 @@ class OllamaEngine:
             
             if status_callback: status_callback("🧠 Analizando imagen...")
             
-            with requests.post(self.generate_url, json=payload, stream=True) as response:
+            with requests.post(
+                self.generate_url,
+                json=payload,
+                stream=True,
+                timeout=self.ollama_timeout_s,
+            ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
                     if not line: continue
@@ -454,6 +527,8 @@ class OllamaEngine:
 
         precision_failed = False
         executed_any = False
+        last_step: Optional[tuple[str, Dict[str, Any]]] = None
+        last_result: Optional[str] = None
         force_precision = self._precision_requested(prompt)
         task_state = f"User Request: {prompt}"
         if self.research_memory:
@@ -584,6 +659,9 @@ class OllamaEngine:
                 task_state += f"\nStep failed: {tool}. Error: {exc}"
                 continue
 
+            last_step = (tool, args)
+            last_result = result
+
             task_state += f"\nStep executed: {tool}. Result: {result}"
             if len(task_state) > 5000:
                 task_state = task_state[-5000:]
@@ -601,24 +679,19 @@ class OllamaEngine:
         if not executed_any:
             yield "No pude planificar esa tarea. ¿Querés intentar con una instruccion mas concreta?"
             return
-
-        if history is None:
-            history = []
-        if not history or history[0].get("role") != "system":
-            history.insert(0, {"role": "system", "content": self._build_system_prompt()})
-
-        history.append({"role": "user", "content": prompt})
-        response_tokens = []
-        for token in self.chat(history, allowed_tools=set()):
-            response_tokens.append(token)
-            yield token
-
-        response_text = "".join(response_tokens).strip()
-        if self.tts_enabled and self.speech and response_text:
-            try:
-                self.speech.say(response_text)
-            except Exception as e:
-                logger.warning(f"🔇 Error al hablar: {e}")
+        response_text = self._fallback_complex_summary(
+            prompt=prompt,
+            last_step=last_step,
+            last_result=last_result,
+        )
+        if response_text:
+            if self.tts_enabled and self.speech:
+                try:
+                    self.speech.say(response_text)
+                except Exception as e:
+                    logger.warning(f"🔇 Error al hablar: {e}")
+            yield response_text
+            return
 
     def _analyze_image(self, image_path: str) -> str:
         """Analiza una imagen local con el modelo de visión configurado."""
@@ -642,6 +715,30 @@ class OllamaEngine:
 
         logger.info(f"👁️ Analizando imagen {image_path} con {self.vision_model}...")
         return self._vision_chat(prompt, image_path, prefix="visual")
+
+    @staticmethod
+    def _fallback_complex_summary(
+        prompt: str,
+        last_step: Optional[tuple[str, Dict[str, Any]]],
+        last_result: Optional[str],
+    ) -> str:
+        if last_step:
+            tool, args = last_step
+            if tool == "launch_app":
+                url = args.get("url")
+                if url:
+                    return (
+                        f"Abrí Firefox en {url}. "
+                        "¿Querés que complete la búsqueda (origen, destino y fechas)?"
+                    )
+                return "Abrí Firefox. ¿Querés que continúe con la búsqueda?"
+            if tool == "capture_screen":
+                return "Hice una captura para ubicar los campos. ¿Querés que siga con la búsqueda?"
+            if tool == "perform_action":
+                return "Avancé con acciones en el navegador. ¿Querés que continúe?"
+        if last_result:
+            return "Avancé con la tarea. ¿Querés que continúe?"
+        return "Avancé con la tarea. ¿Querés que continúe?"
 
     def _analyze_zoom(self, image_path: str) -> str:
         """Lee un valor puntual desde un recorte de pantalla."""

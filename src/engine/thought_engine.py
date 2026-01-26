@@ -434,6 +434,12 @@ class ThoughtEngine:
             for child in reversed(children):
                 stack.append(child)
 
+        if best_node and best_node.plan_step:
+            logger.info(
+                "🏆 [ThoughtEngine] Best step selected: {} (Score: {:.2f})",
+                best_node.plan_step,
+                best_node.score,
+            )
         return best_node
 
     @staticmethod
