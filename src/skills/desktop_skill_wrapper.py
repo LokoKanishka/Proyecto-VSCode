@@ -94,7 +94,12 @@ class DesktopVisionSkill(BaseSkill):
                 output = subprocess.check_output(["wmctrl", "-lx"], text=True, stderr=subprocess.DEVNULL)
                 for line in output.splitlines():
                     lower = line.lower()
-                    if "skyscanner" in lower or "firefox" in lower:
+                    if (
+                        "skyscanner" in lower
+                        or "firefox" in lower
+                        or "chrome" in lower
+                        or "chromium" in lower
+                    ):
                         win_id = line.split()[0]
                         break
             except Exception:
@@ -126,7 +131,14 @@ class DesktopVisionSkill(BaseSkill):
         return (x, y, width, height)
 
     def _focus_target_window(self) -> None:
-        target = os.environ.get("LUCY_FOCUS_APP") or _get_last_app() or "firefox"
+        target = os.environ.get("LUCY_FOCUS_APP") or _get_last_app()
+        if not target:
+            if which("google-chrome") is not None:
+                target = "google-chrome"
+            elif which("chromium") is not None:
+                target = "chromium"
+            else:
+                target = "firefox"
         target = str(target).strip()
         if not target:
             return
@@ -141,6 +153,9 @@ class DesktopVisionSkill(BaseSkill):
         if target.lower() == "firefox":
             class_candidates.extend(["firefox", "Navigator", "navigator"])
             name_candidates.extend(["Firefox", "Mozilla Firefox"])
+        if target.lower() in {"google-chrome", "chrome", "chromium"}:
+            class_candidates.extend(["google-chrome", "Google-chrome", "chromium", "Chromium"])
+            name_candidates.extend(["Google Chrome", "Chrome", "Chromium"])
 
         seen = set()
         class_candidates = [c for c in class_candidates if c and not (c in seen or seen.add(c))]
@@ -278,6 +293,17 @@ class DesktopVisionSkill(BaseSkill):
         try:
             self._focus_target_window()
             self._log_active_window()
+            if which("wmctrl") is not None and os.environ.get("LUCY_MAXIMIZE_ON_CAPTURE", "1") != "0":
+                try:
+                    subprocess.run(
+                        ["wmctrl", "-r", ":ACTIVE:", "-b", "add,maximized_vert,maximized_horz"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    logger.debug("🖥️ Ventana maximizada antes de capturar.")
+                    time.sleep(0.5)
+                except Exception:
+                    pass
             # Avoid top-bar calendar on GNOME; windowactivate should be enough when cropping active window.
             if os.getenv("LUCY_SKIP_FOCUS_CLICK", "0") != "1" and os.getenv("LUCY_CAPTURE_ACTIVE_WINDOW", "0") != "1":
                 region = self._active_window_region()
@@ -311,6 +337,313 @@ class DesktopActionSkill(BaseSkill):
         self._last_typed = None
         self._last_typed_is_url = False
         self._last_typed_app = None
+
+    def _find_window_id(self, keywords: set[str]) -> Optional[str]:
+        if which("wmctrl") is None:
+            return None
+        try:
+            output = subprocess.check_output(["wmctrl", "-lx"], text=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            return None
+        for line in output.splitlines():
+            lower = line.lower()
+            if any(k for k in keywords if k and k in lower):
+                parts = line.split()
+                if parts:
+                    return parts[0]
+        return None
+
+    def _window_region_by_id(self, win_id: str) -> Optional[tuple[int, int, int, int]]:
+        if which("xwininfo") is None or not win_id:
+            return None
+        try:
+            info = subprocess.check_output(["xwininfo", "-id", str(win_id)], text=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            return None
+
+        def _search(pattern: str) -> Optional[int]:
+            match = re.search(pattern, info)
+            if not match:
+                return None
+            try:
+                return int(match.group(1))
+            except Exception:
+                return None
+
+        x = _search(r"Absolute upper-left X:\s+(-?\d+)")
+        y = _search(r"Absolute upper-left Y:\s+(-?\d+)")
+        width = _search(r"Width:\s+(\d+)")
+        height = _search(r"Height:\s+(\d+)")
+        if x is None or y is None or width is None or height is None:
+            return None
+        if width <= 0 or height <= 0:
+            return None
+        return (x, y, width, height)
+
+    def _maximize_active_window(self) -> None:
+        if which("wmctrl") is None:
+            return
+        if os.environ.get("LUCY_MAXIMIZE_ON_FOCUS", "1") == "0":
+            return
+        try:
+            subprocess.run(
+                ["wmctrl", "-r", ":ACTIVE:", "-b", "add,maximized_vert,maximized_horz"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.debug("🖥️ Ventana maximizada forzosamente.")
+            time.sleep(0.5)
+        except Exception:
+            return
+
+    def _ensure_focus(self, target_title_keyword: Optional[str] = None) -> bool:
+        """Robar el foco agresivamente usando wmctrl y xdotool."""
+        target = (
+            target_title_keyword
+            or os.environ.get("LUCY_FOCUS_APP")
+            or _get_last_app()
+        )
+        if not target:
+            if which("google-chrome") is not None:
+                target = "google-chrome"
+            elif which("chromium") is not None:
+                target = "chromium"
+            else:
+                target = "firefox"
+
+        target = str(target or "").strip()
+        if not target:
+            return True
+        logger.debug(f"🛡️ Focus Guard 2.0: Buscando '{target}'...")
+
+        titles = {target}
+        classes = {target}
+        lower_target = target.lower()
+        if "chrome" in lower_target or "chromium" in lower_target:
+            titles.update({"Google Chrome", "Chrome", "Chromium"})
+            classes.update({"google-chrome", "Google-chrome", "chromium", "Chromium"})
+        if "firefox" in lower_target or "mozilla" in lower_target:
+            titles.update({"Firefox", "Mozilla Firefox"})
+            classes.update({"firefox", "Navigator", "navigator"})
+
+        # Estrategia 1: wmctrl (Suele ser el más efectivo en GNOME/X11)
+        if which("wmctrl") is not None:
+            for title in titles:
+                if not title:
+                    continue
+                subprocess.run(
+                    ["wmctrl", "-a", title],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            for cls in classes:
+                if not cls:
+                    continue
+                subprocess.run(
+                    ["wmctrl", "-x", "-a", cls],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            time.sleep(0.3)
+
+        # Verificación temprana
+        active_title = self._get_active_window_title()
+        active_lower = active_title.lower()
+        verify_keywords = {lower_target}
+        if "chrome" in lower_target or "chromium" in lower_target:
+            verify_keywords.update({"chrome", "chromium", "google chrome"})
+        if "firefox" in lower_target or "mozilla" in lower_target:
+            verify_keywords.update({"firefox", "mozilla", "navigator"})
+        if any(k for k in verify_keywords if k and k in active_lower):
+            logger.debug(f"✅ Foco confirmado (via wmctrl). Activa: {active_title}")
+            self._maximize_active_window()
+            return True
+
+        # Estrategia 2: xdotool search --class (Más robusto que --name)
+        if which("xdotool") is not None:
+            for cls in classes:
+                if not cls:
+                    continue
+                subprocess.run(
+                    ["xdotool", "search", "--onlyvisible", "--class", cls, "windowactivate", "--sync"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            for title in titles:
+                if not title:
+                    continue
+                subprocess.run(
+                    ["xdotool", "search", "--onlyvisible", "--name", title, "windowactivate", "--sync"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            time.sleep(0.3)
+
+        # Verificación final
+        active_title = self._get_active_window_title()
+        active_lower = active_title.lower()
+        if any(k for k in verify_keywords if k and k in active_lower):
+            logger.debug(f"✅ Foco confirmado. Activa: {active_title}")
+            self._maximize_active_window()
+            return True
+
+        # Estrategia 3: activar por window id + fallback click
+        win_id = self._find_window_id(verify_keywords)
+        if win_id:
+            if which("wmctrl") is not None:
+                subprocess.run(
+                    ["wmctrl", "-ia", win_id],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            if which("xdotool") is not None:
+                subprocess.run(
+                    ["xdotool", "windowactivate", "--sync", win_id],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                subprocess.run(
+                    ["xdotool", "windowraise", win_id],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            time.sleep(0.3)
+            active_title = self._get_active_window_title()
+            active_lower = active_title.lower()
+            if any(k for k in verify_keywords if k and k in active_lower):
+                logger.debug(f"✅ Foco confirmado (via window id). Activa: {active_title}")
+                self._maximize_active_window()
+                return True
+
+            if os.environ.get("LUCY_FOCUS_CLICK", "1") != "0":
+                region = self._window_region_by_id(win_id)
+                if region:
+                    x, y, w, h = region
+                    click_x = x + max(20, w // 2)
+                    click_y = y + min(max(80, h // 6), max(80, h - 10))
+                    pyautogui.click(click_x, click_y)
+                    time.sleep(0.2)
+                    active_title = self._get_active_window_title()
+                    active_lower = active_title.lower()
+                    if any(k for k in verify_keywords if k and k in active_lower):
+                        logger.debug(f"✅ Foco confirmado (via click). Activa: {active_title}")
+                        self._maximize_active_window()
+                        return True
+
+        logger.warning(
+            f"⚠️ Falló el cambio de foco. Ventana activa sigue siendo: '{active_title}'"
+        )
+        return False
+
+    def _get_active_window_title(self) -> str:
+        """Helper para obtener título seguro."""
+        try:
+            if which("xdotool") is not None:
+                return subprocess.check_output(
+                    ["xdotool", "getactivewindow", "getwindowname"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+            return ""
+        except Exception:
+            return ""
+
+    def _active_window_region(self) -> Optional[tuple[int, int, int, int]]:
+        if which("xwininfo") is None:
+            return None
+        win_id = None
+        if which("xdotool") is not None:
+            for cmd in (["xdotool", "getactivewindow"], ["xdotool", "getwindowfocus"]):
+                try:
+                    win_id = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL).strip()
+                    if win_id:
+                        break
+                except Exception:
+                    continue
+        if not win_id and which("wmctrl") is not None:
+            try:
+                output = subprocess.check_output(["wmctrl", "-lx"], text=True, stderr=subprocess.DEVNULL)
+                for line in output.splitlines():
+                    lower = line.lower()
+                    if (
+                        "skyscanner" in lower
+                        or "firefox" in lower
+                        or "chrome" in lower
+                        or "chromium" in lower
+                    ):
+                        win_id = line.split()[0]
+                        break
+            except Exception:
+                win_id = None
+        if not win_id:
+            return None
+        try:
+            info = subprocess.check_output(["xwininfo", "-id", win_id], text=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            return None
+
+        def _search(pattern: str) -> Optional[int]:
+            match = re.search(pattern, info)
+            if not match:
+                return None
+            try:
+                return int(match.group(1))
+            except Exception:
+                return None
+
+        x = _search(r"Absolute upper-left X:\s+(-?\d+)")
+        y = _search(r"Absolute upper-left Y:\s+(-?\d+)")
+        width = _search(r"Width:\s+(\d+)")
+        height = _search(r"Height:\s+(\d+)")
+        if x is None or y is None or width is None or height is None:
+            return None
+        if width <= 0 or height <= 0:
+            return None
+        return (x, y, width, height)
+
+    def _calculate_absolute_coords(self, grid_str: str) -> tuple[int, int]:
+        """Traduce 'C4' a coordenadas de pantalla (X, Y) considerando el recorte de ventana."""
+        code = str(grid_str or "").strip().upper()
+        if not code or not any(ch.isdigit() for ch in code):
+            raise ValueError(f"Grid code invalido: {grid_str}")
+
+        match = re.match(r"^([A-Z])(\d{1,2})$", code)
+        if match:
+            col_letter, row_str = match.groups()
+            col_index = ord(col_letter) - ord("A")
+            row_index = int(row_str) - 1
+        else:
+            nums = re.findall(r"\d{1,2}", code)
+            if len(nums) != 2:
+                raise ValueError(f"Grid code invalido: {grid_str}")
+            a = int(nums[0])
+            b = int(nums[1])
+            candidates = []
+            if 1 <= a <= GridMapper.COLS and 1 <= b <= GridMapper.ROWS:
+                candidates.append((a - 1, b - 1))
+            if 1 <= a <= GridMapper.ROWS and 1 <= b <= GridMapper.COLS:
+                candidates.append((b - 1, a - 1))
+            if not candidates:
+                raise ValueError(f"Grid code invalido: {grid_str}")
+            col_index, row_index = candidates[0]
+
+        if col_index < 0 or col_index >= GridMapper.COLS:
+            raise ValueError(f"Columna fuera de rango: {col_index + 1}")
+        if row_index < 0 or row_index >= GridMapper.ROWS:
+            raise ValueError(f"Fila fuera de rango: {row_index + 1}")
+
+        region = self._active_window_region()
+        if region:
+            win_x, win_y, win_w, win_h = region
+        else:
+            screen = pyautogui.size()
+            win_x, win_y, win_w, win_h = 0, 0, screen.width, screen.height
+
+        rel_x = (col_index + 0.5) / GridMapper.COLS
+        rel_y = (row_index + 0.5) / GridMapper.ROWS
+        abs_x = win_x + int(rel_x * win_w)
+        abs_y = win_y + int(rel_y * win_h)
+        return abs_x, abs_y
 
     def _extract_domain(self, text: str) -> Optional[str]:
         if not text:
@@ -357,19 +690,38 @@ class DesktopActionSkill(BaseSkill):
             return None
 
     def _ensure_firefox(self) -> None:
-        running = self._verify_process("firefox")
-        if running is False and which("firefox") is not None:
+        preferred = os.environ.get("LUCY_BROWSER_BIN")
+        browser = None
+        if preferred and which(preferred) is not None:
+            browser = preferred
+        elif which("firefox") is not None:
+            browser = "firefox"
+        elif which("google-chrome") is not None:
+            browser = "google-chrome"
+        elif which("chromium") is not None:
+            browser = "chromium"
+
+        if not browser:
+            return
+
+        running = self._verify_process(browser)
+        if running is False and which(browser) is not None:
             try:
-                subprocess.Popen(["firefox"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen([browser], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 time.sleep(1.5)
             except Exception:
                 pass
         if which("wmctrl") is not None:
             try:
-                subprocess.run(["wmctrl", "-a", "Firefox"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                title = "Firefox"
+                if browser == "google-chrome":
+                    title = "Google Chrome"
+                elif browser == "chromium":
+                    title = "Chromium"
+                subprocess.run(["wmctrl", "-a", title], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
-        _set_last_app("firefox")
+        _set_last_app(browser)
 
     @property
     def name(self) -> str:
@@ -451,11 +803,15 @@ class DesktopActionSkill(BaseSkill):
                 return "Error: se requiere action para ejecutar la accion."
 
             if action == "move_and_click":
+                if not self._ensure_focus():
+                    return "Error: foco no confirmado antes del click."
                 if grid:
                     if isinstance(grid, (list, tuple)) and len(grid) >= 2:
                         self._hand.move_and_click(grid[0], grid[1], duration=duration, button=button)
                         return "OK: click ejecutado."
-                    self._hand.move_and_click(str(grid), duration=duration, button=button)
+                    x_abs, y_abs = self._calculate_absolute_coords(str(grid))
+                    logger.info(f"🖱️ Click Grid {grid} -> Screen ({x_abs}, {y_abs})")
+                    self._hand.move_and_click(x_abs, y_abs, duration=duration, button=button)
                     return f"OK: click ejecutado en grilla {grid}."
                 if x is None or y is None:
                     return "Error: se requieren x e y o grid para move_and_click."
@@ -465,6 +821,8 @@ class DesktopActionSkill(BaseSkill):
             if action == "type":
                 if text is None:
                     return "Error: se requiere texto para type."
+                if not self._ensure_focus():
+                    return "Error: foco no confirmado antes de escribir."
                 if keys:
                     raw_keys = keys
                     if isinstance(raw_keys, str):
@@ -501,6 +859,8 @@ class DesktopActionSkill(BaseSkill):
             if action == "scroll":
                 if clicks is None:
                     return "Error: se requiere clicks para scroll."
+                if not self._ensure_focus():
+                    return "Error: foco no confirmado antes del scroll."
                 self._hand.scroll(clicks)
                 return "OK: scroll ejecutado."
 
@@ -512,6 +872,9 @@ class DesktopActionSkill(BaseSkill):
                     raw_keys = [k for k in str(text).replace("+", " ").split() if k]
                 if not raw_keys:
                     return "Error: se requiere lista de teclas para hotkey."
+
+                if not self._ensure_focus():
+                    return "Error: foco no confirmado antes del hotkey."
 
                 clean_keys = []
                 requires_focus = False
@@ -546,11 +909,12 @@ class DesktopActionSkill(BaseSkill):
                     self._ensure_firefox()
                 self._hand.hotkey(*clean_keys)
                 if "enter" in keys_lower and (self._last_typed_is_url or self._last_typed_app == "firefox"):
-                    running = self._verify_process("firefox")
+                    browser = os.environ.get("LUCY_BROWSER_BIN") or _get_last_app() or "firefox"
+                    running = self._verify_process(browser)
                     if running is True:
-                        return "OK: hotkey ejecutado. Verificación: Firefox está corriendo."
+                        return f"OK: hotkey ejecutado. Verificación: {browser} está corriendo."
                     if running is False:
-                        return "ERROR: Firefox NO está corriendo. La acción falló."
+                        return f"ERROR: {browser} NO está corriendo. La acción falló."
                 return "OK: hotkey ejecutado."
 
             return "Acción no reconocida."

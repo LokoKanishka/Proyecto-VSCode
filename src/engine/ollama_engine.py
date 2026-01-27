@@ -4,6 +4,7 @@ import datetime
 import os
 import base64
 import re
+import unicodedata
 import time
 from io import BytesIO
 from typing import List, Dict, Any, Optional, Generator, Set
@@ -80,7 +81,7 @@ class OllamaEngine:
         self.api_url = f"{self.host}/api/chat" # Usamos /api/chat para herramientas
         self.generate_url = f"{self.host}/api/generate"
         try:
-            self.ollama_client = ollama.Client(host=self.host)
+            self.ollama_client = ollama.Client(host=self.host, timeout=self.ollama_timeout_s)
         except Exception:
             self.ollama_client = None
         self.planner = Planner(self.swarm, model=self.model, host=self.host, timeout_s=self.ollama_timeout_s)
@@ -114,7 +115,7 @@ class OllamaEngine:
             self.speech = None
 
     def _should_allow_action(self, prompt: str) -> bool:
-        text = prompt.lower()
+        text = self._normalize_text(prompt.lower())
         keywords = [
             "abre", "abrir", "abri", "abrí", "open", "launch", "inicia",
             "entra", "ir a", "anda a", "navega", "visit", "visita",
@@ -124,15 +125,20 @@ class OllamaEngine:
             "scroll", "avpág", "avpag", "re pág", "repag", "page down", "page up",
             "sigue leyendo", "leer mas", "leé mas", "lee más", "más abajo",
         ]
-        return any(k in text for k in keywords)
+        return any(self._normalize_text(k) in text for k in keywords)
 
     def _should_allow_vision(self, prompt: str) -> bool:
-        text = prompt.lower()
+        text = self._normalize_text(prompt.lower())
         keywords = [
             "mira", "mirá", "mirar", "ver", "ves", "pantalla", "screen",
             "captura", "screenshot", "foto", "lee", "leé", "leer", "read",
         ]
-        return any(k in text for k in keywords)
+        return any(self._normalize_text(k) in text for k in keywords)
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        normalized = unicodedata.normalize("NFD", text or "")
+        return "".join(ch for ch in normalized if not unicodedata.combining(ch))
 
     def _setup_router(self):
         """Configura las intenciones básicas para el enrutamiento rápido."""
@@ -915,7 +921,7 @@ class OllamaEngine:
         prefix: str = "vision",
         allow_refusal: bool = False,
     ) -> str:
-        timeout_s = float(os.getenv("LUCY_VISION_TIMEOUT_S", "25"))
+        timeout_s = float(os.getenv("LUCY_VISION_TIMEOUT_S", "120"))
         max_side = int(os.getenv("LUCY_VISION_MAX_SIDE", "0") or 0)
         image_b64 = None
         try:
