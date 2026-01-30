@@ -91,10 +91,9 @@ lucySocket.on('message', (data) => {
     
     if (data.type === 'assistant') {
         updateStatus('Ready', 'success');
-        
-        // Text-to-speech if enabled
         const autoSpeak = document.getElementById('auto-speak-toggle').checked;
         if (autoSpeak) {
+            // Prefer server audio (tts_audio event). Fallback to browser TTS.
             speakText(data.content);
         }
     }
@@ -126,6 +125,28 @@ function speakText(text) {
         window.speechSynthesis.speak(utterance);
     }
 }
+
+// Play server-provided TTS audio
+lucySocket.on('tts_audio', (data) => {
+    const autoSpeak = document.getElementById('auto-speak-toggle').checked;
+    if (!autoSpeak) return;
+    try {
+        const audioB64 = data.audio_b64;
+        const mime = data.mime || 'audio/wav';
+        const byteString = atob(audioB64);
+        const arrayBuffer = new ArrayBuffer(byteString.length);
+        const bufferView = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < byteString.length; i++) {
+            bufferView[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([bufferView], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.play().finally(() => URL.revokeObjectURL(url));
+    } catch (err) {
+        console.error('Error reproduciendo TTS:', err);
+    }
+});
 
 // Initialize
 loadModels();

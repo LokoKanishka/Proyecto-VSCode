@@ -167,6 +167,35 @@ El flujo es el mismo que con el acceso directo.
 
 Genera `docs/AUDIT_TRAZABILIDAD.md` y `reports/audit_trazabilidad.json`.
 
+### 5.4. UI Web (chat + voz)
+
+Requisitos extra: `ffmpeg` y `soundfile` instalados en el entorno que levanta Flask.
+
+```bash
+sudo apt-get install ffmpeg libsndfile1
+source .venv-lucy-voz/bin/activate
+pip install -r requirements.txt
+python lucy_web/app.py
+# o: ./scripts/start_web_ui.sh
+# Para permitir Werkzeug en dev: export LUCY_WEB_ALLOW_UNSAFE=1
+```
+
+Aclaraciones:
+- `./scripts/start_web_ui.sh` detecta el primer puerto libre (empezando en `LUCY_WEB_PORT` o 5000) y anuncia la URL con host/puerto finales.
+- Antes de cerrar la UI, podés usar `./scripts/stop_web_ui.sh`.
+- `./scripts/web_health_smoke.sh` ejecuta un servidor momentáneo en `LUCY_WEB_PORT` (5002 por defecto) y prueba `/api/health`.
+- Para instalar solo las dependencias web: `pip install -r requirements-web.txt`.
+
+Abrí `http://localhost:5000` y verificá el indicador de backend de audio (soundfile/ffmpeg). El toggle “Wake Word Mode” activa escucha continua; las respuestas se reproducen también en el navegador si “Auto Speak Responses” está activo.
+
+### 5.5. Pruebas y scripts útiles
+
+ - `pip install -r requirements-web.txt` instala las dependencias mínimas para la UI.
+- `./scripts/start_web_ui.sh`, `./scripts/stop_web_ui.sh` y `./scripts/web_health_smoke.sh` permiten arrancar/parar y validar el endpoint `/api/health`.
+- Ejecutá `python -m unittest tests/test_thought_engine.py` para validar las utilidades del ThoughtEngine (sanitización de pasos y validación de grids/typing).
+- `./scripts/skyscanner_smoke.sh` abre Firefox con Skyscanner, comprueba la ventana y la cierra (requiere `wmctrl` y X11).
+- `./scripts/verify_skyscanner_plan.py` valida el plan de ejemplo (requiere el entorno base con `python3` y las librerías de `src/engine`).
+
 ---
 
 ## 6. Configuración

@@ -259,6 +259,17 @@ class OllamaEngine:
                 grid_map[key] = cell.upper()
         return grid_map
 
+    def _maybe_log_skyscanner_fields(self, grid_map: Dict[str, str]) -> None:
+        if not grid_map:
+            return
+        detected: Dict[str, str] = {}
+        for key in ("origen", "destino", "buscar"):
+            value = grid_map.get(key)
+            if value:
+                detected[key] = value
+        if detected:
+            logger.info("🧭 Skyscanner fields detected: {}", detected)
+
     @staticmethod
     def _parse_ui_fields(text: str) -> Dict[str, str]:
         fields: Dict[str, str] = {}
@@ -999,6 +1010,8 @@ class OllamaEngine:
                     except Exception:
                         grid_info = ""
             if grid_info:
+                parsed_grid = self._parse_grid_map(grid_info)
+                self._maybe_log_skyscanner_fields(parsed_grid)
                 return f"{analysis} | GRID: {grid_info}"
             return analysis
         except Exception as exc:

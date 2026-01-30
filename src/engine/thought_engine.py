@@ -579,8 +579,8 @@ class ThoughtEngine:
                 if (not keys_lower or only_nav_keys) and not has_modifier:
                     if "[focus ok]" not in snapshot and "click ejecutado" not in snapshot:
                         return False
-        if tool == "capture_screen" and not args.get("grid"):
-            return False
+        # capture_screen acepta overlay_grid (default True). No exijamos "grid" explícito
+        # porque DesktopVisionSkill ya dibuja la grilla por defecto.
         return True
 
     @staticmethod

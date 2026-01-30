@@ -1,0 +1,43 @@
+[
+  {
+    "tool": "launch_app",
+    "args": {
+      "app_name": "firefox",
+      "url": "https://www.skyscanner.com/"
+    }
+  },
+  {
+    "tool": "capture_screen",
+    "args": {
+      "grid": true
+    }
+  },
+  {
+    "tool": "perform_action",
+    "args": {
+      "action": "click_grid",
+      "grid": "C3"
+    }
+  },
+  {
+    "tool": "perform_action",
+    "args": {
+      "action": "type",
+      "text": "Buenos Aires"
+    }
+  },
+  {
+    "tool": "perform_action",
+    "args": {
+      "action": "hotkey",
+      "keys": ["tab"]
+    }
+  },
+  {
+    "tool": "perform_action",
+    "args": {
+      "action": "type",
+      "text": "Roma"
+    }
+  }
+]

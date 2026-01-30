@@ -147,6 +147,10 @@ web_search:
 
 ## Recent Improvements (January 2026)
 
+- **Web UI Voz (2026-01-30)**: La UI web ahora envía audio en base64, lo decodifica con `soundfile` (o `ffmpeg` como fallback) y envía TTS al navegador vía WebSocket (`tts_audio`). Requiere `ffmpeg` + `soundfile` instalados en el servidor. Para usar Werkzeug en dev: `LUCY_WEB_ALLOW_UNSAFE=1`.
+  - `/api/health` expone backend y modelo activo; la UI avisa si falta backend de audio.
+  - `scripts/start_web_ui.sh` elige puerto libre, `scripts/stop_web_ui.sh` lo apaga y `scripts/web_health_smoke.sh` prueba el endpoint sin dejar UI permanentemente.
+
 ### 1. **Wake Word Integration**
    - Integrated OpenWakeWord for "hola Lucy" activation
    - Configurable confidence threshold and cooldown

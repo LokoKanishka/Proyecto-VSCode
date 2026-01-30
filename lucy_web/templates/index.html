@@ -33,6 +33,10 @@
                     <span class="label">Model:</span>
                     <span id="current-model" class="value">Loading...</span>
                 </div>
+                <div class="model-info">
+                    <span class="label">Audio:</span>
+                    <span id="audio-backend" class="value">--</span>
+                </div>
             </div>
         </aside>
 
@@ -43,6 +47,9 @@
                 <div class="status-indicator">
                     <span class="status-dot"></span>
                     <span id="status-text">Ready</span>
+                </div>
+                <div id="audio-warning" style="display:none; color:#ef4444; font-weight:600; margin-top:4px;">
+                    ⚠️ Falta backend de audio (instalá soundfile o ffmpeg).
                 </div>
             </div>
 

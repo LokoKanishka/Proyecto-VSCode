@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # Directorio del proyecto
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,16 +18,38 @@ fi
 
 source "$VENV_DIR/bin/activate"
 
+# Verificar dependencias críticas de audio
+if ! command -v ffmpeg >/dev/null 2>&1; then
+    echo "⚠️  ffmpeg no encontrado. Instalá con: sudo apt-get install ffmpeg"
+fi
+if ! python3 -c "import soundfile" >/dev/null 2>&1; then
+    echo "⚠️  soundfile no instalado en el venv. Ejecutá: pip install soundfile"
+fi
+
+DEFAULT_PORT="${LUCY_WEB_PORT:-5000}"
+port="$DEFAULT_PORT"
+while ss -ltn "( sport = :$port )" >/dev/null 2>&1; do
+    ((port++))
+done
+
+LUCY_WEB_PORT="$port"
+export LUCY_WEB_PORT
+
+HOST="${LUCY_WEB_HOST:-0.0.0.0}"
+LUCY_WEB_HOST="$HOST"
+export LUCY_WEB_HOST
+
 echo "========================================="
 echo "   🌐 Lucy Voice Web UI"
 echo "========================================="
 echo ""
 echo "  Iniciando servidor en:"
-echo "  http://localhost:5000"
+echo "  http://$HOST:$port"
 echo ""
 echo "  Presioná Ctrl+C para detener"
 echo ""
 echo "========================================="
 
-# Ejecutar servidor Flask
-python lucy_web/app.py
+# Ejecutar servidor Flask (modo dev seguro por variable)
+export LUCY_WEB_ALLOW_UNSAFE="${LUCY_WEB_ALLOW_UNSAFE:-1}"
+.venv-lucy-voz/bin/python lucy_web/app.py
