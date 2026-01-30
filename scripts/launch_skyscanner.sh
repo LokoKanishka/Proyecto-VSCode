@@ -5,8 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 # 1. Configuración del Cerebro (Paciencia y Visión)
-export LUCY_OLLAMA_TIMEOUT=600
+export LUCY_OLLAMA_TIMEOUT=480
 export LUCY_VISION_TIMEOUT_S=120
+export LUCY_VISION_MODEL="qwen2.5vl:7b"
 export LUCY_MAX_TOOL_ITERATIONS=15
 export LUCY_LOG_LEVEL=DEBUG
 

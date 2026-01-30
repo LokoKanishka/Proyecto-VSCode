@@ -64,11 +64,11 @@ STRICT RULES:
 
 class OllamaEngine:
     def __init__(self, model: Optional[str] = None, host: Optional[str] = None, vision_model: Optional[str] = None):
-        timeout_env = os.getenv("LUCY_OLLAMA_TIMEOUT", "30")
+        timeout_env = os.getenv("LUCY_OLLAMA_TIMEOUT", "120")
         try:
             self.ollama_timeout_s = float(timeout_env)
         except ValueError:
-            self.ollama_timeout_s = 30.0
+            self.ollama_timeout_s = 120.0
 
         self.swarm = SwarmManager(
             host=host,
@@ -226,6 +226,84 @@ class OllamaEngine:
         if match:
             return match.group(1).upper()
         return None
+
+    @staticmethod
+    def _split_screen_update(text: str) -> tuple[str, str]:
+        if not text:
+            return "", ""
+        if " | GRID: " in text:
+            ui, grid = text.split(" | GRID: ", 1)
+            return ui.strip(), grid.strip()
+        return text.strip(), ""
+
+    @staticmethod
+    def _parse_grid_map(text: str) -> Dict[str, str]:
+        grid_map: Dict[str, str] = {}
+        if not text:
+            return grid_map
+        patterns = [
+            r"-\s*([^:]+):\s*\[([A-H](?:10|[1-9]))\]",
+            r"-\s*([^:]+):\s*([A-H](?:10|[1-9]))",
+            r"-\s*([A-Za-zÁÉÍÓÚÜÑñ\s]+)\s*\[([A-H](?:10|[1-9]))\]",
+            r"-\s*([A-Za-zÁÉÍÓÚÜÑñ\s]+)\s+([A-H](?:10|[1-9]))",
+        ]
+        for pattern in patterns:
+            for label, cell in re.findall(pattern, text, re.IGNORECASE):
+                key = label.strip().lower()
+                if "origen" in key or "origin" in key:
+                    key = "origen"
+                elif "destino" in key or "destination" in key:
+                    key = "destino"
+                elif "buscar" in key or "search" in key:
+                    key = "buscar"
+                grid_map[key] = cell.upper()
+        return grid_map
+
+    @staticmethod
+    def _parse_ui_fields(text: str) -> Dict[str, str]:
+        fields: Dict[str, str] = {}
+        if not text:
+            return fields
+        match_origin = re.search(r"Origin=([^;]+)", text, re.IGNORECASE)
+        match_dest = re.search(r"Destination=([^;]+)", text, re.IGNORECASE)
+        if match_origin:
+            fields["origin"] = match_origin.group(1).strip()
+        if match_dest:
+            fields["destination"] = match_dest.group(1).strip()
+        return fields
+
+    def _extract_locations_from_prompt(self, prompt: str) -> tuple[Optional[str], Optional[str]]:
+        if not prompt:
+            return None, None
+        quoted = re.findall(r"['\"]([^'\"]{2,80})['\"]", prompt)
+        if quoted:
+            filtered: list[str] = []
+            for item in quoted:
+                normalized = self._normalize_text(item.lower())
+                if normalized in {"origen", "origin", "destino", "destination"}:
+                    continue
+                filtered.append(item.strip())
+            if len(filtered) >= 2:
+                return filtered[0], filtered[1]
+        origin = None
+        dest = None
+        match_origin = re.search(
+            r"(?:origen|origin)[^a-zA-Z0-9]+([a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\\s]{2,80})",
+            prompt,
+            re.IGNORECASE,
+        )
+        match_dest = re.search(
+            r"(?:destino|destination)[^a-zA-Z0-9]+([a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\\s]{2,80})",
+            prompt,
+            re.IGNORECASE,
+        )
+        if match_origin:
+            origin = match_origin.group(1).strip()
+        if match_dest:
+            dest = match_dest.group(1).strip()
+        if origin and dest:
+            return origin, dest
+        return None, None
 
     def register_skill(self, skill: BaseSkill):
         """Registra una habilidad para que el LLM pueda usarla."""
@@ -544,8 +622,151 @@ class OllamaEngine:
         task_state = f"User Request: {prompt}"
         if self.research_memory:
             task_state += f"\nMemory: {' | '.join(self.research_memory[-5:])}"
+        desired_origin, desired_dest = self._extract_locations_from_prompt(prompt)
+        last_ui_state = ""
+        last_grid_map: Dict[str, str] = {}
+        last_grid_text = ""
+        reflex_attempts = 0
+        max_reflex_attempts = 3
+        success_keywords = [
+            "precio",
+            "valor",
+            "ars",
+            "us$",
+            "usd",
+            "vuelos",
+            "select",
+            "elegir",
+            "resultados",
+        ]
+
+        def _success_detected(ui_text: str, grid_text: str) -> bool:
+            if not ui_text:
+                return False
+            if "no flight form visible" not in ui_text.lower():
+                return False
+            haystack = f"{ui_text}\n{grid_text}".lower()
+            return any(kw in haystack for kw in success_keywords)
 
         for step_count in range(self.max_tool_iterations):
+            # ⚡ Reflejo visuomotor: si ya tenemos grilla confiable, actuamos sin ToT
+            if last_grid_map and reflex_attempts < max_reflex_attempts and (desired_origin or desired_dest):
+                ui_fields = self._parse_ui_fields(last_ui_state)
+                origin_val = (ui_fields.get("origin") or "").lower()
+                dest_val = (ui_fields.get("destination") or "").lower()
+                origin_grid = last_grid_map.get("origen") or last_grid_map.get("origin")
+                dest_grid = last_grid_map.get("destino") or last_grid_map.get("destination")
+
+                def _matches(current: str, desired: str) -> bool:
+                    cur = self._normalize_text(current.lower())
+                    des = self._normalize_text(desired.lower())
+                    return des and des in cur
+
+                if desired_origin and origin_grid and (not origin_val or "empty" in origin_val or not _matches(origin_val, desired_origin)):
+                    reflex_attempts += 1
+                    logger.info("🚀 SHORT-CIRCUIT: Origen en {}. Secuencia robusta.", origin_grid)
+                    result = self.skills["perform_action"].execute(
+                        action="click_grid",
+                        grid=origin_grid,
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    time.sleep(0.8)
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["ctrl", "a"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["backspace"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    time.sleep(0.1)
+                    result = self.skills["perform_action"].execute(
+                        action="type",
+                        text=desired_origin,
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    time.sleep(1.0)
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["down"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["enter"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    time.sleep(0.5)
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["tab"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+
+                if desired_dest and dest_grid and (not dest_val or "empty" in dest_val or not _matches(dest_val, desired_dest)):
+                    reflex_attempts += 1
+                    logger.info("🚀 SHORT-CIRCUIT: Destino en {}. Secuencia robusta.", dest_grid)
+                    result = self.skills["perform_action"].execute(
+                        action="click_grid",
+                        grid=dest_grid,
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    time.sleep(0.8)
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["ctrl", "a"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["backspace"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    time.sleep(0.1)
+                    result = self.skills["perform_action"].execute(
+                        action="type",
+                        text=desired_dest,
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    time.sleep(1.0)
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["down"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["enter"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+                    time.sleep(0.5)
+                    result = self.skills["perform_action"].execute(
+                        action="hotkey",
+                        keys=["enter"],
+                    )
+                    task_state += f"\nStep executed: perform_action. Result: {result}"
+
+                if (
+                    (desired_origin and origin_grid and (not origin_val or "empty" in origin_val or not _matches(origin_val, desired_origin)))
+                    or (desired_dest and dest_grid and (not dest_val or "empty" in dest_val or not _matches(dest_val, desired_dest)))
+                ):
+                    vision_desc = self._capture_and_describe_screen()
+                    if vision_desc:
+                        ui_state, grid_info = self._split_screen_update(vision_desc)
+                        last_ui_state = ui_state
+                        last_grid_map = self._parse_grid_map(grid_info)
+                        last_grid_text = grid_info
+                        if grid_info:
+                            logger.info("🧭 Grid crudo: {}", grid_info.replace("\n", " | "))
+                        task_state += f"\n[SCREEN UPDATE]: {vision_desc}"
+                        if _success_detected(last_ui_state, last_grid_text):
+                            logger.info("🎉 MISIÓN CUMPLIDA: Resultados detectados.")
+                            yield "✅ ÉXITO: Búsqueda realizada. Resultados visibles en pantalla."
+                            return
+                    continue
+
             root = ThoughtNode(
                 id=f"root-{step_count}",
                 parent=None,
@@ -578,6 +799,14 @@ class OllamaEngine:
                         image_path = payload.get("path")
                         if image_path:
                             analysis = self._analyze_image(image_path)
+                            grid_from_capture = self._parse_grid_map(analysis)
+                            if grid_from_capture:
+                                last_grid_map = grid_from_capture
+                                last_grid_text = analysis
+                                logger.info(
+                                    "🧭 Grid crudo (capture_screen): {}",
+                                    analysis.replace("\n", " | "),
+                                )
                             result = (
                                 f"Captura realizada en {image_path}. "
                                 f"ANALISIS VISUAL DE LA IA: {analysis}"
@@ -678,12 +907,20 @@ class OllamaEngine:
                 action_name = str(args.get("action") or "").lower()
                 if action_name in {"move_and_click", "click", "click_grid"}:
                     task_state += "\n[FOCUS OK]"
-            if tool in {"launch_app", "perform_action"}:
-                wait_s = float(os.getenv("LUCY_UI_WAIT_S", "2.0"))
-                time.sleep(max(0.0, wait_s))
-                vision_desc = self._capture_and_describe_screen()
-                if vision_desc:
-                    task_state += f"\n[SCREEN UPDATE]: {vision_desc}"
+                if tool in {"launch_app", "perform_action"}:
+                    wait_s = float(os.getenv("LUCY_UI_WAIT_S", "2.0"))
+                    time.sleep(max(0.0, wait_s))
+                    vision_desc = self._capture_and_describe_screen()
+                    if vision_desc:
+                        task_state += f"\n[SCREEN UPDATE]: {vision_desc}"
+                        ui_state, grid_info = self._split_screen_update(vision_desc)
+                        last_ui_state = ui_state
+                        last_grid_map = self._parse_grid_map(grid_info)
+                        last_grid_text = grid_info
+                        if _success_detected(last_ui_state, last_grid_text):
+                            logger.info("🎉 MISIÓN CUMPLIDA: Resultados detectados.")
+                            yield "✅ ÉXITO: Búsqueda realizada. Resultados visibles en pantalla."
+                            return
             if len(task_state) > 5000:
                 task_state = task_state[-5000:]
 

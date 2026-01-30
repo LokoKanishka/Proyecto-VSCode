@@ -432,7 +432,7 @@ class DesktopActionSkill(BaseSkill):
                 if not title:
                     continue
                 subprocess.run(
-                    ["wmctrl", "-a", title],
+                    ["wmctrl", "-R", title],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -440,7 +440,7 @@ class DesktopActionSkill(BaseSkill):
                 if not cls:
                     continue
                 subprocess.run(
-                    ["wmctrl", "-x", "-a", cls],
+                    ["wmctrl", "-x", "-R", cls],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -808,14 +808,62 @@ class DesktopActionSkill(BaseSkill):
                 if grid:
                     if isinstance(grid, (list, tuple)) and len(grid) >= 2:
                         self._hand.move_and_click(grid[0], grid[1], duration=duration, button=button)
+                        if text is not None:
+                            cleaned = self._sanitize_typed_text(str(text))
+                            if self._extract_domain(cleaned):
+                                self._ensure_firefox()
+                            self._hand.type(cleaned)
+                            if keys:
+                                raw_keys = keys
+                                if isinstance(raw_keys, str):
+                                    raw_keys = [k for k in raw_keys.replace("+", " ").split() if k]
+                                for k in raw_keys:
+                                    k = str(k).lower().strip()
+                                    if k in {"enter", "return"}:
+                                        self._hand.hotkey("enter")
+                                    elif k == "tab":
+                                        self._hand.hotkey("tab")
+                                    time.sleep(0.05)
                         return "OK: click ejecutado."
                     x_abs, y_abs = self._calculate_absolute_coords(str(grid))
                     logger.info(f"🖱️ Click Grid {grid} -> Screen ({x_abs}, {y_abs})")
                     self._hand.move_and_click(x_abs, y_abs, duration=duration, button=button)
+                    if text is not None:
+                        cleaned = self._sanitize_typed_text(str(text))
+                        if self._extract_domain(cleaned):
+                            self._ensure_firefox()
+                        self._hand.type(cleaned)
+                        if keys:
+                            raw_keys = keys
+                            if isinstance(raw_keys, str):
+                                raw_keys = [k for k in raw_keys.replace("+", " ").split() if k]
+                            for k in raw_keys:
+                                k = str(k).lower().strip()
+                                if k in {"enter", "return"}:
+                                    self._hand.hotkey("enter")
+                                elif k == "tab":
+                                    self._hand.hotkey("tab")
+                                time.sleep(0.05)
                     return f"OK: click ejecutado en grilla {grid}."
                 if x is None or y is None:
                     return "Error: se requieren x e y o grid para move_and_click."
                 self._hand.move_and_click(x, y, duration=duration, button=button)
+                if text is not None:
+                    cleaned = self._sanitize_typed_text(str(text))
+                    if self._extract_domain(cleaned):
+                        self._ensure_firefox()
+                    self._hand.type(cleaned)
+                    if keys:
+                        raw_keys = keys
+                        if isinstance(raw_keys, str):
+                            raw_keys = [k for k in raw_keys.replace("+", " ").split() if k]
+                        for k in raw_keys:
+                            k = str(k).lower().strip()
+                            if k in {"enter", "return"}:
+                                self._hand.hotkey("enter")
+                            elif k == "tab":
+                                self._hand.hotkey("tab")
+                            time.sleep(0.05)
                 return "OK: click ejecutado."
 
             if action == "type":
@@ -838,11 +886,25 @@ class DesktopActionSkill(BaseSkill):
                             clean_keys.append("shift")
                         else:
                             clean_keys.append(k)
-                    if clean_keys:
-                        logger.info(f"⌨️ Pre-hotkey para type: {clean_keys}")
-                        if "ctrl" in clean_keys and ("l" in clean_keys or "f6" in clean_keys):
+                    pre_keys: list[str] = []
+                    post_keys: list[str] = []
+                    for k in clean_keys:
+                        if k in {"enter", "return"}:
+                            post_keys.append("enter")
+                        elif k == "tab":
+                            post_keys.append("tab")
+                        else:
+                            pre_keys.append(k)
+                    if pre_keys:
+                        logger.info(f"⌨️ Pre-hotkey para type: {pre_keys}")
+                        if "ctrl" in pre_keys and ("l" in pre_keys or "f6" in pre_keys):
                             self._ensure_firefox()
-                        self._hand.hotkey(*clean_keys)
+                        if any(k in {"ctrl", "alt", "shift"} for k in pre_keys):
+                            self._hand.hotkey(*pre_keys)
+                        else:
+                            for key in pre_keys:
+                                self._hand.hotkey(key)
+                                time.sleep(0.05)
                         time.sleep(0.1)
                 cleaned = self._sanitize_typed_text(str(text))
                 if cleaned != text:
@@ -850,6 +912,32 @@ class DesktopActionSkill(BaseSkill):
                 if self._extract_domain(cleaned):
                     self._ensure_firefox()
                 self._hand.type(cleaned)
+                if keys:
+                    raw_keys = keys
+                    if isinstance(raw_keys, str):
+                        raw_keys = [k for k in raw_keys.replace("+", " ").split() if k]
+                    clean_keys = []
+                    for k in raw_keys:
+                        k = str(k).lower().strip()
+                        if k in {"control", "ctrl"}:
+                            clean_keys.append("ctrl")
+                        elif k in {"alt"}:
+                            clean_keys.append("alt")
+                        elif k in {"shift"}:
+                            clean_keys.append("shift")
+                        else:
+                            clean_keys.append(k)
+                    post_keys: list[str] = []
+                    for k in clean_keys:
+                        if k in {"enter", "return"}:
+                            post_keys.append("enter")
+                        elif k == "tab":
+                            post_keys.append("tab")
+                    if post_keys:
+                        logger.info(f"⌨️ Post-hotkey para type: {post_keys}")
+                        for key in post_keys:
+                            self._hand.hotkey(key)
+                            time.sleep(0.05)
                 self._last_typed = cleaned
                 self._last_typed_is_url = self._extract_domain(cleaned) is not None
                 if cleaned.lower() in {"firefox"}:
@@ -880,11 +968,17 @@ class DesktopActionSkill(BaseSkill):
                 requires_focus = False
                 for k in raw_keys:
                     k = str(k).lower().strip()
-                    if k in {"baja", "scroll", "down", "pagedown", "avpag", "^[[6~"}:
+                    if k in {"pagedown", "avpag", "^[[6~"}:
                         clean_keys.append("pagedown")
                         requires_focus = True
-                    elif k in {"sube", "up", "pageup", "repag", "^[[5~"}:
+                    elif k in {"pageup", "repag", "^[[5~"}:
                         clean_keys.append("pageup")
+                        requires_focus = True
+                    elif k in {"down", "arrowdown", "abajo"}:
+                        clean_keys.append("down")
+                        requires_focus = True
+                    elif k in {"up", "arrowup", "arriba"}:
+                        clean_keys.append("up")
                         requires_focus = True
                     elif k in {"enter", "return", "entrar"}:
                         clean_keys.append("enter")
@@ -991,16 +1085,15 @@ class DesktopLaunchSkill(BaseSkill):
             if running is True:
                 # App ya abierta: enviar URL y enfocar sin abrir nuevas ventanas
                 if url:
-                    if which("xdg-open") is not None:
-                        try:
-                            subprocess.Popen(["xdg-open", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        except Exception:
-                            pass
-                    else:
-                        try:
+                    try:
+                        if name.lower() == "firefox":
                             subprocess.Popen([name, "--new-tab", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        except Exception:
-                            pass
+                        elif which("xdg-open") is not None:
+                            subprocess.Popen(["xdg-open", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else:
+                            subprocess.Popen([name, "--new-tab", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    except Exception:
+                        pass
                 if name.lower() == "firefox" and which("wmctrl") is not None:
                     try:
                         subprocess.run(
@@ -1028,7 +1121,10 @@ class DesktopLaunchSkill(BaseSkill):
             running = self._verify_process(name)
             if running is False and url and which("xdg-open") is not None:
                 try:
-                    subprocess.Popen(["xdg-open", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if name.lower() == "firefox":
+                        subprocess.Popen([name, "--new-tab", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    else:
+                        subprocess.Popen(["xdg-open", str(url)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     time.sleep(1.5)
                     running = self._verify_process(name)
                 except Exception:

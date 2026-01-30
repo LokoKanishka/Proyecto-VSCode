@@ -265,6 +265,11 @@ class ThoughtEngine:
         system_prompt = (
             f"GOAL STATE: {node.state_snapshot}\n"
             f"TASK: Generate exactly {k} distinct, valid next steps.\n"
+            "CONTEXT: You are a desktop automation agent operating a specific UI.\n"
+            "STRICT CONSTRAINT: Propose ONLY steps that directly advance the current GOAL STATE.\n"
+            "NEGATIVE CONSTRAINTS: Do NOT propose medical advice, coins/crypto, math puzzles, "
+            "general knowledge, or hypothetical tasks.\n"
+            "If unsure, propose capture_screen(grid=true) to get UI evidence.\n"
             "OUTPUT FORMAT: A single valid JSON list of objects. "
             "Do NOT use markdown code blocks. Do NOT write explanations.\n"
             "JSON STRUCTURE MUST BE EXACTLY LIKE THIS:\n"
@@ -331,10 +336,49 @@ class ThoughtEngine:
             logger.warning("ThoughtEngine fallo proponiendo pasos: {}", exc)
             steps = []
         if not steps and content:
-            logger.warning(
-                "ThoughtEngine no pudo parsear candidatos. Respuesta cruda: {}",
-                content[:400],
+            # Intento de reparación: pedir formato JSON estricto usando la salida cruda
+            repair_system_prompt = (
+                f"Convert the user content into EXACTLY {k} JSON objects in a JSON list.\n"
+                "Output MUST be valid JSON only (no markdown). If impossible, output [].\n"
+                "Schema: [{\"tool\": \"tool_name\", \"args\": {\"arg\": \"value\"}}]\n"
+                "Allowed tools: perform_action, capture_screen, remember, launch_app, capture_region.\n"
             )
+            try:
+                repair_messages = [
+                    {"role": "system", "content": repair_system_prompt},
+                    {"role": "user", "content": content},
+                ]
+                if self.client:
+                    repair = self.client.chat(
+                        model=self.model,
+                        messages=repair_messages,
+                        options={"temperature": 0.0},
+                        stream=False,
+                    )
+                elif ollama is not None:
+                    repair = ollama.chat(
+                        model=self.model,
+                        messages=repair_messages,
+                        options={"temperature": 0.0},
+                        stream=False,
+                    )
+                else:
+                    repair = _chat_http(
+                        self.host,
+                        self.model,
+                        repair_messages,
+                        options={"temperature": 0.0},
+                        timeout_s=self.timeout_s,
+                    )
+                repair_content = repair.get("message", {}).get("content", "")
+                steps = self._parse_candidates(self._extract_json_block(repair_content))
+            except Exception as exc:
+                logger.warning("ThoughtEngine fallo reparando candidatos: {}", exc)
+            if not steps:
+                logger.warning(
+                    "ThoughtEngine no pudo parsear candidatos. Respuesta cruda: {}",
+                    content[:400],
+                )
 
         children: List[ThoughtNode] = []
         for step in steps:
@@ -511,16 +555,30 @@ class ThoughtEngine:
         if not isinstance(args, dict):
             return False
         action = str(args.get("action") or "").lower()
+        grid = args.get("grid") or args.get("grid_id") or args.get("grid_code")
+        if grid and isinstance(grid, str):
+            grid_clean = grid.strip().upper()
+            if not re.match(r"^[A-H](10|[1-9])$", grid_clean):
+                return False
         if tool == "type" or (tool == "perform_action" and action == "type"):
             text = str(args.get("text") or "")
             keys = args.get("keys") or []
+            keys_list: list[str] = []
+            if isinstance(keys, str):
+                keys_list = [k for k in keys.replace("+", " ").split() if k]
+            elif isinstance(keys, (list, tuple)):
+                keys_list = [str(k) for k in keys if k]
             if len(text) > 50 or "\n" in text or "```" in text:
                 return False
             if text and not ThoughtEngine._text_looks_like_url(text):
                 # Require an explicit focus action before typing into fields.
                 snapshot = (state_snapshot or "").lower()
-                if not keys and "[focus ok]" not in snapshot and "click ejecutado" not in snapshot:
-                    return False
+                keys_lower = [k.lower().strip() for k in keys_list if k]
+                only_nav_keys = bool(keys_lower) and all(k in {"enter", "return", "tab"} for k in keys_lower)
+                has_modifier = any(k in {"ctrl", "alt", "shift", "control"} for k in keys_lower)
+                if (not keys_lower or only_nav_keys) and not has_modifier:
+                    if "[focus ok]" not in snapshot and "click ejecutado" not in snapshot:
+                        return False
         if tool == "capture_screen" and not args.get("grid"):
             return False
         return True
