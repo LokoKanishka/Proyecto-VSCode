@@ -11,6 +11,36 @@ function setBackendInfo(backend) {
     }
 }
 
+function setBackendInfo(backend) {
+    const el = document.getElementById('audio-backend');
+    if (el) el.textContent = backend || '--';
+    const warn = document.getElementById('audio-warning');
+    if (warn) {
+        warn.style.display = backend === 'none' ? 'block' : 'none';
+    }
+}
+
+function updateMetricsPanel(metrics) {
+    if (!metrics) return;
+    document.getElementById('metric-asr').textContent = metrics.asr_ms ?? '—';
+    document.getElementById('metric-llm').textContent = metrics.llm_ms ?? '—';
+    document.getElementById('metric-total').textContent = metrics.total_ms ?? '—';
+    document.getElementById('metric-audio').textContent = metrics.audio_duration_s
+        ? Math.round(metrics.audio_duration_s * 1000)
+        : '—';
+}
+
+function loadTtsMode() {
+    const select = document.getElementById('tts-mode-select');
+    const value = localStorage.getItem('lucy_tts_mode') || 'server';
+    if (select) {
+        select.value = value;
+        select.addEventListener('change', () => {
+            localStorage.setItem('lucy_tts_mode', select.value);
+        });
+    }
+}
+
 async function fetchHealth() {
     try {
         const res = await fetch('/api/health');
@@ -18,6 +48,7 @@ async function fetchHealth() {
         const data = await res.json();
         const backend = data.audio_backend || '--';
         setBackendInfo(backend);
+        updateMetricsPanel(data.metrics);
         if (backend === 'none') {
             updateStatus('Sin backend de audio (instala soundfile o ffmpeg)', 'warning');
         }
@@ -49,6 +80,7 @@ socket.on('error', (data) => {
 
 socket.on('status', (data) => {
     updateStatus(data.message, 'info');
+    updateMetricsPanel(data.metrics);
 });
 
 function updateStatus(message, type = 'info') {
@@ -76,3 +108,6 @@ function updateStatus(message, type = 'info') {
 window.lucySocket = socket;
 window.updateStatus = updateStatus;
 window.setBackendInfo = setBackendInfo;
+window.loadTtsMode = loadTtsMode;
+
+loadTtsMode();

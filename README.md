@@ -193,8 +193,11 @@ Abrí `http://localhost:5000` y verificá el indicador de backend de audio (soun
  - `pip install -r requirements-web.txt` instala las dependencias mínimas para la UI.
 - `./scripts/start_web_ui.sh`, `./scripts/stop_web_ui.sh` y `./scripts/web_health_smoke.sh` permiten arrancar/parar y validar el endpoint `/api/health`.
 - Ejecutá `python -m unittest tests/test_thought_engine.py` para validar las utilidades del ThoughtEngine (sanitización de pasos y validación de grids/typing).
+- Corre `./scripts/run_all_smokes.sh` para ejecutar health, verifier y smoke en cadena; el log queda en `/tmp/lucy_smoke_summary.log`.
 - `./scripts/skyscanner_smoke.sh` abre Firefox con Skyscanner, comprueba la ventana y la cierra (requiere `wmctrl` y X11).
 - `./scripts/verify_skyscanner_plan.py` valida el plan de ejemplo (requiere el entorno base con `python3` y las librerías de `src/engine`).
+- `./scripts/check_voice_pipeline.sh` inicializa rápidamente LucyOrchestrator y reporta los modelos/config actuales de ASR/LLM/TTS.
+- `docs/ONBOARDING.md` describe los pasos desde clonar hasta correr los smokes + heurísticas.
 
 ---
 

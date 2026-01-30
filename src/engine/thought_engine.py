@@ -252,6 +252,7 @@ class ThoughtEngine:
         self.max_depth = max_depth
         self.max_nodes = max_nodes
         self.prune_threshold = prune_threshold
+        self.skyscanner_memory: List[Dict[str, str]] = []
         try:
             if ollama is None:
                 raise RuntimeError("ollama lib not available")
@@ -397,8 +398,28 @@ class ThoughtEngine:
             if len(children) >= k:
                 break
 
-        node.children.extend(children)
-        return children
+        prioritized = self._prioritize_skyscanner_children(children, node.state_snapshot)
+        node.children.extend(prioritized)
+        return prioritized
+
+    def _prioritize_skyscanner_children(
+        self, children: List[ThoughtNode], snapshot: str
+    ) -> List[ThoughtNode]:
+        if not snapshot or "skyscanner" not in snapshot.lower():
+            return children
+        def score(child: ThoughtNode) -> int:
+            tool = str(child.plan_step.get("tool") or "").lower()
+            args = child.plan_step.get("args") or {}
+            if tool == "launch_app" and "skyscanner" in str(args.get("url", "")).lower():
+                return 3
+            if tool == "capture_screen":
+                return 2
+            if tool == "perform_action":
+                grid = args.get("grid") or ""
+                if isinstance(grid, str) and grid.upper().startswith("A"):
+                    return 1
+            return 0
+        return sorted(children, key=score, reverse=True)
 
     @staticmethod
     def _is_repeat_launch(node: ThoughtNode, step: Dict[str, Any], max_hops: int = 2) -> bool:
@@ -619,6 +640,22 @@ class ThoughtEngine:
         if collected:
             return Planner._sanitize_steps(collected)
         return []
+
+    def remember_skyscanner_fields(self, grid_map: Dict[str, str]) -> None:
+        if not grid_map:
+            return
+        snapshot: Dict[str, str] = {}
+        for key in ("origen", "destino", "buscar"):
+            value = grid_map.get(key)
+            if value:
+                snapshot[key] = value
+        if snapshot:
+            self.skyscanner_memory.append(snapshot)
+            if len(self.skyscanner_memory) > 10:
+                self.skyscanner_memory.pop(0)
+
+    def last_skyscanner_memory(self) -> List[Dict[str, str]]:
+        return list(self.skyscanner_memory)
 
     @staticmethod
     def _parse_score(raw: str) -> tuple[float, str]:

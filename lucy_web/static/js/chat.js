@@ -85,6 +85,14 @@ function sendMessage() {
     updateStatus('Thinking...', 'info');
 }
 
+function getTtsModeSetting() {
+    const select = document.getElementById('tts-mode-select');
+    if (select) {
+        return select.value;
+    }
+    return localStorage.getItem('lucy_tts_mode') || 'server';
+}
+
 // Listen for messages from server
 lucySocket.on('message', (data) => {
     addMessage(data.type, data.content);
@@ -92,8 +100,8 @@ lucySocket.on('message', (data) => {
     if (data.type === 'assistant') {
         updateStatus('Ready', 'success');
         const autoSpeak = document.getElementById('auto-speak-toggle').checked;
-        if (autoSpeak) {
-            // Prefer server audio (tts_audio event). Fallback to browser TTS.
+        const ttsMode = getTtsModeSetting();
+        if (autoSpeak && ttsMode === 'browser') {
             speakText(data.content);
         }
     }
@@ -130,6 +138,8 @@ function speakText(text) {
 lucySocket.on('tts_audio', (data) => {
     const autoSpeak = document.getElementById('auto-speak-toggle').checked;
     if (!autoSpeak) return;
+    const ttsMode = getTtsModeSetting();
+    if (ttsMode !== 'server') return;
     try {
         const audioB64 = data.audio_b64;
         const mime = data.mime || 'audio/wav';

@@ -48,6 +48,12 @@
                     <span class="status-dot"></span>
                     <span id="status-text">Ready</span>
                 </div>
+                <div id="status-metrics" class="status-metrics">
+                    <span>ASR: <strong id="metric-asr">—</strong> ms</span>
+                    <span>LLM: <strong id="metric-llm">—</strong> ms</span>
+                    <span>Total: <strong id="metric-total">—</strong> ms</span>
+                    <span>Audio dur: <strong id="metric-audio">—</strong> ms</span>
+                </div>
                 <div id="audio-warning" style="display:none; color:#ef4444; font-weight:600; margin-top:4px;">
                     ⚠️ Falta backend de audio (instalá soundfile o ffmpeg).
                 </div>
@@ -109,6 +115,13 @@
                     <label class="toggle-item">
                         <input type="checkbox" id="auto-speak-toggle" checked>
                         <span>Auto Speak Responses</span>
+                    </label>
+                    <label class="toggle-item">
+                        <span style="margin-right:8px;">TTS Mode</span>
+                        <select id="tts-mode-select">
+                            <option value="server">Servidor</option>
+                            <option value="browser">Navegador</option>
+                        </select>
                     </label>
                 </div>
             </div>

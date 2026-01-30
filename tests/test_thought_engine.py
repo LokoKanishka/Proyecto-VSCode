@@ -35,6 +35,18 @@ class ThoughtEngineStaticTests(unittest.TestCase):
         snapshot = "[focus ok]"
         self.assertTrue(ThoughtEngine._validate_candidate(typing_with_focus, state_snapshot=snapshot))
 
+    def test_remember_skyscanner_fields_limits_memory(self):
+        engine = ThoughtEngine.__new__(ThoughtEngine)
+        engine.skyscanner_memory = []
+        engine.remember_skyscanner_fields({"origen": "A1", "destino": "B2"})
+        engine.remember_skyscanner_fields({"origen": "C3"})
+        self.assertEqual(len(engine.skyscanner_memory), 2)
+        for entry in engine.skyscanner_memory:
+            self.assertIn("origen", entry)
+        for idx in range(12):
+            engine.remember_skyscanner_fields({"buscar": f"field{idx}"})
+        self.assertEqual(len(engine.skyscanner_memory), 10)
+
 
 if __name__ == "__main__":
     unittest.main()
