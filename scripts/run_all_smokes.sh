@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SMOKE_LOG="/tmp/lucy_smoke_summary.log"
 REPORT_DIR="$ROOT/reports"
 SUMMARY="$REPORT_DIR/smoke_summary.md"
+SKYSCANNER_SMOKE=${SKYSCANNER_SMOKE:-1}
 
 mkdir -p "$REPORT_DIR"
 > "$SMOKE_LOG"
@@ -28,7 +29,12 @@ run_step() {
 
 run_step "1) Health smoke" "./scripts/web_health_smoke.sh"
 run_step "2) Plan verification" "./scripts/verify_skyscanner_plan.py"
-run_step "3) Skyscanner smoke" "./scripts/skyscanner_smoke.sh"
+if [ "$SKYSCANNER_SMOKE" -ne 0 ]; then
+  run_step "3) Skyscanner smoke" "./scripts/skyscanner_smoke.sh"
+else
+  echo "3) Skyscanner smoke: skipped (SKYSCANNER_SMOKE=0)" | tee -a "$SMOKE_LOG"
+  results["3) Skyscanner smoke"]="skipped"
+fi
 
 echo "Smoke suite finished at $(date)" | tee -a "$SMOKE_LOG"
 echo "Summary log: $SMOKE_LOG"

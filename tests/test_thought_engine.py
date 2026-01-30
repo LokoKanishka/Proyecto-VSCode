@@ -1,6 +1,6 @@
 import unittest
 
-from src.engine.thought_engine import Planner, ThoughtEngine
+from src.engine.thought_engine import Planner, ThoughtEngine, ThoughtNode
 
 
 class ThoughtEngineStaticTests(unittest.TestCase):
@@ -46,6 +46,20 @@ class ThoughtEngineStaticTests(unittest.TestCase):
         for idx in range(12):
             engine.remember_skyscanner_fields({"buscar": f"field{idx}"})
         self.assertEqual(len(engine.skyscanner_memory), 10)
+
+    def test_prioritize_skyscanner_children(self):
+        engine = ThoughtEngine.__new__(ThoughtEngine)
+        children = []
+        def make(tool, args):
+            node = ThoughtNode(id="x", parent=None, plan_step={"tool": tool, "args": args}, state_snapshot="", score=0.0, depth=0)
+            node.children = []
+            return node
+        children.append(make("perform_action", {"action": "hotkey", "keys": ["ctrl", "l"]}))
+        children.append(make("capture_screen", {"grid": True}))
+        children.append(make("launch_app", {"app_name": "firefox", "url": "https://www.skyscanner.com"}))
+        priority = engine._prioritize_skyscanner_children(children, "el navegador skyscanner está abierto")
+        self.assertEqual(priority[0].plan_step["tool"], "launch_app")
+        self.assertEqual(priority[1].plan_step["tool"], "capture_screen")
 
 
 if __name__ == "__main__":

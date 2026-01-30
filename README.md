@@ -198,6 +198,10 @@ Abrí `http://localhost:5000` y verificá el indicador de backend de audio (soun
 - `./scripts/verify_skyscanner_plan.py` valida el plan de ejemplo (requiere el entorno base con `python3` y las librerías de `src/engine`).
 - `./scripts/check_voice_pipeline.sh` inicializa rápidamente LucyOrchestrator y reporta los modelos/config actuales de ASR/LLM/TTS.
 - `docs/ONBOARDING.md` describe los pasos desde clonar hasta correr los smokes + heurísticas.
+- `docs/DEPENDENCIES.md` resume comandos para revisar `ffmpeg`, `soundfile`, `WeRTC`, `Firefox`, `wmctrl`, etc.
+- `docs/QA.md` agrupa checklist de pruebas manuales y un template de reporte.
+- `./scripts/run_voice_turn.sh --wav path/to/audio.wav` sintetiza un turno completo usando un WAV y registra en `logs/voice_turns.log`.
+- `./scripts/skyscanner_smoke_headless.sh` ejecuta el smoke dentro de `xvfb` si necesitás evitar usar la pantalla principal.
 
 ---
 

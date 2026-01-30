@@ -2,14 +2,8 @@
 const socket = io();
 
 // Connection status
-function setBackendInfo(backend) {
-    const el = document.getElementById('audio-backend');
-    if (el) el.textContent = backend || '--';
-    const warn = document.getElementById('audio-warning');
-    if (warn) {
-        warn.style.display = (backend === 'none') ? 'block' : 'none';
-    }
-}
+const statusHistory = [];
+const MAX_HISTORY = 5;
 
 function setBackendInfo(backend) {
     const el = document.getElementById('audio-backend');
@@ -28,6 +22,45 @@ function updateMetricsPanel(metrics) {
     document.getElementById('metric-audio').textContent = metrics.audio_duration_s
         ? Math.round(metrics.audio_duration_s * 1000)
         : '—';
+}
+
+function recordStatusHistory(entry) {
+    if (!entry) return;
+    statusHistory.unshift(entry);
+    if (statusHistory.length > MAX_HISTORY) {
+        statusHistory.pop();
+    }
+    renderStatusHistory();
+}
+
+function renderStatusHistory() {
+    const container = document.getElementById('status-history');
+    if (!container) return;
+    container.innerHTML = statusHistory
+        .map((entry) => {
+            const time = new Date(entry.time).toLocaleTimeString();
+            const metrics = entry.metrics
+                ? ` (ASR ${entry.metrics.asr_ms ?? '—'} ms, LLM ${entry.metrics.llm_ms ?? '—'} ms)`
+                : '';
+            return `<div class="status-entry"><span class="status-time">${time}</span><span>${entry.message}${metrics}</span></div>`;
+        })
+        .join('');
+}
+
+function copyStatusHistory() {
+    const text = statusHistory
+        .map(
+            (entry) =>
+                `${new Date(entry.time).toLocaleTimeString()} - ${entry.message} ${
+                    entry.metrics
+                        ? `(ASR ${entry.metrics.asr_ms ?? '—'} ms, LLM ${entry.metrics.llm_ms ?? '—'} ms)`
+                        : ''
+                }`
+        )
+        .join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+        updateStatus('Historial copiado al portapapeles.', 'success');
+    });
 }
 
 function loadTtsMode() {
@@ -56,6 +89,11 @@ async function fetchHealth() {
             const currentModelDisplay = document.getElementById('current-model');
             if (currentModelDisplay) currentModelDisplay.textContent = data.model;
         }
+        recordStatusHistory({
+            message: data.message || 'Health check',
+            metrics: data.metrics,
+            time: Date.now(),
+        });
     } catch (err) {
         console.error('Health check failed', err);
         updateStatus('Health check failed', 'warning');
@@ -81,6 +119,11 @@ socket.on('error', (data) => {
 socket.on('status', (data) => {
     updateStatus(data.message, 'info');
     updateMetricsPanel(data.metrics);
+    recordStatusHistory({
+        message: data.message || 'Status update',
+        metrics: data.metrics,
+        time: Date.now(),
+    });
 });
 
 function updateStatus(message, type = 'info') {
@@ -111,3 +154,7 @@ window.setBackendInfo = setBackendInfo;
 window.loadTtsMode = loadTtsMode;
 
 loadTtsMode();
+const copyHistoryBtn = document.getElementById('copy-history-btn');
+if (copyHistoryBtn) {
+    copyHistoryBtn.addEventListener('click', copyStatusHistory);
+}

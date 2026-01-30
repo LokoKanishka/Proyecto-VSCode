@@ -151,7 +151,8 @@ web_search:
   - `/api/health` expone backend y modelo activo; la UI avisa si falta backend de audio.
   - `scripts/start_web_ui.sh` elige puerto libre, `scripts/stop_web_ui.sh` lo apaga y `scripts/web_health_smoke.sh` prueba el endpoint sin dejar UI permanentemente.
 - **Smoke suite (2026-01-30)**: `scripts/run_all_smokes.sh` encadena `web_health_smoke`, `verify_skyscanner_plan.py` y `skyscanner_smoke.sh`; el log queda en `/tmp/lucy_smoke_summary.log`.
-- **Onboarding y atajos**: `docs/ONBOARDING.md` resume los comandos esenciales (`start`, `stop`, `health`, `smoke`, `verify plan`, `check pipeline`) para traer nuevos colaboradores rápidamente.
+- **Onboarding y atajos**: `docs/ONBOARDING.md` resume los comandos esenciales... (existing text)
+- **Dependencias/QA**: `docs/DEPENDENCIES.md` lista cómo verificar ffmpeg/soundfile/WeRTC/Firefox/wmctrl, y `docs/QA.md` ofrece checklist/manual e incident template.
 
 ### 1. **Wake Word Integration**
    - Integrated OpenWakeWord for "hola Lucy" activation
