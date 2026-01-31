@@ -58,7 +58,28 @@ class Manager(BaseWorker):
         ))
 
         history = self.memory.get_context("current_session", limit=5)
-        plan = self.planner.plan(user_text, (entry["content"] for entry in history))
+        semantic_fallback = self.memory.semantic_search(user_text, k=3)
+        if semantic_fallback:
+            await self.send_event(
+                "retrieved_memory",
+                "Recuperé contexto semántico relevante.",
+                {"context": semantic_fallback},
+            )
+            summary_cmd = LucyMessage(
+                sender=self.worker_id,
+                receiver=WorkerType.MEMORY,
+                type=MessageType.COMMAND,
+                content="summarize_history",
+                data={
+                    "session_id": "current_session",
+                    "limit": 10,
+                    "reason": "semántica",
+                },
+            )
+            await self.bus.publish(summary_cmd)
+        combined_context = [entry["content"] for entry in history]
+        combined_context.extend(entry["content"] for entry in semantic_fallback)
+        plan = self.planner.plan(user_text, context=combined_context)
         logger.info("🧠 Plan creado con %d pasos", len(plan))
 
         plan_id = str(uuid.uuid4())

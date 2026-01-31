@@ -20,7 +20,7 @@ class PlanStep:
 class TreeOfThoughtPlanner:
     """Generador sencillo de planes multi-pasos basado en heurísticas."""
 
-    def plan(self, prompt: str, context: Iterable[str] = ()) -> List[PlanStep]:
+    def plan(self, prompt: str, context: Iterable[str] | None = None) -> List[PlanStep]:
         prompt_lower = prompt.lower()
         plan: List[PlanStep] = []
         wants_vision = self._contains_keywords(prompt_lower, {"pantalla", "mira", "ves", "analiza", "observá", "reflejo"})

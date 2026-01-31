@@ -453,6 +453,57 @@ body {
     border-radius: 0.5rem;
 }
 
+.bus-metrics-section .metrics-summary,
+.memory-events-section .memory-events {
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-tertiary);
+    font-size: 0.9rem;
+}
+
+.metrics-list {
+    margin-top: 0.75rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.metrics-list-item {
+    padding: 0.55rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.metrics-list-item:last-child {
+    border-bottom: none;
+}
+
+.memory-events-item {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.sparkline-wrapper {
+    margin-top: 0.75rem;
+    background: var(--bg-primary);
+    border: 1px dashed var(--border-color);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+}
+
+#bus-sparkline {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.memory-events-item:last-child {
+    border-bottom: none;
+}
+
 /* ===== Scrollbar Styling ===== */
 ::-webkit-scrollbar {
     width: 8px;

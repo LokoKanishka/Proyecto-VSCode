@@ -25,7 +25,8 @@ class BaseWorker(ABC):
             receiver=original_msg.sender,
             type=MessageType.RESPONSE,
             content=content,
-            data=data or {}
+            data=data or {},
+            in_reply_to=original_msg.id,
         )
         await self.bus.publish(response)
 
@@ -35,7 +36,8 @@ class BaseWorker(ABC):
             sender=self.worker_id,
             receiver=original_msg.sender,
             type=MessageType.ERROR,
-            content=error_msg
+            content=error_msg,
+            in_reply_to=original_msg.id,
         )
         await self.bus.publish(response)
 

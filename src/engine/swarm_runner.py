@@ -6,8 +6,11 @@ from typing import List, Optional
 from src.core.bus import EventBus
 from src.core.types import WorkerType
 from src.memory.memory_manager import MemoryManager
+from src.memory.vector_store import EmbeddedMemory
 from src.resources.resource_manager import ResourceManager
+from src.watchers.bus_metrics_watcher import BusMetricsWatcher
 from src.watchers.file_watcher import FileWatcher
+from src.watchers.memory_watcher import MemoryWatcher
 from src.watchers.notification_watcher import NotificationWatcher
 from src.watchers.resource_watcher import ResourceWatcher
 from src.watchers.timer_watcher import TimerWatcher
@@ -16,6 +19,7 @@ from src.workers.browser_worker import BrowserWorker
 from src.workers.chat_worker import ChatWorker
 from src.workers.code_worker import CodeWorker
 from src.workers.hands_worker import HandsWorker
+from src.workers.memory_worker import MemoryWorker
 from src.workers.search_worker import SearchWorker
 from src.workers.vision_worker import VisionWorker
 from src.core.manager import Manager
@@ -28,7 +32,11 @@ class SwarmRunner:
 
     def __init__(self, memory_db: str = "lucy_memory.db"):
         self.bus = EventBus()
-        self.memory = MemoryManager(db_path=memory_db)
+        vector_store = EmbeddedMemory(db_path="data/lucy_memory.lance")
+        self.memory = MemoryManager(
+            db_path=memory_db,
+            vector_store=vector_store,
+        )
         self.manager = Manager(self.bus, self.memory)
         self.workers = [
             SearchWorker(WorkerType.SEARCH, self.bus),
@@ -37,6 +45,7 @@ class SwarmRunner:
             VisionWorker(WorkerType.VISION, self.bus),
             BrowserWorker(WorkerType.BROWSER, self.bus),
             HandsWorker(WorkerType.HANDS, self.bus),
+            MemoryWorker(WorkerType.MEMORY, self.bus, self.memory),
         ]
         self.resource_manager = ResourceManager()
         self.watchers = [
@@ -44,6 +53,8 @@ class SwarmRunner:
             WindowWatcher(self.bus),
             FileWatcher(self.bus),
             NotificationWatcher(self.bus),
+            MemoryWatcher(self.bus),
+            BusMetricsWatcher(self.bus),
             TimerWatcher(self.bus, interval=60.0),
         ]
         self.watcher_tasks: List[asyncio.Task] = []

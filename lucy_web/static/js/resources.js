@@ -5,6 +5,9 @@ const summaryTimestamp = document.getElementById('memory-summary-timestamp');
 const planSummary = document.getElementById('plan-summary');
 const planSteps = document.getElementById('plan-steps');
 const watcherEventsList = document.getElementById('watcher-events-list');
+const busMetricsSummary = document.getElementById('bus-metrics-summary');
+const busMetricsRecent = document.getElementById('bus-metrics-recent');
+const memoryEventsList = document.getElementById('memory-events-list');
 
 async function updateResourcePanel() {
     try {
@@ -54,10 +57,14 @@ setInterval(updateResourcePanel, 12_000);
 setInterval(updateMemorySummary, 30_000);
 setInterval(updatePlanPanel, 45_000);
 setInterval(updateWatcherPanel, 25_000);
+setInterval(updateBusMetricsPanel, 20_000);
+setInterval(updateMemoryEventsPanel, 25_000);
 updateResourcePanel();
 updateMemorySummary();
 updatePlanPanel();
 updateWatcherPanel();
+updateBusMetricsPanel();
+updateMemoryEventsPanel();
 
 const refreshMemoryBtn = document.getElementById('refresh-memory-btn');
 if (refreshMemoryBtn) {
@@ -125,5 +132,65 @@ async function updateWatcherPanel() {
     } catch (err) {
         console.error('No se pudo cargar los eventos del sistema', err);
         watcherEventsList.textContent = 'Error cargando eventos.';
+    }
+}
+
+async function updateBusMetricsPanel() {
+    if (!busMetricsSummary || !busMetricsRecent) return;
+    try {
+        const resp = await fetch('/api/bus_metrics');
+        if (!resp.ok) throw new Error('Bus metrics fetch failed');
+        const payload = await resp.json();
+        const summary = payload.summary?.summary || {};
+        if (!Object.keys(summary).length) {
+            busMetricsSummary.textContent = 'Sin métricas registradas todavía.';
+        } else {
+            busMetricsSummary.innerHTML = Object.entries(summary)
+                .map(([key, stats]) => `<div><strong>${key}</strong>: última=${stats.latest} avg=${stats.avg}</div>`)
+                .join('');
+        }
+        busMetricsRecent.innerHTML = '';
+        (payload.summary?.recent || []).forEach(record => {
+            const el = document.createElement('div');
+            el.className = 'metrics-list-item';
+            const time = new Date(record.timestamp).toLocaleTimeString();
+            const metrics = record.metrics
+                ? Object.entries(record.metrics)
+                      .map(([k, v]) => `${k}=${v}`)
+                      .join(' ')
+                : 'sin detalles';
+            el.textContent = `${time} · ${metrics}`;
+            busMetricsRecent.appendChild(el);
+        });
+    } catch (err) {
+        console.error('No se pudo cargar métricas del bus', err);
+        if (busMetricsSummary) {
+            busMetricsSummary.textContent = 'Error cargando métricas del bus.';
+        }
+    }
+}
+
+async function updateMemoryEventsPanel() {
+    if (!memoryEventsList) return;
+    try {
+        const resp = await fetch('/api/memory_events');
+        if (!resp.ok) throw new Error('Memory events fetch failed');
+        const payload = await resp.json();
+        memoryEventsList.innerHTML = '';
+        if (!payload.events?.length) {
+            memoryEventsList.textContent = 'Sin eventos de memoria recientes.';
+            return;
+        }
+        payload.events.forEach(evt => {
+            const el = document.createElement('div');
+            el.className = 'memory-events-item';
+            const timestamp = evt.timestamp || '—';
+            const detailText = evt.details ? evt.details : evt.raw || '';
+            el.innerHTML = `<strong>${timestamp}</strong><div>${detailText}</div>`;
+            memoryEventsList.appendChild(el);
+        });
+    } catch (err) {
+        console.error('No se pudo cargar eventos de memoria', err);
+        memoryEventsList.textContent = 'Error cargando eventos de memoria.';
     }
 }

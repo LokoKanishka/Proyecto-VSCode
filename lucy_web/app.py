@@ -4,7 +4,7 @@ import logging
 import asyncio
 import json
 import sqlite3
-from threading import Thread
+import time
 import sys
 import os
 import base64
@@ -29,6 +29,10 @@ except Exception as exc:  # pragma: no cover - dependency guard
 
 FFMPEG_BIN = shutil.which("ffmpeg")
 RESOURCE_LOG = Path("logs/resource_events.jsonl")
+BUS_METRICS_LOG = Path("logs/bus_metrics.jsonl")
+MEMORY_EVENTS_LOG = Path("logs/memory_retrieval.log")
+
+_log_emit_started = False
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lucy-voice-secret-key'
@@ -143,6 +147,7 @@ def index():
     """Serve the main UI"""
     return render_template('index.html')
 
+
 @app.route('/api/models')
 def get_models():
     """Get available Ollama models"""
@@ -186,6 +191,96 @@ def _resource_summary(events):
     return {"gpu": gpu, "windows": windows[:5]}
 
 
+def _tail_jsonl(path: Path, limit: int = 50):
+    if not path.exists():
+        return []
+    lines = []
+    with path.open("r", encoding="utf-8") as fh:
+        for raw in fh:
+            if raw.strip():
+                lines.append(raw.strip())
+    return [json.loads(line) for line in lines[-limit:] if line]
+
+
+def _summarize_bus_metrics(records, last_n: int = 10):
+    if not records:
+        return {}
+    metrics = [rec.get("metrics", {}) for rec in records]
+    keys = set().union(*(m.keys() for m in metrics))
+    summary = {}
+    for key in keys:
+        values = [m.get(key, 0) for m in metrics]
+        summary[key] = {
+            "latest": values[-1] if values else 0,
+            "avg": round(sum(values) / len(values), 2) if values else 0,
+            "min": min(values) if values else 0,
+            "max": max(values) if values else 0,
+        }
+    return {
+        "summary": summary,
+        "recent": records[-last_n:],
+    }
+
+
+def _tail_lines(path: Path, limit: int = 20):
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8") as fh:
+        lines = [line.strip() for line in fh if line.strip()]
+    return lines[-limit:]
+
+
+def _ensure_emitters_running():
+    global _log_emit_started
+    if _log_emit_started:
+        return
+    _log_emit_started = True
+    socketio.start_background_task(_bus_metrics_emitter)
+    socketio.start_background_task(_memory_events_emitter)
+
+
+def _busy_wait_file(path: Path, callback, interval: float):
+    pos = 0
+    while True:
+        try:
+            if not path.exists():
+                path.parent.mkdir(exist_ok=True, parents=True)
+                path.write_text("")
+            with path.open("r", encoding="utf-8") as fh:
+                fh.seek(pos)
+                for line in fh:
+                    callback(line.strip())
+                pos = fh.tell()
+        except OSError:
+            pass
+        time.sleep(interval)
+
+
+def _bus_metrics_emitter():
+    def handle_line(line: str):
+        if not line:
+            return
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        socketio.emit("bus_metrics_update", {"record": record})
+
+    _busy_wait_file(BUS_METRICS_LOG, handle_line, interval=3.0)
+
+
+def _memory_events_emitter():
+    def handle_line(line: str):
+        if not line:
+            return
+        parts = line.split("|", 2)
+        details = parts[-1].strip()
+        timestamp = parts[0].strip() if parts else ""
+        socketio.emit("memory_event", {"details": details, "timestamp": timestamp})
+
+    _busy_wait_file(MEMORY_EVENTS_LOG, handle_line, interval=4.0)
+
+
 @app.route('/api/resource_events')
 def get_resource_events():
     events = _load_resource_events(limit=200)
@@ -198,6 +293,51 @@ def get_plan_log():
     db_path = Path("lucy_memory.db")
     if not db_path.exists():
         return jsonify({"plan": None})
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT prompt, steps, timestamp FROM plan_logs
+        ORDER BY timestamp DESC LIMIT 1
+    ''')
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"plan": None})
+    return jsonify({
+        "plan": {
+            "prompt": row["prompt"],
+            "steps": json.loads(row["steps"]),
+            "timestamp": row["timestamp"],
+        }
+    })
+
+
+@app.route('/api/bus_metrics')
+def get_bus_metrics():
+    records = _tail_jsonl(BUS_METRICS_LOG, limit=40)
+    summary = _summarize_bus_metrics(records, last_n=10)
+    return jsonify({"records": records, "summary": summary})
+
+
+@app.route('/api/memory_events')
+def get_memory_events():
+    lines = _tail_lines(MEMORY_EVENTS_LOG, limit=25)
+    entries = []
+    for line in lines:
+        parts = line.split("|", 2)
+        if len(parts) >= 2:
+            timestamp = parts[0].strip()
+            payload = parts[1].strip() if len(parts) == 2 else parts[2].strip()
+            entries.append({"timestamp": timestamp, "details": payload})
+        else:
+            entries.append({"raw": line})
+    return jsonify({"events": entries})
+
+
+@socketio.on('connect')
+def _on_socket_connect():
+    _ensure_emitters_running()
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()

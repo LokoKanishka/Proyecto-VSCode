@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import threading
 import numpy as np
@@ -155,3 +156,34 @@ class AudioHandler:
         thread = threading.Thread(target=monitor, daemon=True)
         thread.start()
         return thread
+
+
+class AudioCaptureGate:
+    """Synchronization primitive to pause/resume audio capture."""
+
+    def __init__(self) -> None:
+        self._pause_event = asyncio.Event()
+        self._pause_event.set()
+        self._pause_count = 0
+        self._lock = threading.Lock()
+
+    def pause(self) -> None:
+        with self._lock:
+            self._pause_count += 1
+            if self._pause_count == 1:
+                self._pause_event.clear()
+
+    def resume(self) -> None:
+        with self._lock:
+            if self._pause_count == 0:
+                return
+            self._pause_count -= 1
+            if self._pause_count == 0:
+                self._pause_event.set()
+
+    def is_paused(self) -> bool:
+        with self._lock:
+            return self._pause_count > 0
+
+    async def wait_for_resume(self) -> None:
+        await self._pause_event.wait()

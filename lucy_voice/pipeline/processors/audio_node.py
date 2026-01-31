@@ -1,6 +1,10 @@
+from __future__ import annotations
+
+from typing import Optional
+
 from pipecat.processors.frame_processor import FrameProcessor, FrameDirection
 from pipecat.frames.frames import Frame, InputAudioRawFrame, OutputAudioRawFrame, StartFrame, EndFrame
-from lucy_voice.pipeline.audio import AudioHandler
+from lucy_voice.pipeline.audio import AudioHandler, AudioCaptureGate
 from lucy_voice.config import LucyConfig
 import sounddevice as sd
 import logging
@@ -8,13 +12,14 @@ import asyncio
 import numpy as np
 
 class AudioInputNode(FrameProcessor):
-    def __init__(self, config: LucyConfig):
+    def __init__(self, config: LucyConfig, capture_gate: Optional[AudioCaptureGate] = None):
         super().__init__()
         self.config = config
         self.log = logging.getLogger("AudioInputNode")
         self.log.info("AudioInputNode initialized (v2)")
         self._audio_task = None
         self._running = False
+        self._capture_gate = capture_gate
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         # Log ANY frame received
@@ -71,6 +76,18 @@ class AudioInputNode(FrameProcessor):
             blocksize=int(self.config.sample_rate * 0.1) # 100ms
         ) as stream:
             while self._running:
+                if self._capture_gate and self._capture_gate.is_paused():
+                    if stream.active:
+                        try:
+                            stream.stop()
+                        except Exception as exc:
+                            self.log.warning(f"Failed to stop input stream: {exc}")
+                    await self._capture_gate.wait_for_resume()
+                    try:
+                        stream.start()
+                    except Exception as exc:
+                        self.log.warning(f"Failed to restart input stream: {exc}")
+                    continue
                 try:
                     # Run blocking read in a separate thread
                     data, overflow = await asyncio.to_thread(stream.read, stream.blocksize)
@@ -96,12 +113,13 @@ class AudioInputNode(FrameProcessor):
 
 
 class AudioOutputNode(FrameProcessor):
-    def __init__(self, config: LucyConfig, on_complete=None):
+    def __init__(self, config: LucyConfig, on_complete=None, capture_gate: Optional[AudioCaptureGate] = None):
         super().__init__()
         self.config = config
         self.log = logging.getLogger("AudioOutputNode")
         self.audio_handler = AudioHandler(config) # Reuse handler for playback
         self.on_complete = on_complete
+        self._capture_gate = capture_gate
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -120,8 +138,12 @@ class AudioOutputNode(FrameProcessor):
             # Use frame sample rate if available, else config
             sr = getattr(frame, 'sample_rate', self.config.sample_rate)
             
-            sd.play(data, sr)
-            sd.wait()
+            self._pause_capture()
+            try:
+                sd.play(data, sr)
+                sd.wait()
+            finally:
+                self._resume_capture()
             
             if self.on_complete:
                 if asyncio.iscoroutinefunction(self.on_complete):
@@ -132,3 +154,11 @@ class AudioOutputNode(FrameProcessor):
             await self.push_frame(frame, direction)
         else:
             await self.push_frame(frame, direction)
+
+    def _pause_capture(self) -> None:
+        if self._capture_gate:
+            self._capture_gate.pause()
+
+    def _resume_capture(self) -> None:
+        if self._capture_gate:
+            self._capture_gate.resume()

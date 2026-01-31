@@ -20,6 +20,7 @@ class WorkerType(str, Enum):
     MOUTH = "mouth_worker"
     HANDS = "hands_worker"
     BROWSER = "browser_worker"
+    MEMORY = "memory_worker"
 
 class LucyMessage(BaseModel):
     """
@@ -34,6 +35,7 @@ class LucyMessage(BaseModel):
     content: str  # Texto principal o instrucción
     data: Dict[str, Any] = Field(default_factory=dict)  # Payload estructurado (args, resultados)
     metadata: Dict[str, Any] = Field(default_factory=dict)  # Traceability, tokens, latency
+    in_reply_to: Optional[str] = None
 
 class MemoryEntry(BaseModel):
     """Modelo para persistencia en SQLite/FAISS."""

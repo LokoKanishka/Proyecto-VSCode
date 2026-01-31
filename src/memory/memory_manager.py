@@ -3,7 +3,7 @@ import json
 import time
 import logging
 import uuid
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional, Protocol
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -11,6 +11,16 @@ from sentence_transformers import SentenceTransformer
 from src.core.types import MemoryEntry
 
 logger = logging.getLogger(__name__)
+
+
+class VectorStoreProtocol(Protocol):
+    """Interfaz mínima para integrar tiendas vectoriales adicionales."""
+
+    def save_memory(self, text: str, meta_type: str = "conversation") -> None:
+        ...
+
+    def recall(self, query: str, limit: int = 5) -> List[str]:
+        ...
 
 class MemoryManager:
     """
@@ -22,10 +32,12 @@ class MemoryManager:
         db_path: str = "lucy_memory.db",
         vector_index_path: Optional[str] = None,
         model_name: str = "all-MiniLM-L6-v2",
+        vector_store: Optional[VectorStoreProtocol] = None,
     ):
         self.db_path = db_path
         self.vector_index_path = vector_index_path
         self.encoder = SentenceTransformer(model_name)
+        self.vector_store = vector_store
         self._init_db()
 
     def _init_db(self):
@@ -112,6 +124,12 @@ class MemoryManager:
         ))
         conn.commit()
         conn.close()
+        if self.vector_store and entry.content:
+            meta_type = (metadata or {}).get("type", "message")
+            try:
+                self.vector_store.save_memory(entry.content, meta_type=meta_type)
+            except Exception as exc:
+                logger.warning("No se pudo guardar en vector_store: %s", exc)
 
     def get_context(self, session_id: str, limit: int = 10) -> List[Dict]:
         """Recupera contexto reciente (short-term memory)."""
@@ -167,6 +185,23 @@ class MemoryManager:
         conn.close()
         scored.sort(key=lambda entry: entry["score"], reverse=True)
         return scored[:k]
+
+    def semantic_search(self, query: str, k: int = 5) -> List[Dict[str, str]]:
+        """Recupera contexto utilizando la tienda vectorial (si está disponible)."""
+        if not query:
+            return []
+
+        if self.vector_store:
+            try:
+                results = self.vector_store.recall(query, limit=k)
+            except Exception as exc:
+                logger.warning("Error en vector_store.recall: %s", exc)
+                results = []
+            if results:
+                return [{"role": "assistant", "content": text} for text in results if text]
+            logger.debug("Vector store regresó vacío, cayendo a retrieve_relevant")
+
+        return self.retrieve_relevant(query, k)
 
     def log_plan(self, plan_id: str, prompt: str, plan_steps: List[Dict[str, str]]):
         conn = sqlite3.connect(self.db_path)

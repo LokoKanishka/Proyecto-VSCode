@@ -1,19 +1,33 @@
 import asyncio
 import logging
-from typing import Callable, Dict, List, Awaitable
+from collections import Counter
+from typing import Awaitable, Callable, Dict, List, Optional
+
 from src.core.types import LucyMessage, MessageType
 
 logger = logging.getLogger(__name__)
+
 
 class EventBus:
     """
     Bus de mensajería asíncrono centralizado.
     Desacopla al Manager de los Workers.
     """
-    def __init__(self):
+    def __init__(self, max_queue_size: int = 0):
         self._subscribers: Dict[str, List[Callable[[LucyMessage], Awaitable[None]]]] = {}
-        self._queue: asyncio.Queue = asyncio.Queue()
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=max_queue_size or 0)
         self._running = False
+        self._response_futures: Dict[str, asyncio.Future] = {}
+        self._metrics: Counter = Counter()
+
+    def get_metrics(self) -> Dict[str, int]:
+        """Devuelve un snapshot de métricas del bus (publicaciones, despachos, respuestas)."""
+        return {
+            "published": self._metrics["published"],
+            "dispatched": self._metrics["dispatched"],
+            "responses": self._metrics["responses"],
+            "errors": self._metrics["errors"],
+        }
 
     async def start(self):
         """Inicia el loop de procesamiento."""
@@ -40,13 +54,42 @@ class EventBus:
 
     async def publish(self, message: LucyMessage):
         """Publicar mensaje en el bus."""
+        self._metrics["published"] += 1
         await self._queue.put(message)
+
+    async def publish_and_wait(self, message: LucyMessage, timeout: float | None = None) -> LucyMessage:
+        """
+        Publica un comando y espera su primer response/error correlacionado.
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        self._response_futures[message.id] = future
+        try:
+            await self.publish(message)
+            return await asyncio.wait_for(future, timeout) if timeout else await future
+        finally:
+            self._response_futures.pop(message.id, None)
 
     async def _dispatch(self, message: LucyMessage):
         """Enrutamiento de mensajes."""
+        self._metrics["dispatched"] += 1
         if message.receiver in self._subscribers:
             for handler in self._subscribers[message.receiver]:
                 asyncio.create_task(handler(message))
         if message.type == MessageType.EVENT and "broadcast" in self._subscribers:
-             for handler in self._subscribers["broadcast"]:
+            for handler in self._subscribers["broadcast"]:
                 asyncio.create_task(handler(message))
+
+        if message.type in (MessageType.RESPONSE, MessageType.ERROR) and message.in_reply_to:
+            self._resolve_response(message)
+
+    def _resolve_response(self, message: LucyMessage):
+        future = self._response_futures.get(message.in_reply_to)
+        if not future or future.done():
+            return
+        self._metrics["responses"] += 1
+        if message.type == MessageType.ERROR:
+            self._metrics["errors"] += 1
+            future.set_exception(RuntimeError(message.content))
+        else:
+            future.set_result(message)

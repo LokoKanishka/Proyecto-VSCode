@@ -10,6 +10,7 @@ except ImportError as e:
     _pipecat_import_error = e
 
 from lucy_voice.config import LucyConfig
+from lucy_voice.pipeline.audio import AudioCaptureGate
 from lucy_voice.pipeline.processors.audio_node import AudioInputNode, AudioOutputNode
 from lucy_voice.pipeline.processors.wakeword_node import WakeWordNode
 from lucy_voice.pipeline.processors.vad_node import VADNode
@@ -28,8 +29,10 @@ def build_lucy_pipeline(config: Optional[LucyConfig] = None) -> "Pipeline":
     logger.info("Building Lucy Pipecat Pipeline...")
 
     # Create processors
+    capture_gate = AudioCaptureGate()
+
     # Input
-    audio_input = AudioInputNode(config)
+    audio_input = AudioInputNode(config, capture_gate=capture_gate)
     
     # Filtering / Detection
     wakeword = WakeWordNode(config)
@@ -42,7 +45,11 @@ def build_lucy_pipeline(config: Optional[LucyConfig] = None) -> "Pipeline":
     
     # Output
     # Wire callback to reset wakeword node after playback
-    audio_output = AudioOutputNode(config, on_complete=wakeword.reset)
+    audio_output = AudioOutputNode(
+        config,
+        on_complete=wakeword.reset,
+        capture_gate=capture_gate,
+    )
 
 
     processors = [
@@ -58,4 +65,3 @@ def build_lucy_pipeline(config: Optional[LucyConfig] = None) -> "Pipeline":
     pipeline = Pipeline(processors)
     logger.info("Pipeline created.")
     return pipeline
-

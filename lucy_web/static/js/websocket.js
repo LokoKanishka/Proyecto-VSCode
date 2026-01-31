@@ -158,3 +158,43 @@ const copyHistoryBtn = document.getElementById('copy-history-btn');
 if (copyHistoryBtn) {
     copyHistoryBtn.addEventListener('click', copyStatusHistory);
 }
+
+const busSparkline = document.getElementById('bus-sparkline');
+let sparkRecords = [];
+
+socket.on('bus_metrics_update', (payload) => {
+    if (!payload || !payload.record) return;
+    const { metrics } = payload.record;
+    sparkRecords.push(metrics?.errors || 0);
+    if (sparkRecords.length > 40) sparkRecords.shift();
+    drawSparkline(sparkRecords);
+
+    if (metrics?.errors > 0 && window.updateStatus) {
+        updateStatus(`Errores recientes en el bus: ${metrics.errors}`, 'warning');
+    }
+});
+
+socket.on('memory_event', (payload) => {
+    if (!payload) return;
+    updateStatus(`Memoria recuperada: ${payload.details || 'sin detalles'}`, 'info');
+});
+
+function drawSparkline(data) {
+    if (!busSparkline || !busSparkline.getContext) return;
+    const ctx = busSparkline.getContext('2d');
+    const w = busSparkline.width;
+    const h = busSparkline.height;
+    ctx.clearRect(0, 0, w, h);
+    if (!data.length) return;
+    const max = Math.max(...data, 1);
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    data.forEach((value, index) => {
+        const x = (index / (data.length - 1 || 1)) * w;
+        const y = h - (value / max) * h;
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+}
