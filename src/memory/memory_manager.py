@@ -42,7 +42,8 @@ class MemoryManager:
                 session_id TEXT,
                 embedding BLOB,
                 audio_path TEXT,
-                metadata TEXT
+                metadata TEXT,
+                condensed INTEGER DEFAULT 0
             )
         ''')
         
@@ -65,23 +66,49 @@ class MemoryManager:
                 metadata TEXT
             )
         ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS plan_logs (
+                id TEXT PRIMARY KEY,
+                timestamp REAL,
+                prompt TEXT,
+                steps TEXT
+            )
+        ''')
         
         conn.commit()
         conn.close()
         logger.info(f"💾 Memoria inicializada en {self.db_path}")
+        self._ensure_schema()
 
-    def add_message(self, entry: MemoryEntry):
+    def _ensure_schema(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(messages)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "condensed" not in columns:
+            cursor.execute("ALTER TABLE messages ADD COLUMN condensed INTEGER DEFAULT 0")
+        conn.commit()
+        conn.close()
+
+    def add_message(
+        self,
+        entry: MemoryEntry,
+        metadata: Optional[Dict] = None,
+        condensed: bool = False,
+    ):
         """Guarda un mensaje."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         embedding = entry.embedding or self._encode_text(entry.content)
+        metadata_json = json.dumps(metadata or {})
         cursor.execute('''
-            INSERT INTO messages (id, timestamp, role, content, session_id, embedding, audio_path, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (id, timestamp, role, content, session_id, embedding, audio_path, metadata, condensed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            entry.id, entry.timestamp, entry.role, entry.content, entry.session_id, 
+            entry.id, entry.timestamp, entry.role, entry.content, entry.session_id,
             json.dumps(embedding) if embedding else None,
-            entry.audio_path, "{}"
+            entry.audio_path, metadata_json, 1 if condensed else 0
         ))
         conn.commit()
         conn.close()
@@ -140,6 +167,115 @@ class MemoryManager:
         conn.close()
         scored.sort(key=lambda entry: entry["score"], reverse=True)
         return scored[:k]
+
+    def log_plan(self, plan_id: str, prompt: str, plan_steps: List[Dict[str, str]]):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO plan_logs (id, timestamp, prompt, steps)
+            VALUES (?, ?, ?, ?)
+        ''', (
+            plan_id, time.time(), prompt, json.dumps(plan_steps)
+        ))
+        conn.commit()
+        conn.close()
+
+    def get_last_plan(self) -> Optional[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, prompt, steps, timestamp FROM plan_logs
+            ORDER BY timestamp DESC LIMIT 1
+        ''')
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "prompt": row["prompt"],
+            "steps": json.loads(row["steps"]),
+            "timestamp": row["timestamp"]
+        }
+
+    def get_events(self, session_id: Optional[str] = None, limit: int = 10) -> List[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        query = '''
+            SELECT type, details, timestamp FROM events
+        '''
+        params: List = []
+        if session_id:
+            query += " WHERE session_id = ?"
+            params.append(session_id)
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {
+                "type": row["type"],
+                "details": json.loads(row["details"]),
+                "timestamp": row["timestamp"],
+            }
+            for row in rows
+        ]
+
+    def count_messages(self, session_id: str) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) FROM messages WHERE session_id = ?
+        ''', (session_id,))
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+
+    def summarize_history(self, session_id: str, limit: int = 25) -> Optional[str]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, role, content FROM messages
+            WHERE session_id = ? AND condensed = 0
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (session_id, limit))
+        rows = cursor.fetchall()
+        if len(rows) < limit:
+            conn.close()
+            return None
+        summary_lines = [
+            f"[{row['role']}] {row['content'][:120].strip()}"
+            for row in rows[::-1][:5]
+        ]
+        summary_text = "Resumen automático: " + " | ".join(summary_lines)
+        entry = MemoryEntry(
+            role="system",
+            content=summary_text,
+            session_id=session_id,
+        )
+        summary_id = entry.id
+        self.add_message(entry, metadata={"summary_of": [row["id"] for row in rows]})
+        self._mark_condensed([row["id"] for row in rows])
+        conn.close()
+        return summary_id
+
+    def _mark_condensed(self, ids: List[str]):
+        if not ids:
+            return
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in ids)
+        cursor.execute(
+            f"UPDATE messages SET condensed = 1 WHERE id IN ({placeholders})",
+            ids
+        )
+        conn.commit()
+        conn.close()
 
     def _encode_text(self, text: str) -> List[float]:
         if not text:

@@ -275,6 +275,16 @@ ollama ps  # Show currently loaded model
 
 ---
 
+## Watchers extendidos y eventos del sistema
+
+- **ResourceWatcher** publica `gpu_pressure` al detectar GPU > 85%. El Manager almacena el evento y el panel web lo muestra en "GPU Usage".
+- **WindowWatcher** publica `window_opened` cuando aparece una ventana nueva (usa `wmctrl`), ayudando a detectar cambios contextuales antes de ejecutar acciones.
+- **FileWatcher** vigila `~/Downloads` y `~/Documentos` por archivos nuevos o modificados y genera `file_event` con `path`, `size` y `timestamp`.
+- **NotificationWatcher** se conecta a `dbus-monitor` y emite `notification_received` con el contenido crudo de la notificación para análisis o alertas.
+- **TimerWatcher** dispara `timer_tick` cada 60 s para detectar tareas largas o forzar chequeos periódicos desde la UI.
+- Todos los watchers escriben un registro en `logs/resource_events.jsonl` y envían eventos al tópico `broadcast`, de modo que el Manager los persiste en la tabla `events`.
+- La UI web consume `/api/resource_events` y `/api/watcher_events` para mostrar los eventos recientes en la barra derecha y el panel “Eventos del sistema”.
+
 ## Quick Reference for AI Assistants
 
 When helping with Lucy development:

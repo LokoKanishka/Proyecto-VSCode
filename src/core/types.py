@@ -18,6 +18,8 @@ class WorkerType(str, Enum):
     VISION = "vision_worker"
     EAR = "ear_worker"
     MOUTH = "mouth_worker"
+    HANDS = "hands_worker"
+    BROWSER = "browser_worker"
 
 class LucyMessage(BaseModel):
     """

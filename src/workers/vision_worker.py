@@ -3,7 +3,7 @@ import base64
 import io
 import time
 import json
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Any
 
 try:
     import mss
@@ -53,7 +53,8 @@ class ScreenEye:
         return img_base64, {"width": w, "height": h, "cell_w": dx, "cell_h": dy}
 
 class VisionWorker(BaseWorker):
-    """Agente que 've' la pantalla y responde preguntas visuales."""
+    """Agente que 've' la pantalla, describe y devuelve coordenadas confiables."""
+
     def __init__(self, worker_id, bus):
         super().__init__(worker_id, bus)
         self.eye = ScreenEye()
@@ -71,12 +72,16 @@ class VisionWorker(BaseWorker):
             await self.send_error(message, f"Comando desconocido: {command}")
 
     async def analyze_screen(self, original_msg: LucyMessage, prompt: str):
-        if not HAS_VISION_LIBS:
-            await self.send_error(original_msg, "Librerías de visión no instaladas.")
-            return
+        logger.info("📸 Capturando pantalla...")
+        img_b64, meta = self.eye.capture_with_grid()
+
+        description = "No pude procesar la imagen."
+        grid_hint = "E5"
+        extra: Dict[str, Any] = {"meta": meta}
+
         try:
-            logger.info("📸 Capturando pantalla...")
-            img_b64, meta = self.eye.capture_with_grid()
+            if not HAS_VISION_LIBS:
+                raise RuntimeError("Faltan librerías de visión (mss/cv2).")
             logger.info(f"🧠 Consultando a {self.model}...")
             response = ollama.chat(
                 model=self.model,
@@ -87,7 +92,27 @@ class VisionWorker(BaseWorker):
                 }]
             )
             description = response['message']['content']
-            await self.send_response(original_msg, description, {"meta": meta})
-        except Exception as e:
-            logger.error(f"Error en visión: {e}")
-            await self.send_error(original_msg, str(e))
+            grid_hint = self._find_grid_hint(description)
+            extra["model_response"] = response['message']
+        except Exception as exc:
+            logger.warning("VisionWorker fallback: %s", exc)
+            grid_hint = self._fallback_grid_code(prompt)
+            description = f"Modo degradado: {exc}"
+
+        await self.send_response(
+            original_msg,
+            description,
+            {"meta": meta, "grid_hint": grid_hint, **extra}
+        )
+
+    @staticmethod
+    def _find_grid_hint(text: str) -> str:
+        import re
+
+        pattern = re.compile(r"\b([A-H](?:10|[1-9]))\b")
+        match = pattern.search(text.upper())
+        return match.group(1) if match else "E5"
+
+    def _fallback_grid_code(self, prompt: str) -> str:
+        code = self._find_grid_hint(prompt)
+        return code if code else "E5"

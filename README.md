@@ -39,6 +39,23 @@ El pipeline Pipecat + wakeword ONNX vive ahora en `legacy/` y solo se conserva c
 
 📦 Para detalles sobre módulos legacy, backups y código experimental que no forma parte de Lucy Voz v2, ver `docs/LUCY-MODULOS-LEGACY.md`.
 
+## Monitoreo de recursos
+
+Lucy registra la presión de GPU/ventanas en `logs/resource_events.jsonl` vía los watchers (`src/watchers`). Podés inspeccionar el último estado con:
+```bash
+python3 scripts/resource_dashboard.py
+```
+Y, si querés probar la replanificación en situaciones de carga, ejecutá:
+```bash
+./scripts/gpu_pressure_smoke.sh
+```
+Esto suma un evento `gpu_pressure`, consulta `/api/resource_events`, `/api/memory_summary` y `/api/plan_log`, y confirma que el backend responde con los datos esperados.
+También existe un endpoint en la UI para que el frontend consulte la última lectura y eventos recientes:
+```
+GET /api/resource_events
+```
+Devuelve `summary` (GPU + ventanas) y la lista de eventos útiles para dashboards o alertas.
+
 ---
 
 ## 2. Características principales (modo modular)

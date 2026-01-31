@@ -3,6 +3,7 @@ from flask_socketio import SocketIO, emit
 import logging
 import asyncio
 import json
+import sqlite3
 from threading import Thread
 import sys
 import os
@@ -11,6 +12,7 @@ import io
 import subprocess
 import wave
 import shutil
+from pathlib import Path
 
 # Add parent directory to path to import lucy_voice
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,6 +28,7 @@ except Exception as exc:  # pragma: no cover - dependency guard
     logging.getLogger("LucyWeb").warning("soundfile no disponible: %s", exc)
 
 FFMPEG_BIN = shutil.which("ffmpeg")
+RESOURCE_LOG = Path("logs/resource_events.jsonl")
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lucy-voice-secret-key'
@@ -50,7 +53,7 @@ def init_lucy():
     else:
         config = LucyConfig()
         log.info("Using default config")
-    
+
     orchestrator = LucyOrchestrator(config)
     log.info("Lucy Orchestrator initialized")
 
@@ -156,6 +159,112 @@ def get_models():
     except Exception as e:
         log.error(f"Error getting models: {e}")
         return jsonify({'models': [], 'error': str(e)})
+
+
+def _load_resource_events(limit: int = 100):
+    if not RESOURCE_LOG.exists():
+        return []
+    with RESOURCE_LOG.open("r", encoding="utf-8") as fd:
+        lines = fd.readlines()[-limit:]
+    events = []
+    for raw in lines:
+        try:
+            events.append(json.loads(raw))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+def _resource_summary(events):
+    gpu = None
+    windows = []
+    for event in reversed(events):
+        if event["event"] == "gpu_pressure" and gpu is None:
+            gpu = event["data"].get("usage_pct")
+        if event["event"] == "window_opened":
+            windows.append(event["data"])
+    return {"gpu": gpu, "windows": windows[:5]}
+
+
+@app.route('/api/resource_events')
+def get_resource_events():
+    events = _load_resource_events(limit=200)
+    summary = _resource_summary(events)
+    return jsonify({"summary": summary, "events": events})
+
+
+@app.route('/api/plan_log')
+def get_plan_log():
+    db_path = Path("lucy_memory.db")
+    if not db_path.exists():
+        return jsonify({"plan": None})
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT prompt, steps, timestamp FROM plan_logs
+        ORDER BY timestamp DESC LIMIT 1
+    ''')
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"plan": None})
+    return jsonify({
+        "plan": {
+            "prompt": row["prompt"],
+            "timestamp": row["timestamp"],
+            "steps": json.loads(row["steps"])
+        }
+    })
+
+
+@app.route('/api/memory_summary')
+def get_memory_summary():
+    db_path = Path("lucy_memory.db")
+    if not db_path.exists():
+        return jsonify({"summary": None, "note": "base de memoria no encontrada"})
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT content, timestamp FROM messages
+        WHERE role = 'system' AND content LIKE 'Resumen automático%' 
+        ORDER BY timestamp DESC LIMIT 1
+    ''')
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"summary": None, "note": "sin resúmenes automáticos aún"})
+    return jsonify({"summary": row["content"], "timestamp": row["timestamp"]})
+
+
+@app.route('/api/watcher_events')
+def get_watcher_events():
+    db_path = Path("lucy_memory.db")
+    if not db_path.exists():
+        return jsonify({"events": []})
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT type, details, timestamp FROM events
+        ORDER BY timestamp DESC LIMIT 12
+    ''')
+    rows = cursor.fetchall()
+    conn.close()
+    events = []
+    for row in rows:
+        details = {}
+        try:
+            details = json.loads(row["details"])
+        except (TypeError, json.JSONDecodeError):
+            pass
+        events.append({
+            "type": row["type"],
+            "timestamp": row["timestamp"],
+            "details": details,
+        })
+    return jsonify({"events": events})
 
 @socketio.on('connect')
 def handle_connect():

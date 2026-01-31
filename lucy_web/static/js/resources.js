@@ -1,0 +1,129 @@
+const resourceGpu = document.getElementById('resource-gpu');
+const resourceWindows = document.getElementById('resource-windows');
+const summaryText = document.getElementById('memory-summary');
+const summaryTimestamp = document.getElementById('memory-summary-timestamp');
+const planSummary = document.getElementById('plan-summary');
+const planSteps = document.getElementById('plan-steps');
+const watcherEventsList = document.getElementById('watcher-events-list');
+
+async function updateResourcePanel() {
+    try {
+        const resp = await fetch('/api/resource_events');
+        const data = await resp.json();
+        const gpu = data.summary?.gpu;
+        resourceGpu.textContent = gpu ? `${(gpu * 100).toFixed(1)}%` : 'N/A';
+        resourceWindows.innerHTML = '';
+        if (data.summary?.windows.length) {
+            data.summary.windows.forEach(win => {
+                const item = document.createElement('div');
+                item.className = 'resource-window';
+                item.textContent = `${win.title} (${win.window_id})`;
+                resourceWindows.appendChild(item);
+            });
+        } else {
+        resourceWindows.textContent = 'No hay ventanas recientes.';
+    }
+        if (gpu && gpu >= 0.85 && window.updateStatus) {
+            updateStatus('GPU alta, priorizando tareas ligeras.', 'warning');
+        }
+    } catch (err) {
+        console.error('No se pudo cargar los eventos de recursos', err);
+    }
+}
+
+async function updateMemorySummary() {
+    try {
+        const resp = await fetch('/api/memory_summary');
+        const data = await resp.json();
+        if (data.summary) {
+            summaryText.textContent = data.summary;
+            if (data.timestamp) {
+                const date = new Date(data.timestamp * 1000);
+                summaryTimestamp.textContent = `Último resumen: ${date.toLocaleString()}`;
+            }
+        } else {
+            summaryText.textContent = data.note || 'Sin resumen automático aún.';
+            summaryTimestamp.textContent = '';
+        }
+    } catch (err) {
+        console.error('No se pudo cargar el resumen de memoria', err);
+    }
+}
+
+setInterval(updateResourcePanel, 12_000);
+setInterval(updateMemorySummary, 30_000);
+setInterval(updatePlanPanel, 45_000);
+setInterval(updateWatcherPanel, 25_000);
+updateResourcePanel();
+updateMemorySummary();
+updatePlanPanel();
+updateWatcherPanel();
+
+const refreshMemoryBtn = document.getElementById('refresh-memory-btn');
+if (refreshMemoryBtn) {
+    refreshMemoryBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        updateMemorySummary();
+    });
+}
+
+async function updatePlanPanel() {
+    if (!planSummary || !planSteps) return;
+    try {
+        const resp = await fetch('/api/plan_log');
+        const data = await resp.json();
+        if (!data.plan) {
+            planSummary.textContent = 'Sin plan registrado aún.';
+            planSteps.innerHTML = '';
+            return;
+        }
+        const date = new Date(data.plan.timestamp * 1000);
+        planSummary.textContent = `${data.plan.prompt} (${date.toLocaleString()})`;
+        planSteps.innerHTML = '';
+        data.plan.steps.forEach(step => {
+            const item = document.createElement('div');
+            item.className = 'plan-step';
+            const title = document.createElement('div');
+            title.textContent = `${step.action} → ${step.target}`;
+            const reason = document.createElement('div');
+            reason.className = 'plan-step-rationale';
+            reason.textContent = step.rationale || 'Sin justificación';
+            item.appendChild(title);
+            item.appendChild(reason);
+            planSteps.appendChild(item);
+        });
+    } catch (err) {
+        console.error('No se pudo cargar el plan', err);
+    }
+}
+
+async function updateWatcherPanel() {
+    if (!watcherEventsList) {
+        return;
+    }
+    try {
+        const resp = await fetch('/api/watcher_events');
+        const data = await resp.json();
+        const events = data.events || [];
+        watcherEventsList.innerHTML = '';
+        if (!events.length) {
+            watcherEventsList.textContent = 'Sin eventos recientes.';
+            return;
+        }
+        events.forEach(evt => {
+            const item = document.createElement('div');
+            item.className = 'watcher-event';
+            const timeText = evt.timestamp
+                ? new Date(evt.timestamp * 1000).toLocaleTimeString()
+                : '—';
+            const details = typeof evt.details === 'object'
+                ? JSON.stringify(evt.details)
+                : evt.details;
+            item.innerHTML = `<strong>${timeText} · ${evt.type}</strong><div>${details}</div>`;
+            watcherEventsList.appendChild(item);
+        });
+    } catch (err) {
+        console.error('No se pudo cargar los eventos del sistema', err);
+        watcherEventsList.textContent = 'Error cargando eventos.';
+    }
+}

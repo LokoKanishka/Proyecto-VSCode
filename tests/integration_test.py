@@ -13,6 +13,10 @@ from src.workers.search_worker import SearchWorker
 from src.workers.code_worker import CodeWorker
 from src.workers.vision_worker import VisionWorker
 from src.workers.chat_worker import ChatWorker
+from src.workers.browser_worker import BrowserWorker
+from src.workers.hands_worker import HandsWorker
+from src.watchers.resource_watcher import ResourceWatcher
+from src.watchers.window_watcher import WindowWatcher
 
 logging.basicConfig(level=logging.INFO, format='%(name)s | %(message)s')
 logger = logging.getLogger("Integracion")
@@ -27,9 +31,17 @@ async def main():
     searcher = SearchWorker(WorkerType.SEARCH, bus)
     coder = CodeWorker(WorkerType.CODE, bus)
     vision = VisionWorker(WorkerType.VISION, bus)
+    hands = HandsWorker(WorkerType.HANDS, bus)
     chat = ChatWorker(WorkerType.CHAT, bus)
+    browser = BrowserWorker(WorkerType.BROWSER, bus)
+    window_watcher = WindowWatcher(bus)
+    resource_watcher = ResourceWatcher(bus)
 
     bus_task = asyncio.create_task(bus.start())
+    watcher_tasks = [
+        asyncio.create_task(window_watcher.run()),
+        asyncio.create_task(resource_watcher.run()),
+    ]
     await asyncio.sleep(1)
 
     logger.info("\n--- 👁️ PRUEBA DE VISIÓN ---")
@@ -69,6 +81,10 @@ async def main():
     await asyncio.sleep(3)
 
     logger.info("\n🛑 FINALIZANDO...")
+    window_watcher.stop()
+    resource_watcher.stop()
+    for task in watcher_tasks:
+        task.cancel()
     await bus.stop()
     await bus_task
 

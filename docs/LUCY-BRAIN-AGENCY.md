@@ -83,3 +83,15 @@ Visión rápida de cómo piensa y actúa Lucy desde `external/nodo-de-voz-modula
   - `[LucyWebAgent] Puntajes candidatos: [...]`
   - `[LucyWebAgent] No hay candidato claro, devolviendo search_url genérica: ...`
   - `[LucyDesktop] Ejecutando comando: ['xdg-open', ...]`
+## Planificación avanzada del enjambre actualizado
+
+- El Manager usa el `TreeOfThoughtPlanner` (`src/planners/tree_of_thought.py`) para construir planes por pasos (visión, manos, navegador, chat) en lugar de responder solo keywords.
+- El `ResourceWatcher` reporta `gpu_pressure`; el Manager lo conserva en el `ResourceManager` y lo persiste en la tabla `events` para que el historial registre cuánta carga tenía la GPU cuando se ejecutaron ciertas tareas.
+- Cuando la presión es alta, el Manager envía un aviso al usuario y prioriza comandos ligeros (por ejemplo, `chat` o `type_text`) hasta que la GPU se libera.
+- Cada plan se registra íntegro en la tabla `plan_logs` (prompt + pasos). El endpoint `/api/plan_log` y el panel de recursos permiten revisar qué hizo Lucy (Browser→Vision→Hands) y con qué racionales, lo que facilita auditorías y debugging.
+
+## Watchers y Memory Summary
+
+- `WindowWatcher` detecta ventanas nuevas con `wmctrl`, publica `window_opened` y el Manager guarda el evento en la base para auditoría.
+- `ResourceWatcher` monitorea `nvidia-smi`; si detecta uso >85%, el Manager registra el evento y no envía tareas pesadas.
+- Si la tabla `messages` supera 40 entradas sin condensar, `MemoryManager.summarize_history` recolecta los 20 últimos mensajes, crea un `role='system'` con la síntesis y marca los registros condensados para mantener el contexto fresco sin explotar el KV cache.

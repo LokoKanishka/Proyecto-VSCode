@@ -1,0 +1,14 @@
+[Unit]
+Description=Lucy Voice Swarm Runner
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode
+ExecStart=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/scripts/run_swarm.sh
+Restart=on-failure
+RestartSec=5
+User=lucy-ubuntu
+
+[Install]
+WantedBy=multi-user.target

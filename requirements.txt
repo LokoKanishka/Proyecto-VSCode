@@ -22,3 +22,5 @@ pandas
 duckduckgo-search
 numpy
 pyautogui
+pydantic
+playwright==1.44.0

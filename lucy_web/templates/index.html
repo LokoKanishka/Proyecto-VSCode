@@ -159,11 +159,47 @@
                     </div>
                 </div>
             </div>
+
+            <div class="settings-section resource-section">
+                <h4>Recursos</h4>
+                <div class="resource-card">
+                    <div class="resource-row">
+                        <span>GPU Usage</span>
+                        <strong id="resource-gpu">—</strong>
+                    </div>
+                    <div class="resource-row">
+                        <span>Ventanas recientes</span>
+                        <div id="resource-windows" class="resource-windows">Sin datos aún.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-section watcher-events-section">
+                <h4>Eventos del sistema</h4>
+                <div id="watcher-events" class="watcher-events">
+                    <div id="watcher-events-list" class="watcher-events-list">
+                        Cargando eventos...
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-section memory-section">
+                <h4>Resumen automático</h4>
+                <div class="memory-summary" id="memory-summary">Cargando resumen...</div>
+                <div class="memory-summary-timestamp" id="memory-summary-timestamp"></div>
+                <button id="refresh-memory-btn" class="refresh-button">Actualizar resumen</button>
+            </div>
+            <div class="settings-section plan-section">
+                <h4>Último plan ejecutado</h4>
+                <div class="plan-summary" id="plan-summary">Cargando plan...</div>
+                <div id="plan-steps" class="plan-steps"></div>
+            </div>
         </aside>
     </div>
 
     <script src="{{ url_for('static', filename='js/websocket.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
     <script src="{{ url_for('static', filename='js/voice.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/resources.js') }}"></script>
 </body>
 </html>
