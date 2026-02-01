@@ -65,9 +65,10 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - E2E bridge multi-nodo (in-process): `tests/test_ws_bridge_multi.py`.
 - Docs: `docs/SWARM_DISTRIBUTED.md` y `docs/DEPLOY_CHECKLIST.md`.
 - Tests: backup requiere cifrado si `LUCY_BACKUP_REQUIRE_ENCRYPTION=1`: `tests/test_memory_manager.py`.
+- Smoke remoto multi-host: `scripts/bridge_remote_smoke.sh`.
 
 ### Falta (prioriza en cada sesión)
-0) **Pendiente menor**: validar despliegue real con nodos en hosts distintos.
+0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).
 
 ### Próximas 20 tareas (2026-02-01)
 Completadas en esta sesión (20/20): TLS+token WS, métricas de cola/latencia, badge bridge, prioridad por backpressure, export/import snapshots, compresión configurable, cache OCR, heurísticas UIElement, scroll/drag, click_text, metadata OG, tests auto, timeouts env, WS health, E2E bridge opcional, CI matrix+cache, docs distribuido + checklist.

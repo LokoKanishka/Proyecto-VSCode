@@ -16,6 +16,7 @@
 - `LUCY_WS_TLS_CERT`/`LUCY_WS_TLS_KEY` si se usa TLS
 - `scripts/bridge_multi_node_demo.sh`
 - `scripts/bridge_tls_token_demo.sh`
+- `scripts/bridge_remote_smoke.sh`
 - `/api/bridge_metrics` responde
 
 ## Smokes

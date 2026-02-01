@@ -12,6 +12,12 @@ Conectar múltiples nodos de Swarm vía WebSocket, compartiendo eventos y métri
 ./scripts/bridge_multi_node_demo.sh
 ```
 
+## Smoke remoto (multi-host)
+Configura `LUCY_WS_REMOTE_URL` con el gateway remoto y ejecuta:
+```bash
+./scripts/bridge_remote_smoke.sh
+```
+
 ## Variables clave
 - `LUCY_WS_BRIDGE_URLS`: lista separada por coma.
 - `LUCY_WS_BRIDGE_TOPICS`: tópicos a replicar (`broadcast,final_response`).
