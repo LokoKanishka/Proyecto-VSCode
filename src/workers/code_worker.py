@@ -1,9 +1,11 @@
+import json
 import logging
 import os
 import subprocess
 import tempfile
 import sys
 from typing import List, Optional, Tuple
+import requests
 
 from src.core.base_worker import BaseWorker
 from src.core.types import LucyMessage, MessageType
@@ -16,9 +18,19 @@ class CodeWorker(BaseWorker):
 
     def __init__(self, worker_id: str, bus):
         super().__init__(worker_id, bus)
+        self.snippets = self._load_snippets()
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
+            return
+
+        if message.content == "generate_code":
+            prompt = message.data.get("prompt") if isinstance(message.data, dict) else None
+            if not prompt:
+                await self.send_error(message, "Necesito prompt para generar código.")
+                return
+            reply, data = self._generate_code_with_llm(prompt)
+            await self.send_response(message, reply, data)
             return
 
         if message.content == "run_tests":
@@ -41,6 +53,12 @@ class CodeWorker(BaseWorker):
 
     def _execute_prompt(self, prompt: str, allow_unsafe: bool = False) -> Tuple[str, dict]:
         normalized = prompt.lower()
+        snippet = self._select_snippet(normalized)
+        if snippet:
+            return (
+                snippet["code"],
+                {"mode": "snippet", "snippet": snippet["name"]},
+            )
         if "fibonacci" in normalized:
             sequence = self._fibonacci(10)
             return (
@@ -151,3 +169,45 @@ class CodeWorker(BaseWorker):
         lowered = code.lower()
         blocklist = ["import os", "import subprocess", "shutil", "socket", "open("]
         return any(token in lowered for token in blocklist)
+
+    def _generate_code_with_llm(self, prompt: str) -> Tuple[str, dict]:
+        model = os.getenv("LUCY_CODE_MODEL", "qwen2.5:14b")
+        host = os.getenv("LUCY_OLLAMA_HOST", "http://localhost:11434")
+        system = (
+            "Sos un asistente de programación. Responde SOLO con el código solicitado, "
+            "sin explicaciones ni markdown."
+        )
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "stream": False,
+        }
+        try:
+            response = requests.post(f"{host}/api/chat", json=payload, timeout=25)
+            response.raise_for_status()
+            content = response.json().get("message", {}).get("content", "")
+            return content, {"model": model}
+        except Exception as exc:
+            return f"Error generando código: {exc}", {"model": model, "error": str(exc)}
+
+    def _load_snippets(self) -> List[dict]:
+        path = os.getenv("LUCY_SNIPPETS_PATH", "snippets/snippets.json")
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, list) else []
+        except Exception as exc:
+            logger.warning("No pude cargar snippets: %s", exc)
+            return []
+
+    def _select_snippet(self, normalized_prompt: str) -> Optional[dict]:
+        for snippet in self.snippets:
+            keywords = snippet.get("keywords", [])
+            if any(k in normalized_prompt for k in keywords):
+                return snippet
+        return None

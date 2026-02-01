@@ -73,6 +73,7 @@ class TreeOfThoughtPlanner:
         context: Iterable[str],
     ) -> List[PlanStep]:
         plan: List[PlanStep] = []
+        url = self._extract_url(prompt)
         wants_vision = self._contains_keywords(prompt_lower, {"pantalla", "mira", "ves", "analiza", "observá", "reflejo"})
         wants_browser = self._contains_keywords(prompt_lower, {"youtube", "navega", "web", "video", "buscar", "goglea", "buscá en"})
         wants_hands = self._contains_keywords(prompt_lower, {"click", "clic", "presiona", "pulsa", "apreta", "botón"})
@@ -82,7 +83,17 @@ class TreeOfThoughtPlanner:
         wants_vscode = self._contains_keywords(prompt_lower, {"vscode", "vs code", "editor"})
         wants_git = self._contains_keywords(prompt_lower, {"git", "commit", "branch", "merge"})
         wants_package = self._contains_keywords(prompt_lower, {"instala", "pip", "dependencia", "paquete"})
+        wants_read = self._contains_keywords(prompt_lower, {"leer", "resum", "contenido", "artículo", "pagina", "página"})
 
+        if url and (wants_read or not wants_search):
+            plan.append(
+                PlanStep(
+                    action="distill_url",
+                    target=WorkerType.BROWSER,
+                    args={"url": url},
+                    rationale="Hay una URL explícita; destilo el contenido antes de responder.",
+                )
+            )
         if wants_vision:
             plan.append(
                 PlanStep(
@@ -233,3 +244,12 @@ class TreeOfThoughtPlanner:
 
         match = re.search(r"(/[^\\s]+)", text)
         return match.group(1) if match else None
+
+    @staticmethod
+    def _extract_url(text: str) -> Optional[str]:
+        import re
+
+        match = re.search(r"https?://\S+", text or "")
+        if not match:
+            return None
+        return match.group(0).rstrip(").,;")

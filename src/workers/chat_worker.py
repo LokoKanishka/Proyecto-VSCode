@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import List
 
 try:
@@ -6,6 +7,11 @@ try:
     HAS_OLLAMA = True
 except ImportError:
     HAS_OLLAMA = False
+try:
+    from src.engine.vllm_client import VLLMClient
+    HAS_VLLM = True
+except Exception:
+    HAS_VLLM = False
 
 from src.core.base_worker import BaseWorker
 from src.core.types import LucyMessage, MessageType
@@ -20,6 +26,8 @@ class ChatWorker(BaseWorker):
         super().__init__(worker_id, bus)
         self.model = "qwen2.5:14b"
         self.blocklist = {"violencia", "suicidio", "autolesion", "nazi"}
+        self.use_vllm = os.getenv("LUCY_USE_VLLM", "0").lower() in {"1", "true", "yes"}
+        self.vllm_client = VLLMClient() if HAS_VLLM else None
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
@@ -33,7 +41,7 @@ class ChatWorker(BaseWorker):
 
         logger.info(f"💬 ChatWorker procesando: {user_text[:50]}...")
 
-        if not HAS_OLLAMA:
+        if not HAS_OLLAMA and not (self.use_vllm and self.vllm_client):
             await self.send_response(message, "Error: Librería 'ollama' no instalada.")
             return
         if self._is_blocked(user_text):
@@ -45,6 +53,10 @@ class ChatWorker(BaseWorker):
             model = override_model or self.model
             if delegate:
                 await self.send_event("chat_delegate_request", {"delegate": delegate, "text": user_text})
+            if self.use_vllm and self.vllm_client:
+                reply = self.vllm_client.chat(messages)
+                await self.send_response(message, reply, {"model": "vllm"})
+                return
             if stream:
                 reply_chunks: List[str] = []
                 for chunk in ollama.chat(model=model, messages=messages, stream=True):

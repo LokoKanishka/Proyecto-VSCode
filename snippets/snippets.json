@@ -1,0 +1,17 @@
+[
+  {
+    "name": "read_csv_pandas",
+    "keywords": ["csv", "pandas", "read csv"],
+    "code": "import pandas as pd\n\n\ndf = pd.read_csv('input.csv')\nprint(df.head())\n"
+  },
+  {
+    "name": "httpx_get",
+    "keywords": ["httpx", "get request", "fetch url"],
+    "code": "import httpx\n\n\nresp = httpx.get('https://example.com', timeout=10)\nprint(resp.status_code)\nprint(resp.text[:200])\n"
+  },
+  {
+    "name": "pytest_basic",
+    "keywords": ["pytest", "test basic", "unit test"],
+    "code": "def test_basic():\n    assert 1 + 1 == 2\n"
+  }
+]

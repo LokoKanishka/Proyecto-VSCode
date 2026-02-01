@@ -38,6 +38,10 @@ class HandsWorker(BaseWorker):
             await self._handle_hotkey(message, payload)
         elif command == "paste_text":
             await self._handle_paste_text(message, payload)
+        elif command == "click_bbox":
+            await self._handle_click_bbox(message, payload)
+        elif command == "focus_window":
+            await self._handle_focus_window(message, payload)
         else:
             await self.send_error(message, f"Comando desconocido: {command}")
 
@@ -123,3 +127,28 @@ class HandsWorker(BaseWorker):
         except Exception as exc:
             logger.exception("Error pegando texto")
             await self.send_error(msg, f"No pude pegar: {exc}")
+
+    async def _handle_click_bbox(self, msg: LucyMessage, payload: dict):
+        bbox = payload.get("bbox")
+        if not bbox or len(bbox) != 4:
+            await self.send_error(msg, "Se requiere bbox [x,y,w,h].")
+            return
+        try:
+            ok = self.controller.click_bbox(tuple(bbox), verify=bool(payload.get("verify", True)))
+            if ok:
+                await self.send_response(msg, "Clic en bbox confirmado.")
+            else:
+                await self.send_error(msg, "No pude confirmar el clic en bbox.")
+        except Exception as exc:
+            await self.send_error(msg, f"Error click_bbox: {exc}")
+
+    async def _handle_focus_window(self, msg: LucyMessage, payload: dict):
+        title = payload.get("title")
+        if not title:
+            await self.send_error(msg, "Se requiere title para enfocar.")
+            return
+        ok = self.controller.focus_window(title)
+        if ok:
+            await self.send_response(msg, f"Ventana enfocada: {title}")
+        else:
+            await self.send_error(msg, "No pude enfocar la ventana.")

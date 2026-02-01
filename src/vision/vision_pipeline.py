@@ -56,6 +56,25 @@ class VisionPipeline:
         closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel)
         return closed
 
+    def morphology_features(self, image: Any) -> Dict[str, Any]:
+        if not HAS_CV:
+            return {}
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        top_hat = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
+        black_hat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
+        gradient = cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, kernel)
+        skeleton = self._skeletonize(binary)
+        skeleton_density = float(skeleton.mean() / 255.0) if skeleton is not None else 0.0
+        return {
+            "top_hat_mean": float(top_hat.mean()),
+            "black_hat_mean": float(black_hat.mean()),
+            "gradient_mean": float(gradient.mean()),
+            "binary_density": float(binary.mean() / 255.0),
+            "skeleton_density": skeleton_density,
+        }
+
     def run_ocr(self, image: Any, lang: str = "spa+eng") -> List[UIElement]:
         if not HAS_TESS:
             return []
@@ -90,13 +109,33 @@ class VisionPipeline:
                 elements.append(UIElement(bbox=(x1, y1, x2 - x1, y2 - y1), element_type=cls_name, confidence=conf))
         return elements
 
-    def analyze(self, image: Any, lang: str = "spa+eng") -> Dict[str, Any]:
+    def analyze(self, image: Any, lang: str = "spa+eng", advanced: bool = False) -> Dict[str, Any]:
         processed = self.preprocess(image) if HAS_CV else image
         ocr_elements = self.run_ocr(processed, lang=lang)
         detector_elements = self.run_detector(image)
         elements = ocr_elements + detector_elements
-        return {
+        payload = {
             "elements": elements,
             "ocr_count": len(ocr_elements),
             "detector_count": len(detector_elements),
         }
+        if advanced:
+            payload["morphology"] = self.morphology_features(image)
+        return payload
+
+    def _skeletonize(self, binary: Any):
+        if not HAS_CV:
+            return None
+        img = binary.copy()
+        img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY)[1]
+        skeleton = cv2.zeros(img.shape, dtype=img.dtype)
+        element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+        while True:
+            eroded = cv2.erode(img, element)
+            temp = cv2.dilate(eroded, element)
+            temp = cv2.subtract(img, temp)
+            skeleton = cv2.bitwise_or(skeleton, temp)
+            img = eroded.copy()
+            if cv2.countNonZero(img) == 0:
+                break
+        return skeleton

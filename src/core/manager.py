@@ -1,12 +1,13 @@
 import logging
 import uuid
+import re
 from typing import List
 
 from src.core.base_worker import BaseWorker
 from src.core.bus import EventBus
 from src.core.types import LucyMessage, MessageType, WorkerType, MemoryEntry
 from src.memory.memory_manager import MemoryManager
-from src.planners.tree_of_thought import TreeOfThoughtPlanner
+from src.planners.tree_of_thought import TreeOfThoughtPlanner, PlanStep
 from src.resources.resource_manager import ResourceManager
 
 logger = logging.getLogger(__name__)
@@ -18,11 +19,12 @@ class Manager(BaseWorker):
     Ref: Plan Técnico - Sección 4.2 (Memoria a Largo Plazo)
     """
 
-    def __init__(self, bus: EventBus, memory: MemoryManager):
+    def __init__(self, bus: EventBus, memory: MemoryManager, planner=None, swarm=None):
         super().__init__(WorkerType.MANAGER, bus)
         self.memory = memory
-        self.planner = TreeOfThoughtPlanner()
+        self.planner = planner or TreeOfThoughtPlanner()
         self.resource_manager = ResourceManager()
+        self.swarm = swarm
         self.pending_interrupts: List[str] = []
         self._register_worker_budgets()
         self.bus.subscribe("user_input", self.handle_user_input)
@@ -46,6 +48,7 @@ class Manager(BaseWorker):
             await self.send_event("final_response", f"[{worker_name}]: {content}")
             if worker_name == WorkerType.BROWSER:
                 await self._bridge_browser_response(message)
+                await self._maybe_summarize_distilled(message)
             if worker_name == WorkerType.VISION:
                 await self._handle_vision_to_hands(message)
 
@@ -85,6 +88,7 @@ class Manager(BaseWorker):
         combined_context = [entry["content"] for entry in history]
         combined_context.extend(entry["content"] for entry in semantic_fallback)
         plan = self.planner.plan(user_text, context=combined_context)
+        plan = self._maybe_add_distill_step(user_text, plan)
         logger.info("🧠 Plan creado con %d pasos", len(plan))
 
         plan_id = str(uuid.uuid4())
@@ -103,6 +107,14 @@ class Manager(BaseWorker):
                 for step in plan
             ],
         )
+        tree_nodes = getattr(self.planner, "get_last_tree", None)
+        if callable(tree_nodes):
+            try:
+                nodes = tree_nodes()
+                if nodes:
+                    self.memory.log_thought_tree(plan_id, nodes)
+            except Exception as exc:
+                logger.debug("No pude loguear árbol ToT: %s", exc)
 
         for step in plan:
             await self._dispatch_step(step, history)
@@ -123,6 +135,12 @@ class Manager(BaseWorker):
             step.target.value if isinstance(step.target, WorkerType) else step.target,
             step.rationale or "sin justificación"
         )
+        if self.swarm:
+            try:
+                profile = "vision" if step.target == WorkerType.VISION else "general"
+                self.swarm.set_profile(profile)
+            except Exception as exc:
+                logger.debug("SwarmManager no disponible: %s", exc)
         if self.pending_interrupts:
             interrupt = self.pending_interrupts.pop(0)
             await self.send_event(
@@ -150,6 +168,11 @@ class Manager(BaseWorker):
             )
         if isinstance(step.target, WorkerType):
             self.resource_manager.mark_worker_active(step.target.value)
+        if self.swarm:
+            try:
+                self.swarm.swap_for_worker(step.target.value)
+            except Exception as exc:
+                logger.debug("Swarm swap_for_worker falló: %s", exc)
         await self.bus.publish(cmd)
 
     async def handle_broadcast_event(self, message: LucyMessage):
@@ -163,6 +186,11 @@ class Manager(BaseWorker):
             usage = message.data.get("usage_pct")
             self.resource_manager.update_gpu_usage(usage)
             logger.warning("⚠️ GPU presión detectada %.2f%%", (usage or 0) * 100)
+            if self.swarm:
+                try:
+                    self.swarm.auto_manage_vram(usage)
+                except Exception as exc:
+                    logger.debug("Swarm auto_manage_vram falló: %s", exc)
         if message.content == "browser_action_failed":
             screenshot_b64 = (message.data or {}).get("screenshot_b64")
             if screenshot_b64:
@@ -191,6 +219,22 @@ class Manager(BaseWorker):
             type=MessageType.COMMAND,
             content="analyze_screen",
             data={"prompt": prompt}
+        )
+        await self.bus.publish(cmd)
+
+    async def _maybe_summarize_distilled(self, message: LucyMessage):
+        if message.data.get("action") != "distill_url":
+            return
+        distilled = message.data.get("distilled_text") or ""
+        if not distilled:
+            return
+        prompt = "Resumí el siguiente contenido en 4-6 frases claras y concisas:\n\n" + distilled
+        cmd = LucyMessage(
+            sender=self.worker_id,
+            receiver=WorkerType.CHAT,
+            type=MessageType.COMMAND,
+            content="chat",
+            data={"text": prompt, "history": []},
         )
         await self.bus.publish(cmd)
 
@@ -231,3 +275,31 @@ class Manager(BaseWorker):
         if event_name in {"gpu_pressure", "notification_received", "window_opened"}:
             return 2
         return 0
+
+    def _maybe_add_distill_step(self, user_text: str, plan):
+        url = self._extract_url(user_text)
+        if not url:
+            return plan
+        has_browser = any(getattr(step, "target", None) == WorkerType.BROWSER for step in plan)
+        has_distill = any(getattr(step, "action", "") == "distill_url" for step in plan)
+        wants_read = self._contains_keywords(user_text.lower(), {"leer", "resum", "contenido", "artículo", "pagina", "página"})
+        if (wants_read or not has_browser) and not has_distill:
+            step = PlanStep(
+                action="distill_url",
+                target=WorkerType.BROWSER,
+                args={"url": url},
+                rationale="El usuario dio una URL; destilo el contenido antes de responder.",
+            )
+            plan = [step, *plan]
+        return plan
+
+    @staticmethod
+    def _extract_url(text: str) -> str | None:
+        match = re.search(r"https?://\S+", text or "")
+        if not match:
+            return None
+        return match.group(0).rstrip(").,;")
+
+    @staticmethod
+    def _contains_keywords(text: str, keywords: set[str]) -> bool:
+        return any(keyword in text for keyword in keywords)

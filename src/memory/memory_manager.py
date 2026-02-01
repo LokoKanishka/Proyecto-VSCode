@@ -6,6 +6,7 @@ import uuid
 import os
 import shutil
 import subprocess
+import requests
 from typing import Dict, List, Optional, Protocol
 
 import numpy as np
@@ -99,11 +100,25 @@ class MemoryManager:
                 steps TEXT
             )
         ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS thought_nodes (
+                id TEXT PRIMARY KEY,
+                plan_id TEXT,
+                parent_id TEXT,
+                depth INTEGER,
+                score REAL,
+                content TEXT,
+                metadata TEXT
+            )
+        ''')
         
         conn.commit()
         conn.close()
         logger.info(f"💾 Memoria inicializada en {self.db_path}")
         self._ensure_schema()
+        if os.getenv("LUCY_FAISS_ALWAYS_ON", "0") in {"1", "true", "yes"}:
+            self.build_faiss_index(limit=5000)
 
     def _ensure_schema(self):
         conn = sqlite3.connect(self.db_path)
@@ -314,6 +329,48 @@ class MemoryManager:
         conn.close()
         return summary_id
 
+    def summarize_history_llm(
+        self,
+        session_id: str,
+        limit: int = 25,
+        model: Optional[str] = None,
+        host: Optional[str] = None,
+    ) -> Optional[str]:
+        rows = self._fetch_recent(session_id, limit)
+        if len(rows) < limit:
+            return None
+        text = "\n".join(f"[{row['role']}] {row['content']}" for row in rows[::-1])
+        prompt = (
+            "Resumí el siguiente historial en 4-6 frases concisas, "
+            "manteniendo detalles importantes:\n\n" + text
+        )
+        summary_text = self._call_ollama(prompt, model=model, host=host)
+        if not summary_text:
+            return None
+        entry = MemoryEntry(
+            role="system",
+            content="Resumen automático: " + summary_text.strip(),
+            session_id=session_id,
+        )
+        summary_id = entry.id
+        self.add_message(entry, metadata={"summary_of": [row["id"] for row in rows]})
+        self._mark_condensed([row["id"] for row in rows])
+        return summary_id
+
+    def _fetch_recent(self, session_id: str, limit: int) -> List[sqlite3.Row]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, role, content FROM messages
+            WHERE session_id = ? AND condensed = 0
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (session_id, limit))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+
     def _mark_condensed(self, ids: List[str]):
         if not ids:
             return
@@ -363,7 +420,55 @@ class MemoryManager:
                     if os.path.exists(encrypted):
                         return encrypted
                 except Exception:
-                    return dest
+        return dest
+
+    def log_thought_tree(self, plan_id: str, nodes: List[Dict[str, Any]]) -> None:
+        if not nodes:
+            return
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        for node in nodes:
+            cursor.execute(
+                '''
+                INSERT INTO thought_nodes (id, plan_id, parent_id, depth, score, content, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    node.get("id"),
+                    plan_id,
+                    node.get("parent_id"),
+                    node.get("depth", 0),
+                    node.get("score", 0.0),
+                    node.get("content", ""),
+                    json.dumps(node.get("metadata", {})),
+                ),
+            )
+        conn.commit()
+        conn.close()
+
+    def _call_ollama(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        host: Optional[str] = None,
+    ) -> Optional[str]:
+        config_model = os.getenv("LUCY_OLLAMA_MODEL") or os.getenv("LUCY_MAIN_MODEL")
+        config_host = os.getenv("LUCY_OLLAMA_HOST")
+        model = model or config_model or "qwen2.5:14b"
+        host = host or config_host or "http://localhost:11434"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+        }
+        try:
+            response = requests.post(f"{host}/api/chat", json=payload, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+            return data.get("message", {}).get("content", "")
+        except Exception as exc:
+            logger.warning("LLM summary falló: %s", exc)
+            return None
             return dest
         except OSError as exc:
             logger.warning("No pude crear backup: %s", exc)

@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Sequence, Tuple, Union
 
 import pyautogui
+import shutil
+import subprocess
 
 np = None
 try:
@@ -154,8 +156,12 @@ class DesktopController:
         region = self.compute_grid_bounds(code)
         before = self.screen_state.capture_region(region) if verify else None
         x, y = self.compute_grid_coordinates(code)
-        self._human_like_move(x, y, self.default_duration)
-        pyautogui.click(button=button, clicks=clicks, interval=interval)
+        try:
+            self._human_like_move(x, y, self.default_duration)
+            pyautogui.click(button=button, clicks=clicks, interval=interval)
+        except Exception:
+            if not self._click_cli(x, y):
+                raise
         after = self.screen_state.capture_region(region) if verify else None
         if verify:
             diff = ScreenState.region_difference(before, after)
@@ -172,6 +178,56 @@ class DesktopController:
 
     def press_hotkey(self, *keys: str):
         pyautogui.hotkey(*keys)
+
+    def click_bbox(self, bbox: Tuple[int, int, int, int], verify: bool = True) -> bool:
+        x, y, w, h = bbox
+        cx = int(x + w / 2)
+        cy = int(y + h / 2)
+        before = self.screen_state.capture_region((x, y, w, h)) if verify else None
+        try:
+            self._human_like_move(cx, cy, self.default_duration)
+            pyautogui.click()
+        except Exception:
+            if not self._click_cli(cx, cy):
+                raise
+        after = self.screen_state.capture_region((x, y, w, h)) if verify else None
+        if verify:
+            diff = ScreenState.region_difference(before, after)
+            return diff >= self.verify_threshold
+        return True
+
+    def focus_window(self, title: str) -> bool:
+        if not title:
+            return False
+        if shutil.which("wmctrl"):
+            try:
+                subprocess.run(["wmctrl", "-a", title], check=False)
+                return True
+            except Exception:
+                return False
+        if shutil.which("xdotool"):
+            try:
+                subprocess.run(["xdotool", "search", "--name", title, "windowactivate", "--sync"], check=False)
+                return True
+            except Exception:
+                return False
+        return False
+
+    def _click_cli(self, x: int, y: int) -> bool:
+        if shutil.which("xdotool"):
+            try:
+                subprocess.run(["xdotool", "mousemove", str(x), str(y), "click", "1"], check=False)
+                return True
+            except Exception:
+                return False
+        if shutil.which("ydotool"):
+            try:
+                subprocess.run(["ydotool", "mousemove", str(x), str(y)], check=False)
+                subprocess.run(["ydotool", "click", "0xC0"], check=False)
+                return True
+            except Exception:
+                return False
+        return False
 
     def _human_like_move(
         self, x: int, y: int, duration: float, jitter: bool = True

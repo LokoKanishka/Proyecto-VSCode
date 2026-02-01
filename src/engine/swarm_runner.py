@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import signal
 from typing import List, Optional
 
@@ -15,6 +16,7 @@ from src.watchers.notification_watcher import NotificationWatcher
 from src.watchers.resource_watcher import ResourceWatcher
 from src.watchers.timer_watcher import TimerWatcher
 from src.watchers.window_watcher import WindowWatcher
+from src.watchers.memory_backup_watcher import MemoryBackupWatcher
 from src.workers.browser_worker import BrowserWorker
 from src.workers.chat_worker import ChatWorker
 from src.workers.code_worker import CodeWorker
@@ -26,7 +28,15 @@ from src.workers.vscode_worker import VSCodeWorker
 from src.workers.git_worker import GitWorker
 from src.workers.package_worker import PackageWorker
 from src.workers.vision_worker import VisionWorker
+from src.workers.ear_worker import EarWorker
+from src.workers.mouth_worker import MouthWorker
 from src.core.manager import Manager
+from src.engine.swarm_manager import SwarmManager
+from src.planners.ollama_planner import OllamaPlanner
+from src.planners.tree_of_thought_llm import TreeOfThoughtLLMPlanner
+from lucy_voice.config import LucyConfig
+from lucy_voice.pipeline.audio import AudioCaptureGate
+from src.core.ws_gateway import WebSocketGateway
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +51,25 @@ class SwarmRunner:
             db_path=memory_db,
             vector_store=vector_store,
         )
-        self.manager = Manager(self.bus, self.memory)
+        planner_mode = os.getenv("LUCY_PLANNER_MODE", "heuristic").lower()
+        planner = None
+        if planner_mode == "ollama":
+            planner = OllamaPlanner()
+        elif planner_mode == "tot_llm":
+            planner = TreeOfThoughtLLMPlanner()
+        swarm_manager = None
+        if os.getenv("LUCY_SWARM_PROFILE_MANAGEMENT", "0").lower() in {"1", "true", "yes"}:
+            swarm_manager = SwarmManager()
+            profiles = {}
+            if os.getenv("LUCY_WORKER_MODEL_VISION"):
+                profiles[WorkerType.VISION.value] = os.getenv("LUCY_WORKER_MODEL_VISION")
+            if os.getenv("LUCY_WORKER_MODEL_CODE"):
+                profiles[WorkerType.CODE.value] = os.getenv("LUCY_WORKER_MODEL_CODE")
+            if os.getenv("LUCY_WORKER_MODEL_CHAT"):
+                profiles[WorkerType.CHAT.value] = os.getenv("LUCY_WORKER_MODEL_CHAT")
+            if profiles:
+                swarm_manager.set_worker_profiles(profiles)
+        self.manager = Manager(self.bus, self.memory, planner=planner, swarm=swarm_manager)
         self.workers = [
             SearchWorker(WorkerType.SEARCH, self.bus),
             ChatWorker(WorkerType.CHAT, self.bus),
@@ -65,9 +93,32 @@ class SwarmRunner:
             BusMetricsWatcher(self.bus),
             TimerWatcher(self.bus, interval=60.0),
         ]
+        backup_interval = os.getenv("LUCY_MEMORY_BACKUP_INTERVAL")
+        if backup_interval:
+            try:
+                interval_s = int(backup_interval)
+                self.watchers.append(MemoryBackupWatcher(self.bus, interval_s=interval_s))
+            except ValueError:
+                logger.warning("LUCY_MEMORY_BACKUP_INTERVAL inválido: %s", backup_interval)
         self.watcher_tasks: List[asyncio.Task] = []
         self.bus_task: Optional[asyncio.Task] = None
+        self.audio_tasks: List[asyncio.Task] = []
+        self.ws_gateway: Optional[WebSocketGateway] = None
         self._stop_event = asyncio.Event()
+        self._setup_audio_workers()
+
+    def _setup_audio_workers(self) -> None:
+        enable_audio = os.getenv("LUCY_SWARM_ENABLE_AUDIO", "0").lower() in {"1", "true", "yes"}
+        if not enable_audio:
+            self.ear_worker = None
+            self.mouth_worker = None
+            return
+        config_path = os.getenv("LUCY_CONFIG", "config.yaml")
+        config = LucyConfig.load_from_yaml(config_path)
+        gate = AudioCaptureGate()
+        self.ear_worker = EarWorker(WorkerType.EAR, self.bus, config, gate)
+        self.mouth_worker = MouthWorker(WorkerType.MOUTH, self.bus, config, gate)
+        self.workers.extend([self.ear_worker, self.mouth_worker])
 
     async def run(self) -> None:
         """Ejecuta el bus y los watchers hasta que el usuario interrumpe con Ctrl+C."""
@@ -82,6 +133,8 @@ class SwarmRunner:
 
         self.bus_task = asyncio.create_task(self.bus.start())
         self._start_watchers()
+        self._start_audio()
+        await self._start_ws_gateway()
         logger.info("🤖 Swarm en marcha. Presioná Ctrl+C para detener.")
         await self._stop_event.wait()
         await self.stop()
@@ -91,6 +144,17 @@ class SwarmRunner:
             asyncio.create_task(watcher.run()) for watcher in self.watchers
         ]
 
+    def _start_audio(self) -> None:
+        if getattr(self, "ear_worker", None):
+            self.audio_tasks.append(asyncio.create_task(self.ear_worker.run()))
+
+    async def _start_ws_gateway(self) -> None:
+        if os.getenv("LUCY_WS_GATEWAY", "0").lower() in {"1", "true", "yes"}:
+            host = os.getenv("LUCY_WS_HOST", "127.0.0.1")
+            port = int(os.getenv("LUCY_WS_PORT", "8766"))
+            self.ws_gateway = WebSocketGateway(self.bus, host=host, port=port)
+            await self.ws_gateway.start()
+
     async def stop(self) -> None:
         """Detiene watchers, el bus y limpia el entorno."""
         logger.info("🛑 Deteniendo Swarm Runner...")
@@ -99,9 +163,16 @@ class SwarmRunner:
         for task in self.watcher_tasks:
             task.cancel()
         await asyncio.gather(*self.watcher_tasks, return_exceptions=True)
+        if getattr(self, "ear_worker", None):
+            self.ear_worker.stop()
+        for task in self.audio_tasks:
+            task.cancel()
+        await asyncio.gather(*self.audio_tasks, return_exceptions=True)
         if self.bus_task:
             await self.bus.stop()
             await self.bus_task
+        if self.ws_gateway:
+            await self.ws_gateway.stop()
         logger.info("✅ Swarm detenido.")
 
     def _request_stop(self) -> None:

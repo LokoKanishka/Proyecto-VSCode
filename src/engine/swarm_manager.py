@@ -112,6 +112,24 @@ class SwarmManager:
 
         self._active_profile = profile_name
 
+    def auto_manage_vram(self, usage: float | None) -> None:
+        """Decide perfil según uso de VRAM."""
+        if usage is None:
+            return
+        high = float(os.getenv("LUCY_VRAM_HIGH", "0.88"))
+        low = float(os.getenv("LUCY_VRAM_LOW", "0.72"))
+        preferred = os.getenv("LUCY_SWARM_PREFERRED_PROFILE", "general")
+        force = os.getenv("LUCY_SWARM_FORCE_PROFILE")
+
+        if force in {"general", "vision"}:
+            self.set_profile(force)
+            return
+        if usage >= high:
+            self.set_profile("general")
+            return
+        if usage <= low and preferred in {"general", "vision"}:
+            self.set_profile(preferred)
+
     def _touch_model(self, model: str, keep_alive: int, label: str) -> None:
         if not model:
             return
@@ -129,6 +147,37 @@ class SwarmManager:
             logger.info("✅ Swarm {}: {} ({})", action, model, label)
         except Exception as exc:
             logger.warning("⚠️ Swarm fallo tocando {} ({}): {}", model, label, exc)
+
+    def unload_model(self, model: str) -> None:
+        if not model:
+            return
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "unload"}],
+            "stream": False,
+            "keep_alive": 0,
+        }
+        try:
+            response = requests.post(f"{self.host}/api/chat", json=payload, timeout=self.timeout_s)
+            response.raise_for_status()
+            logger.info("🧹 Swarm descargó modelo: {}", model)
+        except Exception as exc:
+            logger.warning("⚠️ Swarm no pudo descargar {}: {}", model, exc)
+
+    def load_model(self, model: str) -> None:
+        if not model:
+            return
+        self._touch_model(model, keep_alive=self.keep_alive, label="manual")
+
+    def set_worker_profiles(self, profiles: Dict[str, str]) -> None:
+        """Asocia worker -> modelo (para gestión manual)."""
+        self.worker_profiles = profiles
+
+    def swap_for_worker(self, worker: str) -> None:
+        """Carga modelo asociado a un worker (si existe)."""
+        model = getattr(self, "worker_profiles", {}).get(worker)
+        if model:
+            self.load_model(model)
 
     @staticmethod
     def _load_config(config_path: str) -> Dict[str, Any]:

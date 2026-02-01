@@ -49,6 +49,15 @@ class ScreenEye:
             x = int(dx * j)
             cv2.line(img_bgr, (x, 0), (x, h), color, 1)
 
+        # Labels A1..H10
+        for r in range(self.grid_rows):
+            for c in range(self.grid_cols):
+                label = f"{chr(ord('A') + c)}{r + 1}"
+                x = int(c * dx + 4)
+                y = int(r * dy + 18)
+                cv2.putText(img_bgr, label, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+                cv2.putText(img_bgr, label, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
         _, buffer = cv2.imencode('.jpg', img_bgr)
         img_base64 = base64.b64encode(buffer).decode('utf-8')
         return img_base64, {"width": w, "height": h, "cell_w": dx, "cell_h": dy}
@@ -92,7 +101,7 @@ class VisionWorker(BaseWorker):
                 img_bytes = base64.b64decode(img_b64)
                 img_arr = np.frombuffer(img_bytes, dtype=np.uint8)
                 frame = cv2.imdecode(img_arr, cv2.IMREAD_COLOR)
-                analysis = self.pipeline.analyze(frame)
+                analysis = self.pipeline.analyze(frame, advanced=True)
                 extra["ui_elements"] = [
                     {"bbox": el.bbox, "text": el.text, "type": el.element_type, "confidence": el.confidence}
                     for el in analysis.get("elements", [])

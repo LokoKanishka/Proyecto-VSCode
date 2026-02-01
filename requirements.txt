@@ -26,6 +26,9 @@ numpy
 pyautogui
 pydantic
 playwright==1.44.0
+websockets
+requests
+beautifulsoup4
 
 # Vision/extras (opcional pero recomendado)
 diskcache

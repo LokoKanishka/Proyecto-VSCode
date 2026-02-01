@@ -1,6 +1,8 @@
 import asyncio
 import base64
 import logging
+import os
+import re
 from typing import Any, Dict, List, Optional
 
 try:
@@ -8,6 +10,16 @@ try:
     HAS_PLAYWRIGHT = True
 except ImportError:  # pragma: no cover
     HAS_PLAYWRIGHT = False
+try:
+    import trafilatura
+    HAS_TRAFILA = True
+except Exception:  # pragma: no cover
+    HAS_TRAFILA = False
+try:
+    from bs4 import BeautifulSoup
+    HAS_BS4 = True
+except Exception:  # pragma: no cover
+    HAS_BS4 = False
 
 from src.core.base_worker import BaseWorker
 from src.core.types import LucyMessage, MessageType
@@ -22,8 +34,8 @@ class BrowserWorker(BaseWorker):
         super().__init__(worker_id, bus)
         self.default_headless = True
         self.default_timeout_ms = 12000
-        self.default_user_data_dir: Optional[str] = None
-        self.default_storage_state: Optional[str] = None
+        self.default_user_data_dir: Optional[str] = os.getenv("LUCY_BROWSER_PROFILE")
+        self.default_storage_state: Optional[str] = os.getenv("LUCY_BROWSER_STORAGE_STATE")
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
@@ -43,6 +55,15 @@ class BrowserWorker(BaseWorker):
 
         if message.content == "capture_state":
             await self._capture_state(message)
+            return
+        if message.content == "distill_url":
+            await self._distill_url(message)
+            return
+        if message.content == "chatgpt_prompt":
+            await self._chatgpt_prompt(message)
+            return
+        if message.content == "gemini_prompt":
+            await self._gemini_prompt(message)
             return
 
         await self.send_error(message, f"Comando desconocido: {message.content}")
@@ -219,6 +240,7 @@ class BrowserWorker(BaseWorker):
                     await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout_ms)
                 screenshot = await page.screenshot(full_page=True)
                 html = await page.content()
+                distilled = self._distill_html(html)
                 accessibility = None
                 if message.data.get("accessibility"):
                     try:
@@ -234,6 +256,8 @@ class BrowserWorker(BaseWorker):
                 "url": url,
                 "screenshot_b64": base64.b64encode(screenshot).decode("utf-8"),
                 "html": html[:20000],
+                "distilled_text": distilled[:8000] if distilled else "",
+                "distilled_len": len(distilled) if distilled else 0,
                 "accessibility": accessibility,
             }
             await self.send_response(message, "Estado capturado.", payload)
@@ -272,6 +296,7 @@ class BrowserWorker(BaseWorker):
                     await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout_ms)
                 screenshot = await page.screenshot(full_page=True)
                 html = await page.content()
+                distilled = self._distill_html(html)
                 accessibility = None
                 try:
                     accessibility = await page.accessibility.snapshot()
@@ -286,7 +311,144 @@ class BrowserWorker(BaseWorker):
                 "url": url,
                 "screenshot_b64": base64.b64encode(screenshot).decode("utf-8"),
                 "html": html[:20000],
+                "distilled_text": distilled[:8000] if distilled else "",
+                "distilled_len": len(distilled) if distilled else 0,
                 "accessibility": accessibility,
             }
         except Exception as exc:
             return {"capture_error": str(exc)}
+
+    async def _distill_url(self, message: LucyMessage):
+        if not HAS_PLAYWRIGHT:
+            await self.send_error(message, "Instalá playwright para destilar URLs.")
+            return
+        url = message.data.get("url")
+        if not url:
+            await self.send_error(message, "Necesito una URL para destilar.")
+            return
+        headless = message.data.get("headless", self.default_headless)
+        user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
+        storage_state = message.data.get("storage_state", self.default_storage_state)
+        try:
+            async with async_playwright() as pw:
+                browser, context = await self._launch_context(
+                    pw,
+                    headless=headless,
+                    user_data_dir=user_data_dir,
+                    storage_state=storage_state,
+                )
+                page = await context.new_page()
+                await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout_ms)
+                html = await page.content()
+                distilled = self._distill_html(html)
+                if storage_state:
+                    await context.storage_state(path=storage_state)
+                await context.close()
+                if browser:
+                    await browser.close()
+            await self.send_response(
+                message,
+                "Contenido destilado.",
+                {
+                    "url": url,
+                    "distilled_text": distilled[:12000],
+                    "distilled_len": len(distilled),
+                    "action": "distill_url",
+                },
+            )
+        except Exception as exc:
+            await self.send_error(message, f"No pude destilar la URL: {exc}")
+
+    async def _chatgpt_prompt(self, message: LucyMessage):
+        if not HAS_PLAYWRIGHT:
+            await self.send_error(message, "Instalá playwright para ChatGPT.")
+            return
+        prompt = message.data.get("prompt")
+        if not prompt:
+            await self.send_error(message, "Necesito prompt para ChatGPT.")
+            return
+        headless = message.data.get("headless", self.default_headless)
+        user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
+        storage_state = message.data.get("storage_state", self.default_storage_state)
+        try:
+            async with async_playwright() as pw:
+                browser, context = await self._launch_context(
+                    pw,
+                    headless=headless,
+                    user_data_dir=user_data_dir,
+                    storage_state=storage_state,
+                )
+                page = await context.new_page()
+                await page.goto("https://chat.openai.com/", wait_until="domcontentloaded", timeout=20000)
+                await page.fill("textarea", prompt, timeout=20000)
+                await page.press("textarea", "Enter")
+                await page.wait_for_timeout(4000)
+                answer = await page.text_content("div.markdown") or ""
+                if storage_state:
+                    await context.storage_state(path=storage_state)
+                await context.close()
+                if browser:
+                    await browser.close()
+            await self.send_response(message, "Respuesta capturada.", {"answer": answer})
+        except Exception as exc:
+            await self.send_error(message, f"ChatGPT flow falló: {exc}")
+
+    async def _gemini_prompt(self, message: LucyMessage):
+        if not HAS_PLAYWRIGHT:
+            await self.send_error(message, "Instalá playwright para Gemini.")
+            return
+        prompt = message.data.get("prompt")
+        if not prompt:
+            await self.send_error(message, "Necesito prompt para Gemini.")
+            return
+        headless = message.data.get("headless", self.default_headless)
+        user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
+        storage_state = message.data.get("storage_state", self.default_storage_state)
+        try:
+            async with async_playwright() as pw:
+                browser, context = await self._launch_context(
+                    pw,
+                    headless=headless,
+                    user_data_dir=user_data_dir,
+                    storage_state=storage_state,
+                )
+                page = await context.new_page()
+                await page.goto("https://gemini.google.com/", wait_until="domcontentloaded", timeout=20000)
+                await page.fill("textarea", prompt, timeout=20000)
+                await page.press("textarea", "Enter")
+                await page.wait_for_timeout(4000)
+                answer = await page.text_content("main") or ""
+                if storage_state:
+                    await context.storage_state(path=storage_state)
+                await context.close()
+                if browser:
+                    await browser.close()
+            await self.send_response(message, "Respuesta capturada.", {"answer": answer})
+        except Exception as exc:
+            await self.send_error(message, f"Gemini flow falló: {exc}")
+
+    def _distill_html(self, html: str) -> str:
+        if not html:
+            return ""
+        if HAS_TRAFILA:
+            try:
+                extracted = trafilatura.extract(html, include_tables=True, include_comments=False)
+                if extracted:
+                    return self._clean_text(extracted)
+            except Exception:
+                pass
+        if HAS_BS4:
+            try:
+                soup = BeautifulSoup(html, "html.parser")
+                for tag in soup(["script", "style", "noscript"]):
+                    tag.extract()
+                text = soup.get_text(separator=" ")
+                return self._clean_text(text)
+            except Exception:
+                pass
+        return self._clean_text(re.sub(r"<[^>]+>", " ", html))
+
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        text = re.sub(r"\s+", " ", text or "")
+        return text.strip()
