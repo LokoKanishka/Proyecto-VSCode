@@ -98,6 +98,15 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 ### Falta (prioriza en cada sesión)
 0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).
 
+### Desalineaciones con el plan técnico maestro
+Mientras se mantiene la base actual, estas secciones del plan aún no se han cubierto plenamente:
+- **Manager/vLLM AWQ 70B**: no hay despliegue operativo de un modelo AWQ de 70B con KV cache cuantizado y swapping controlado en producción.
+- **Agente de navegador robusto**: falta integración de browser-use/Selenium con DOM distillation profundo, gestión de cookies y login para sitios como ChatGPT/Gemini.
+- **Concurrencia Ray + Prometheus**: no existen actores Ray ni exporter Prometheus para cinco watchers/latencias, ni recursos dedicados por worker.
+- **Vision avanzada/SoM+SAM2**: aunque hay SAM opcional y morfologías básicas, aún no se implementó SAM2 completo, skeleton graphs ni verificación visual de rutas de clic.
+- **Infraestructura operativa**: no se ha entregado systemd completo, nor logging+prometheus, ni pruebas visuales (screenshot diff) ni scheduler/maintenance cron de largo plazo.
+- **Control visual seguro**: falta módulo de visión+hands con grillas SoM + skeleton + throttled verification + Wayland (swaymsg/ydotool) y backpressure por worker.
+
 ### Próximas 20 tareas (2026-02-01)
 Completadas en esta sesión (20/20): TLS+token WS, métricas de cola/latencia, badge bridge, prioridad por backpressure, export/import snapshots, compresión configurable, cache OCR, heurísticas UIElement, scroll/drag, click_text, metadata OG, tests auto, timeouts env, WS health, E2E bridge opcional, CI matrix+cache, docs distribuido + checklist.
 
