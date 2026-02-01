@@ -206,6 +206,7 @@ def _summarize_bus_metrics(records, last_n: int = 10):
     if not records:
         return {}
     metrics = [rec.get("metrics", {}) for rec in records]
+    bridge_records = [rec.get("bridge", {}) for rec in records if rec.get("bridge")]
     keys = set().union(*(m.keys() for m in metrics))
     summary = {}
     for key in keys:
@@ -216,9 +217,21 @@ def _summarize_bus_metrics(records, last_n: int = 10):
             "min": min(values) if values else 0,
             "max": max(values) if values else 0,
         }
+    bridge_summary = {}
+    if bridge_records:
+        last = bridge_records[-1]
+        bridge_summary = {
+            "latency_avg_ms": last.get("latency_avg_ms"),
+            "backlog_max": last.get("backlog_max"),
+            "dropped": last.get("dropped"),
+            "sent": last.get("sent"),
+            "received": last.get("received"),
+            "url": last.get("url"),
+        }
     return {
         "summary": summary,
         "recent": records[-last_n:],
+        "bridge": bridge_summary,
     }
 
 

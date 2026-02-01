@@ -6,6 +6,8 @@ SMOKE_LOG="/tmp/lucy_smoke_summary.log"
 REPORT_DIR="$ROOT/reports"
 SUMMARY="$REPORT_DIR/smoke_summary.md"
 SKYSCANNER_SMOKE=${SKYSCANNER_SMOKE:-1}
+BRIDGE_SMOKE=${BRIDGE_SMOKE:-0}
+MEMORY_SMOKE=${MEMORY_SMOKE:-1}
 
 mkdir -p "$REPORT_DIR"
 > "$SMOKE_LOG"
@@ -35,13 +37,25 @@ else
   echo "3) Skyscanner smoke: skipped (SKYSCANNER_SMOKE=0)" | tee -a "$SMOKE_LOG"
   results["3) Skyscanner smoke"]="skipped"
 fi
+if [ "$BRIDGE_SMOKE" -ne 0 ]; then
+  run_step "4) Bridge smoke" "./scripts/bridge_smoke.sh"
+else
+  echo "4) Bridge smoke: skipped (BRIDGE_SMOKE=0)" | tee -a "$SMOKE_LOG"
+  results["4) Bridge smoke"]="skipped"
+fi
+if [ "$MEMORY_SMOKE" -ne 0 ]; then
+  run_step "5) Memory snapshot smoke" "./scripts/memory_snapshot_smoke.py"
+else
+  echo "5) Memory snapshot smoke: skipped (MEMORY_SMOKE=0)" | tee -a "$SMOKE_LOG"
+  results["5) Memory snapshot smoke"]="skipped"
+fi
 
 echo "Smoke suite finished at $(date)" | tee -a "$SMOKE_LOG"
 echo "Summary log: $SMOKE_LOG"
 
 {
   echo "# Smoke suite summary ($(date))"
-  for key in "1) Health smoke" "2) Plan verification" "3) Skyscanner smoke"; do
+  for key in "1) Health smoke" "2) Plan verification" "3) Skyscanner smoke" "4) Bridge smoke" "5) Memory snapshot smoke"; do
     echo "- **$key**: ${results[$key]}"
   done
   echo ""

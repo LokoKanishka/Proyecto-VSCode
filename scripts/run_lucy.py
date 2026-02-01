@@ -34,6 +34,10 @@ def main() -> int:
         help="Habilita WebSocket gateway para el bus del swarm.",
     )
     parser.add_argument(
+        "--ws-bridge",
+        help="URL de bridge WS para sincronizar buses (ej: ws://127.0.0.1:8766).",
+    )
+    parser.add_argument(
         "extra",
         nargs=argparse.REMAINDER,
         help="Argumentos extra para el script objetivo",
@@ -50,6 +54,8 @@ def main() -> int:
             os.environ["LUCY_SWARM_CONSOLE"] = "1"
         if args.ws_gateway:
             os.environ["LUCY_WS_GATEWAY"] = "1"
+        if args.ws_bridge:
+            os.environ["LUCY_WS_BRIDGE_URL"] = args.ws_bridge
         target = root / "src" / "engine" / "swarm_runner.py"
     elif args.mode == "gui":
         print("⚠️  Modo gui es legacy (stack OllamaEngine).")

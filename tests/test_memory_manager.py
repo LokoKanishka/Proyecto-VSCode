@@ -106,3 +106,13 @@ def test_file_snapshot_logging(tmp_path):
     content = b"hola lucy"
     file_id = manager.log_file_snapshot("notes/test.txt", content, metadata={"source": "test"})
     assert file_id is not None
+
+
+def test_backup_requires_encryption(tmp_path, monkeypatch):
+    db_file = tmp_path / "memory.db"
+    manager = MemoryManager(db_path=str(db_file))
+    manager.add_message(MemoryEntry(role="user", content="hola", session_id="s"))
+    monkeypatch.setenv("LUCY_BACKUP_REQUIRE_ENCRYPTION", "1")
+    monkeypatch.delenv("LUCY_BACKUP_PASSPHRASE", raising=False)
+    dest = manager.backup_db(backup_dir=str(tmp_path / "backups"))
+    assert dest is None

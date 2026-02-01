@@ -47,6 +47,12 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Snapshots automáticos desde CodeWorker (write_file): `src/workers/code_worker.py`.
 - Bridge WS: alerta `bridge_backpressure` al superar umbral: `src/core/ws_bus_bridge.py`.
 - Tests: snapshot de archivos en memoria cubierto por `tests/test_memory_manager.py`.
+- Bridge WS: evento `bridge_stats` periódico con latencia/backlog: `src/core/ws_bus_bridge.py`.
+- Bridge WS: stats incluidos en bus_metrics + smoke `scripts/bridge_smoke.sh`: `src/watchers/bus_metrics_watcher.py`, `lucy_web/app.py`, `lucy_web/static/js/resources.js`, `scripts/bridge_smoke.sh`.
+- Smokes extra: `scripts/memory_snapshot_smoke.py` y flags en `scripts/run_all_smokes.sh`.
+- UI/Docs: bridge stats en UI y `/api/bus_metrics`: `lucy_web/static/js/resources.js`, `docs/LUCY-WEB-API.md`.
+- Demo multi-nodo bridge: `scripts/bridge_multi_node_demo.sh`.
+- Tests: backup requiere cifrado si `LUCY_BACKUP_REQUIRE_ENCRYPTION=1`: `tests/test_memory_manager.py`.
 
 ### Falta (prioriza en cada sesión)
 1) **Hardening distribuido**: validar bridge WS en entorno real con nodos múltiples.

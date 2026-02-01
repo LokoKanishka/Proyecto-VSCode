@@ -142,12 +142,18 @@ async function updateBusMetricsPanel() {
         if (!resp.ok) throw new Error('Bus metrics fetch failed');
         const payload = await resp.json();
         const summary = payload.summary?.summary || {};
+        const bridge = payload.summary?.bridge || {};
         if (!Object.keys(summary).length) {
             busMetricsSummary.textContent = 'Sin métricas registradas todavía.';
         } else {
-            busMetricsSummary.innerHTML = Object.entries(summary)
-                .map(([key, stats]) => `<div><strong>${key}</strong>: última=${stats.latest} avg=${stats.avg}</div>`)
-                .join('');
+            const rows = Object.entries(summary)
+                .map(([key, stats]) => `<div><strong>${key}</strong>: última=${stats.latest} avg=${stats.avg}</div>`);
+            if (Object.keys(bridge).length) {
+                rows.push(
+                    `<div><strong>bridge</strong>: latency_ms=${bridge.latency_avg_ms ?? '-'} backlog=${bridge.backlog_max ?? '-'} dropped=${bridge.dropped ?? '-'}</div>`
+                );
+            }
+            busMetricsSummary.innerHTML = rows.join('');
         }
         busMetricsRecent.innerHTML = '';
         (payload.summary?.recent || []).forEach(record => {

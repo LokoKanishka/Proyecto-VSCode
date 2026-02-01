@@ -10,6 +10,8 @@ Devuelve las últimas métricas recabadas por `BusMetricsWatcher` (`logs/bus_met
 - `records`: lista de registros recientes (cada uno contiene `timestamp` y `metrics`).
 - `summary`: describe el `summary` calculado para los últimos 10 registros (`latest`, `avg`, `min`, `max`) y también redispara esa lista (`recent`).
 
+Si hay `bridge_stats` en el bus, `summary` incluye una clave `bridge` con `latency_avg_ms`, `backlog_max`, `dropped`, `sent` y `received`.
+
 Este endpoint se usa en la UI para mostrar un panel de métricas del bus y alimentar el script `scripts/bus_metrics_dashboard.py`.
 
 ### `/api/memory_events`

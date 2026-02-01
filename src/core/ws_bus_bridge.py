@@ -37,6 +37,7 @@ class WSBusBridge:
         self._backlog_max = 0
         self._backlog_warn = int(os.getenv("LUCY_WS_BRIDGE_BACKLOG_WARN", "120"))
         self._last_backlog_warn = 0.0
+        self._last_stats_emit = 0.0
         self._seen = set()
         self._seen_fifo = deque(maxlen=2000)
         for topic in self.topics:
@@ -101,6 +102,7 @@ class WSBusBridge:
                                     self._backlog_max,
                                     latency,
                                 )
+                            await self._emit_stats_event(latency)
                         except Exception as exc:
                             logger.debug("WSBusBridge inbound error: %s", exc)
             except Exception as exc:
@@ -148,6 +150,7 @@ class WSBusBridge:
                             data={"backlog": self._backlog_max, "url": self.url},
                         )
                     )
+            await self._maybe_emit_stats()
         except Exception as exc:
             logger.debug("WSBusBridge outbound error: %s", exc)
 
@@ -171,3 +174,29 @@ class WSBusBridge:
             except Exception as exc:
                 logger.debug("WSBusBridge sender error: %s", exc)
                 await asyncio.sleep(0.2)
+
+    async def _maybe_emit_stats(self) -> None:
+        now = time.time()
+        if now - self._last_stats_emit < 15.0:
+            return
+        latency = sum(self._latency_ms) / len(self._latency_ms) if self._latency_ms else 0.0
+        await self._emit_stats_event(latency)
+        self._last_stats_emit = now
+
+    async def _emit_stats_event(self, latency: float) -> None:
+        await self.bus.publish(
+            LucyMessage(
+                sender="ws_bridge",
+                receiver="broadcast",
+                type=MessageType.EVENT,
+                content="bridge_stats",
+                data={
+                    "sent": self._metrics["sent"],
+                    "received": self._metrics["received"],
+                    "dropped": self._metrics["dropped"],
+                    "backlog_max": self._backlog_max,
+                    "latency_avg_ms": round(latency, 2),
+                    "url": self.url,
+                },
+            )
+        )
