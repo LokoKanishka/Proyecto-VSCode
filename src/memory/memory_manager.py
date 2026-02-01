@@ -327,7 +327,12 @@ class MemoryManager:
             path,
             blob,
             sha,
-            json.dumps({**(metadata or {}), "compressed": compressed, "compressor": compressor if compressed else None}),
+            json.dumps({
+                **(metadata or {}),
+                "compressed": compressed,
+                "compressor": compressor if compressed else None,
+                "timestamp": time.time(),
+            }),
         ))
         conn.commit()
         self._prune_file_snapshots(conn)
@@ -337,7 +342,19 @@ class MemoryManager:
     def _prune_file_snapshots(self, conn: sqlite3.Connection) -> None:
         max_count = int(os.getenv("LUCY_SNAPSHOT_MAX_COUNT", "5000"))
         max_bytes = int(os.getenv("LUCY_SNAPSHOT_MAX_BYTES", "1073741824"))
+        max_age_days = float(os.getenv("LUCY_SNAPSHOT_MAX_AGE_DAYS", "0"))
         cursor = conn.cursor()
+        if max_age_days > 0:
+            cutoff = time.time() - (max_age_days * 86400)
+            try:
+                cursor.execute(
+                    "DELETE FROM files WHERE id IN ("
+                    "SELECT id FROM files WHERE json_extract(metadata, '$.timestamp') < ?"
+                    ")",
+                    (cutoff,),
+                )
+            except Exception:
+                pass
         if max_count > 0:
             cursor.execute(
                 "DELETE FROM files WHERE id IN ("

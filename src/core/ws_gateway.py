@@ -28,7 +28,14 @@ class WebSocketGateway:
 
     async def start(self) -> None:
         ssl_ctx = _build_ssl_context()
-        self._server = await websockets.serve(self._handler, self.host, self.port, ssl=ssl_ctx)
+        max_size = int(os.getenv("LUCY_WS_MAX_SIZE", "1048576"))
+        self._server = await websockets.serve(
+            self._handler,
+            self.host,
+            self.port,
+            ssl=ssl_ctx,
+            max_size=max_size,
+        )
         scheme = "wss" if ssl_ctx else "ws"
         logger.info("WS Gateway escuchando en %s://%s:%d", scheme, self.host, self.port)
 

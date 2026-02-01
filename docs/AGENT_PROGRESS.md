@@ -87,6 +87,9 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Logs: rotación simple por líneas: `scripts/rotate_logs.sh`.
 - Hands: safe mode por acción: `src/workers/hands_worker.py`.
 - Snapshots: retención por tamaño/cantidad: `src/memory/memory_manager.py`.
+- Web: rate limiting simple por IP: `lucy_web/app.py`.
+- WS: límite de payload configurable: `src/core/ws_gateway.py`.
+- Snapshots: retención por antigüedad (metadata timestamp): `src/memory/memory_manager.py`.
 
 ### Falta (prioriza en cada sesión)
 0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).

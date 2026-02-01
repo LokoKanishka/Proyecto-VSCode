@@ -12,6 +12,7 @@ import io
 import subprocess
 import wave
 import shutil
+from collections import defaultdict, deque
 from pathlib import Path
 
 # Add parent directory to path to import lucy_voice
@@ -47,6 +48,9 @@ log = logging.getLogger("LucyWeb")
 # Global orchestrator instance
 orchestrator = None
 config = None
+_rate_limit_hits = defaultdict(deque)
+_rate_limit_window_s = 60.0
+_rate_limit_max = int(os.getenv("LUCY_WEB_RATE_LIMIT_PER_MIN", "0"))
 
 def init_lucy():
     """Initialize Lucy Voice components"""
@@ -62,6 +66,21 @@ def init_lucy():
 
     orchestrator = LucyOrchestrator(config)
     log.info("Lucy Orchestrator initialized")
+
+
+@app.before_request
+def _rate_limit():
+    if _rate_limit_max <= 0:
+        return None
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr) or "unknown"
+    now = time.time()
+    hits = _rate_limit_hits[ip]
+    while hits and now - hits[0] > _rate_limit_window_s:
+        hits.popleft()
+    if len(hits) >= _rate_limit_max:
+        return jsonify({"error": "rate_limited"}), 429
+    hits.append(now)
+    return None
 
 
 def _decode_audio_b64(audio_b64: str, target_sr: int) -> np.ndarray:
