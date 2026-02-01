@@ -282,7 +282,13 @@ class Manager(BaseWorker):
         distilled = message.data.get("distilled_text") or ""
         if not distilled:
             return
-        prompt = "Resumí el siguiente contenido en 4-6 frases claras y concisas:\n\n" + distilled
+        url = message.data.get("url") or "fuente no disponible"
+        prompt = (
+            "Resumí el siguiente contenido en 4-6 frases claras y concisas. "
+            "Incluí una línea final con 'Fuente:' y el URL.\n\n"
+            f"URL: {url}\n\n"
+            + distilled
+        )
         cmd = LucyMessage(
             sender=self.worker_id,
             receiver=WorkerType.CHAT,

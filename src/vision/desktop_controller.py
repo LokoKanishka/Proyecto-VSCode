@@ -217,22 +217,51 @@ class DesktopController:
     def focus_window(self, title: str) -> bool:
         if not title:
             return False
-        if shutil.which("wmctrl"):
-            try:
-                subprocess.run(["wmctrl", "-a", title], check=False)
+        retries = int(os.getenv("LUCY_FOCUS_RETRIES", "3"))
+        delay = float(os.getenv("LUCY_FOCUS_RETRY_DELAY", "0.4"))
+        verify = os.getenv("LUCY_FOCUS_VERIFY", "1").lower() in {"1", "true", "yes"}
+        for attempt in range(1, retries + 1):
+            if shutil.which("wmctrl"):
+                try:
+                    subprocess.run(["wmctrl", "-a", title], check=False)
+                except Exception:
+                    pass
+            if shutil.which("swaymsg") and os.getenv("XDG_SESSION_TYPE") == "wayland":
+                try:
+                    subprocess.run(["swaymsg", f"[title=\"{title}\"] focus"], check=False)
+                except Exception:
+                    pass
+            if shutil.which("xdotool"):
+                try:
+                    subprocess.run(["xdotool", "search", "--name", title, "windowactivate", "--sync"], check=False)
+                except Exception:
+                    pass
+            if not verify:
                 return True
-            except Exception:
-                return False
-        if shutil.which("swaymsg") and os.getenv("XDG_SESSION_TYPE") == "wayland":
-            try:
-                subprocess.run(["swaymsg", "[title=\"%s\"] focus" % title], check=False)
+            if self._active_window_contains(title):
                 return True
-            except Exception:
-                return False
+            if attempt < retries:
+                time.sleep(delay)
+        return False
+
+    def _active_window_contains(self, title: str) -> bool:
+        if not title:
+            return False
         if shutil.which("xdotool"):
             try:
-                subprocess.run(["xdotool", "search", "--name", title, "windowactivate", "--sync"], check=False)
-                return True
+                proc = subprocess.run(
+                    ["xdotool", "getactivewindow", "getwindowname"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                return title.lower() in (proc.stdout or "").lower()
+            except Exception:
+                return False
+        if shutil.which("wmctrl"):
+            try:
+                proc = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, check=False)
+                return title.lower() in (proc.stdout or "").lower()
             except Exception:
                 return False
         return False

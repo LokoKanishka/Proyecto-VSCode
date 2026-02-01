@@ -76,6 +76,8 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Memoria: cache persistente de embeddings con invalidación por hash: `src/memory/memory_manager.py`.
 - VS Code WS: reintentos con backoff + buffer offline: `src/workers/vscode_worker.py`.
 - Telemetría: evento `stage_latency` por etapa en Manager: `src/core/manager.py`.
+- Focus ventanas: retry + verificación de ventana activa: `src/vision/desktop_controller.py`.
+- Browser: resumen destilado incluye URL como fuente en prompt: `src/core/manager.py`.
 
 ### Falta (prioriza en cada sesión)
 0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).
