@@ -66,6 +66,7 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Docs: `docs/SWARM_DISTRIBUTED.md` y `docs/DEPLOY_CHECKLIST.md`.
 - Tests: backup requiere cifrado si `LUCY_BACKUP_REQUIRE_ENCRYPTION=1`: `tests/test_memory_manager.py`.
 - Smoke remoto multi-host: `scripts/bridge_remote_smoke.sh`.
+- Fix: import `os` en Manager para throttling de eventos: `src/core/manager.py`.
 
 ### Falta (prioriza en cada sesión)
 0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).
