@@ -1,4 +1,5 @@
 import ray
+import asyncio
 import lancedb
 from sentence_transformers import SentenceTransformer
 import os
@@ -73,3 +74,68 @@ class MemoryActor:
             if "vector" in item:
                 del item["vector"]
         return out
+
+    def start_watching(self, path: str):
+        """
+        Start a background thread to watch a directory for changes.
+        """
+        if not os.path.exists(path):
+            logger.warning(f"⚠️ Cannot watch non-existent path: {path}")
+            return False
+
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+        import threading
+        
+        # Define Handler
+        class IngestHandler(FileSystemEventHandler):
+            def __init__(self, actor_ref, loop):
+                self.actor = actor_ref
+                self.loop = loop
+                
+            def on_created(self, event):
+                if event.is_directory: return
+                self._process(event.src_path)
+
+            def on_modified(self, event):
+                if event.is_directory: return
+                self._process(event.src_path)
+                
+            def _process(self, file_path):
+                logger.info(f"👀 Detected change in: {file_path}")
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        text = f.read()
+                    
+                    if not text.strip(): return
+                    
+                    # Schedule on the actor's loop
+                    asyncio.run_coroutine_threadsafe(self.actor.add(text, source=file_path), self.loop)
+                    
+                except Exception as e:
+                    logger.error(f"❌ Auto-ingest failed for {file_path}: {e}")
+
+        # Note: We need the running event loop to schedule tasks from the thread
+        try:
+             loop = asyncio.get_running_loop()
+        except RuntimeError:
+             logger.warning("Could not get running loop for watcher.")
+             return False
+
+        event_handler = IngestHandler(self, loop)
+        
+        # Try Inotify first, fallback to PoIIing
+        try:
+            observer = Observer()
+            observer.schedule(event_handler, path, recursive=True)
+            observer.start()
+            logger.info(f"👀 Watching directory (Inotify): {path}")
+        except OSError as e:
+            logger.warning(f"⚠️ Inotify failed ({e}). Falling back to PollingObserver.")
+            from watchdog.observers.polling import PollingObserver
+            observer = PollingObserver()
+            observer.schedule(event_handler, path, recursive=True)
+            observer.start()
+            logger.info(f"👀 Watching directory (Polling): {path}")
+            
+        return True

@@ -77,7 +77,12 @@ def main() -> None:
     # Initialize Memory Actor (Background)
     from src.core.manager import get_or_create_memory
     print("💾 Inicializando Memory Worker (LanceDB)...")
-    get_or_create_memory()
+    memory = get_or_create_memory()
+    
+    # Start Watching docs/ folder for auto-learning
+    docs_path = os.path.abspath("docs")
+    print(f"👀 Activando vigilancia en: {docs_path}")
+    memory.start_watching.remote(docs_path)
 
     # Simple CLI Test Loop
     print("✅ Sistema listo. Escribe '/exit' para salir.")
