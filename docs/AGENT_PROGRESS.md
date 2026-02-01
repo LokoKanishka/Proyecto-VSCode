@@ -70,6 +70,10 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Memoria: pruning configurable de eventos por retención/tamaño: `src/memory/memory_manager.py`.
 - Browser: cache TTL para `distill_url`: `src/workers/browser_worker.py`.
 - Hands: modo `confirm_only` / `LUCY_HANDS_CONFIRM` para acciones: `src/workers/hands_worker.py`.
+- Bus: cola durable opcional (JSONL) con replay en start: `src/core/bus.py`.
+- Manager: cooldown configurable por worker para evitar thrash: `src/core/manager.py`.
+- Swarm: evicción/idle de LoRAs con prune periódico: `src/engine/lora_manager.py`, `src/engine/swarm_manager.py`.
+- Memoria: cache persistente de embeddings con invalidación por hash: `src/memory/memory_manager.py`.
 
 ### Falta (prioriza en cada sesión)
 0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).

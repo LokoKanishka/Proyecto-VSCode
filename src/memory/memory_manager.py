@@ -131,6 +131,15 @@ class MemoryManager:
                 metadata TEXT
             )
         ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS embeddings_cache (
+                key TEXT PRIMARY KEY,
+                hash TEXT,
+                embedding BLOB,
+                updated_at REAL
+            )
+        ''')
         
         conn.commit()
         conn.close()
@@ -570,8 +579,67 @@ class MemoryManager:
     def _encode_text(self, text: str) -> List[float]:
         if not text:
             return []
+        cached = self._get_cached_embedding(text)
+        if cached is not None:
+            return cached
         vector = self.encoder.encode(text, convert_to_numpy=True)
-        return vector.tolist()
+        embedding = vector.tolist()
+        self._set_cached_embedding(text, embedding)
+        return embedding
+
+    def _get_cached_embedding(self, text: str) -> Optional[List[float]]:
+        if os.getenv("LUCY_EMB_CACHE", "1").lower() not in {"1", "true", "yes"}:
+            return None
+        key = self._embedding_key(text)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT hash, embedding FROM embeddings_cache WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        if row[0] != self._embedding_hash(text):
+            return None
+        try:
+            return json.loads(row[1]) if row[1] else None
+        except Exception:
+            return None
+
+    def _set_cached_embedding(self, text: str, embedding: List[float]) -> None:
+        if os.getenv("LUCY_EMB_CACHE", "1").lower() not in {"1", "true", "yes"}:
+            return
+        key = self._embedding_key(text)
+        sha = self._embedding_hash(text)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO embeddings_cache (key, hash, embedding, updated_at) VALUES (?, ?, ?, ?)",
+            (key, sha, json.dumps(embedding), time.time()),
+        )
+        conn.commit()
+        self._prune_embedding_cache(conn)
+        conn.close()
+
+    def _prune_embedding_cache(self, conn: sqlite3.Connection) -> None:
+        max_rows = int(os.getenv("LUCY_EMB_CACHE_MAX", "10000"))
+        if max_rows <= 0:
+            return
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM embeddings_cache WHERE key IN ("
+            "SELECT key FROM embeddings_cache ORDER BY updated_at DESC LIMIT -1 OFFSET ?"
+            ")",
+            (max_rows,),
+        )
+        conn.commit()
+
+    @staticmethod
+    def _embedding_hash(text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _embedding_key(text: str) -> str:
+        return f"text:{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
 
     def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
         if not a.any() or not b.any():

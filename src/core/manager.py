@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import uuid
@@ -30,6 +31,7 @@ class Manager(BaseWorker):
         self.pending_interrupts: List[str] = []
         self._event_last_seen: dict[str, float] = {}
         self._bridge_backpressure_until = 0.0
+        self._worker_last_used: dict[str, float] = {}
         self._register_worker_budgets()
         self.bus.subscribe("user_input", self.handle_user_input)
         self.bus.subscribe("broadcast", self.handle_broadcast_event)
@@ -139,6 +141,19 @@ class Manager(BaseWorker):
             step.target.value if isinstance(step.target, WorkerType) else step.target,
             step.rationale or "sin justificación"
         )
+        worker_id = step.target.value if isinstance(step.target, WorkerType) else str(step.target)
+        cooldown_s = self._get_worker_cooldown(worker_id)
+        if cooldown_s > 0:
+            last_used = self._worker_last_used.get(worker_id)
+            if last_used:
+                remaining = cooldown_s - (time.time() - last_used)
+                if remaining > 0:
+                    await self.send_event(
+                        "broadcast",
+                        "worker_cooldown_wait",
+                        {"worker": worker_id, "wait_s": round(remaining, 2)},
+                    )
+                    await asyncio.sleep(remaining)
         if self.swarm:
             try:
                 profile = "vision" if step.target == WorkerType.VISION else "general"
@@ -187,6 +202,7 @@ class Manager(BaseWorker):
             except Exception as exc:
                 logger.debug("Swarm swap_for_worker falló: %s", exc)
         await self.bus.publish(cmd)
+        self._worker_last_used[worker_id] = time.time()
 
     async def handle_broadcast_event(self, message: LucyMessage):
         if message.type != MessageType.EVENT:
@@ -327,6 +343,25 @@ class Manager(BaseWorker):
             )
             plan = [step, *plan]
         return plan
+
+    def _get_worker_cooldown(self, worker_id: str) -> float:
+        raw = os.getenv("LUCY_WORKER_COOLDOWN_S", "0")
+        try:
+            base = float(raw)
+        except Exception:
+            base = 0.0
+        map_raw = os.getenv("LUCY_WORKER_COOLDOWN_MAP", "")
+        if map_raw:
+            for item in map_raw.split(","):
+                if "=" not in item:
+                    continue
+                name, val = item.split("=", 1)
+                if name.strip() == worker_id:
+                    try:
+                        return float(val.strip())
+                    except Exception:
+                        return base
+        return base
 
     @staticmethod
     def _extract_url(text: str) -> str | None:

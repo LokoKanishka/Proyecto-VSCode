@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import os
 from collections import Counter
 from collections import defaultdict, deque
 import time
@@ -23,6 +25,8 @@ class EventBus:
         self._metrics: Counter = Counter()
         self._inflight: Dict[str, tuple[float, str]] = {}
         self._latency: Dict[str, deque] = defaultdict(lambda: deque(maxlen=100))
+        self._durable_path = os.getenv("LUCY_BUS_DURABLE_PATH")
+        self._durable_keep = int(os.getenv("LUCY_BUS_DURABLE_KEEP", "5"))
 
     def get_metrics(self) -> Dict[str, int]:
         """Devuelve un snapshot de métricas del bus (publicaciones, despachos, respuestas)."""
@@ -46,6 +50,7 @@ class EventBus:
     async def start(self):
         """Inicia el loop de procesamiento."""
         self._running = True
+        await self._load_durable_queue()
         logger.info("🚀 EventBus iniciado.")
         while True:
             msg = await self._queue.get()
@@ -71,6 +76,7 @@ class EventBus:
         self._metrics["published"] += 1
         if message.type == MessageType.COMMAND:
             self._inflight[message.id] = (time.time(), str(message.receiver))
+        self._append_durable(message)
         await self._queue.put(message)
 
     async def publish_and_wait(self, message: LucyMessage, timeout: float | None = None) -> LucyMessage:
@@ -113,3 +119,56 @@ class EventBus:
             future.set_exception(RuntimeError(message.content))
         else:
             future.set_result(message)
+
+    async def _load_durable_queue(self) -> None:
+        if not self._durable_path or not os.path.exists(self._durable_path):
+            return
+        try:
+            with open(self._durable_path, "r", encoding="utf-8") as fh:
+                lines = [line.strip() for line in fh if line.strip()]
+            if not lines:
+                return
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            drained = f"{self._durable_path}.drain.{ts}"
+            os.replace(self._durable_path, drained)
+            self._rotate_durable()
+            for line in lines:
+                try:
+                    payload = json.loads(line)
+                    msg = LucyMessage.model_validate(payload)
+                    msg.metadata["durable_replay"] = True
+                    await self._queue.put(msg)
+                except Exception as exc:
+                    logger.warning("No pude rehidratar mensaje durable: %s", exc)
+        except Exception as exc:
+            logger.warning("No pude cargar durable queue: %s", exc)
+
+    def _append_durable(self, message: LucyMessage) -> None:
+        if not self._durable_path:
+            return
+        if message.type not in {MessageType.COMMAND, MessageType.EVENT}:
+            return
+        try:
+            os.makedirs(os.path.dirname(self._durable_path) or ".", exist_ok=True)
+            with open(self._durable_path, "a", encoding="utf-8") as fh:
+                fh.write(message.model_dump_json() + "\n")
+        except Exception as exc:
+            logger.warning("No pude persistir durable queue: %s", exc)
+
+    def _rotate_durable(self) -> None:
+        if self._durable_keep <= 0 or not self._durable_path:
+            return
+        base = os.path.basename(self._durable_path)
+        folder = os.path.dirname(self._durable_path) or "."
+        try:
+            files = sorted(
+                [f for f in os.listdir(folder) if f.startswith(f"{base}.drain.")],
+                reverse=True,
+            )
+            for name in files[self._durable_keep:]:
+                try:
+                    os.remove(os.path.join(folder, name))
+                except Exception:
+                    pass
+        except Exception:
+            pass

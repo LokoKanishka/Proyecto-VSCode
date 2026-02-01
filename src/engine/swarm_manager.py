@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Any, Dict, Optional
 
 import requests
@@ -87,6 +88,7 @@ class SwarmManager:
         self.worker_profiles: Dict[str, str] = {}
         lora_targets_raw = os.getenv("LUCY_LORA_TARGETS", "chat_worker,code_worker")
         self._lora_targets = {item.strip() for item in lora_targets_raw.split(",") if item.strip()}
+        self._last_lora_prune = 0.0
 
         logger.info(
             "🧠 SwarmManager listo (host={}, main={}, vision={}, persistente={})",
@@ -126,6 +128,7 @@ class SwarmManager:
         if usage is None:
             return
         self._last_usage = usage
+        self._maybe_prune_loras()
         high = float(os.getenv("LUCY_VRAM_HIGH", "0.88"))
         low = float(os.getenv("LUCY_VRAM_LOW", "0.72"))
         preferred = os.getenv("LUCY_SWARM_PREFERRED_PROFILE", "general")
@@ -198,6 +201,8 @@ class SwarmManager:
         model = self._resolve_model_for_worker(worker)
         if model:
             self._touch_model(model, keep_alive=self._current_keep_alive(), label=f"worker:{worker}")
+            if worker in self._lora_targets and self.lora.active():
+                self.lora.touch(self.lora.active())
 
     def register_lora(self, name: str, model: str) -> None:
         self.lora.register(name, model)
@@ -229,6 +234,17 @@ class SwarmManager:
         for model in list(self._active_models):
             if model not in keep_models:
                 self.unload_model(model)
+
+    def _maybe_prune_loras(self) -> None:
+        now = time.time()
+        if now - self._last_lora_prune < float(os.getenv("LUCY_LORA_PRUNE_INTERVAL_S", "60")):
+            return
+        self._last_lora_prune = now
+        idle_s = float(os.getenv("LUCY_LORA_IDLE_S", "600"))
+        evict_s = float(os.getenv("LUCY_LORA_EVICT_S", "1800"))
+        result = self.lora.prune(idle_s=idle_s, evict_s=evict_s)
+        if result.get("evicted"):
+            logger.info("🧹 LoRAs evictadas: {}", ",".join(result["evicted"]))
 
     @staticmethod
     def _load_config(config_path: str) -> Dict[str, Any]:
