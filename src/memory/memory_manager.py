@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import requests
 import hashlib
+import base64
 import zlib
 from typing import Any, Dict, List, Optional, Protocol
 
@@ -271,12 +272,22 @@ class MemoryManager:
         file_id = str(uuid.uuid4())
         sha = hashlib.sha256(content).hexdigest() if content is not None else None
         compress_threshold = int(os.getenv("LUCY_SNAPSHOT_COMPRESS_THRESHOLD", "200000"))
+        compressor = os.getenv("LUCY_SNAPSHOT_COMPRESSOR", "zlib").lower()
         compressed = False
         blob = content
         if content is not None and len(content) >= compress_threshold:
             try:
-                blob = zlib.compress(content, level=6)
-                compressed = True
+                if compressor == "lz4":
+                    try:
+                        import lz4.frame  # type: ignore
+                        blob = lz4.frame.compress(content)
+                        compressed = True
+                    except Exception:
+                        blob = zlib.compress(content, level=6)
+                        compressed = True
+                else:
+                    blob = zlib.compress(content, level=6)
+                    compressed = True
             except Exception:
                 blob = content
         conn = sqlite3.connect(self.db_path)
@@ -289,11 +300,48 @@ class MemoryManager:
             path,
             blob,
             sha,
-            json.dumps({**(metadata or {}), "compressed": compressed}),
+            json.dumps({**(metadata or {}), "compressed": compressed, "compressor": compressor if compressed else None}),
         ))
         conn.commit()
         conn.close()
         return file_id
+
+    def export_snapshots_jsonl(self, path: str) -> int:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, path, content, hash, metadata FROM files")
+        rows = cursor.fetchall()
+        conn.close()
+        if not rows:
+            return 0
+        with open(path, "w", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps({
+                    "id": row[0],
+                    "path": row[1],
+                    "content_b64": base64.b64encode(row[2] or b"").decode("utf-8"),
+                    "hash": row[3],
+                    "metadata": json.loads(row[4]) if row[4] else {},
+                }) + "\n")
+        return len(rows)
+
+    def import_snapshots_jsonl(self, path: str) -> int:
+        if not os.path.exists(path):
+            return 0
+        count = 0
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                data = json.loads(line)
+                content = base64.b64decode(data.get("content_b64", "") or "")
+                self.log_file_snapshot(
+                    data.get("path", ""),
+                    content,
+                    metadata=data.get("metadata") or {},
+                )
+                count += 1
+        return count
 
     def get_last_plan(self) -> Optional[Dict]:
         conn = sqlite3.connect(self.db_path)

@@ -62,10 +62,12 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Code/VSCode: límites de contenedor y WS default: `src/workers/code_worker.py`, `src/workers/vscode_worker.py`.
 - UI/API: bridge metrics panel + endpoint `/api/bridge_metrics`: `lucy_web/app.py`, `lucy_web/static/js/resources.js`, `docs/LUCY-WEB-API.md`.
 - Tests/CI: dom_summary tables + events endpoint + GitHub Actions CI: `tests/test_browser_dom_summary.py`, `tests/test_web_api.py`, `.github/workflows/ci.yml`.
+- E2E bridge multi-nodo (in-process): `tests/test_ws_bridge_multi.py`.
+- Docs: `docs/SWARM_DISTRIBUTED.md` y `docs/DEPLOY_CHECKLIST.md`.
 - Tests: backup requiere cifrado si `LUCY_BACKUP_REQUIRE_ENCRYPTION=1`: `tests/test_memory_manager.py`.
 
 ### Falta (prioriza en cada sesión)
-1) **Hardening distribuido**: validar bridge WS en entorno real con nodos múltiples.
+1) **Hardening distribuido**: validar bridge WS en entorno real con nodos múltiples (TLS+token).
 2) **Memoria avanzada**: backups cifrados obligatorios en prod y conexión con CI.
 
 ### Próximas 20 tareas (2026-02-01)

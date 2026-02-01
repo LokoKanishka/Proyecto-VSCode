@@ -71,6 +71,9 @@ class VisionPipeline:
         self._sam_cache: Dict[str, Dict[str, Any]] = {}
         self._sam_cache_order: List[str] = []
         self._sam_cache_size = int(os.getenv("LUCY_SAM_CACHE_SIZE", "32"))
+        self._ocr_cache: Dict[str, List[UIElement]] = {}
+        self._ocr_cache_order: List[str] = []
+        self._ocr_cache_size = int(os.getenv("LUCY_OCR_CACHE_SIZE", "32"))
         rico_path = os.getenv("LUCY_RICO_PATH")
         self.rico_samples = load_rico_annotations(rico_path, limit=200) if rico_path else []
 
@@ -106,6 +109,13 @@ class VisionPipeline:
     def run_ocr(self, image: Any, lang: str = "spa+eng") -> List[UIElement]:
         if not HAS_TESS:
             return []
+        cache_key = None
+        try:
+            cache_key = str(hash(image.tobytes()))
+        except Exception:
+            cache_key = None
+        if cache_key and cache_key in self._ocr_cache:
+            return self._ocr_cache[cache_key]
         data = pytesseract.image_to_data(image, lang=lang, output_type=pytesseract.Output.DICT)
         elements: List[UIElement] = []
         for i, text in enumerate(data.get("text", [])):
@@ -117,6 +127,12 @@ class VisionPipeline:
             h = data["height"][i]
             conf = float(data["conf"][i]) if data.get("conf") else 0.0
             elements.append(UIElement(bbox=(x, y, w, h), text=text, element_type="text", confidence=conf))
+        if cache_key:
+            self._ocr_cache[cache_key] = elements
+            self._ocr_cache_order.append(cache_key)
+            if len(self._ocr_cache_order) > self._ocr_cache_size:
+                old = self._ocr_cache_order.pop(0)
+                self._ocr_cache.pop(old, None)
         return elements
 
     def run_detector(self, image: Any) -> List[UIElement]:
@@ -158,14 +174,19 @@ class VisionPipeline:
         for idx, el in enumerate(elements):
             label = el.text.strip() if el.text else (el.element_type or "element")
             norm_label = label.lower().strip()
+            bbox = el.bbox
+            w = bbox[2]
+            h = bbox[3]
+            shape = "wide" if w > h * 2 else ("tall" if h > w * 2 else "squareish")
             som_elements.append(
                 {
                     "id": f"el_{idx:03d}",
                     "label": label,
                     "label_norm": norm_label,
-                    "bbox": el.bbox,
+                    "bbox": bbox,
                     "type": el.element_type,
                     "confidence": el.confidence,
+                    "shape": shape,
                     "source": "ocr" if el.text else "detector",
                 }
             )

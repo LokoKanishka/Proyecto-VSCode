@@ -31,6 +31,8 @@ class EventBus:
             "dispatched": self._metrics["dispatched"],
             "responses": self._metrics["responses"],
             "errors": self._metrics["errors"],
+            "queue_size": self._queue.qsize(),
+            "queue_max": self._queue.maxsize,
         }
 
     def get_latency_metrics(self) -> Dict[str, float]:

@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Optional
 
 from src.core.base_worker import BaseWorker
@@ -100,6 +101,23 @@ class MemoryWorker(BaseWorker):
                 message,
                 "Índice FAISS actualizado." if ok else "No se pudo crear índice FAISS.",
                 {"success": ok},
+            )
+        elif message.content == "export_snapshots":
+            path = message.data.get("path", "reports/snapshots.jsonl")
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            count = self.memory.export_snapshots_jsonl(path)
+            await self.send_response(
+                message,
+                "Snapshots exportados.",
+                {"path": path, "count": count},
+            )
+        elif message.content == "import_snapshots":
+            path = message.data.get("path", "reports/snapshots.jsonl")
+            count = self.memory.import_snapshots_jsonl(path)
+            await self.send_response(
+                message,
+                "Snapshots importados.",
+                {"path": path, "count": count},
             )
         elif message.content == "snapshot_files":
             paths = message.data.get("paths") or []

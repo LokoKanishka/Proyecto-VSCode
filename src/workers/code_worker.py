@@ -102,6 +102,7 @@ class CodeWorker(BaseWorker):
         return seq[:n]
 
     def _run_python(self, code: str, timeout_s: int = 6) -> Tuple[str, str, int, Optional[str]]:
+        timeout_s = int(os.getenv("LUCY_CODE_TIMEOUT_S", str(timeout_s)))
         use_docker = os.getenv("LUCY_CODE_DOCKER", "0") in {"1", "true", "yes"}
         with tempfile.TemporaryDirectory() as tmpdir:
             script_path = os.path.join(tmpdir, "snippet.py")
@@ -163,10 +164,14 @@ class CodeWorker(BaseWorker):
                 return "", "Timeout ejecutando el script.", 124, lint
 
     async def _handle_tests(self, message: LucyMessage, base_path: str) -> None:
+        timeout_s = int(os.getenv("LUCY_CODE_TEST_TIMEOUT_S", "120"))
+        cmd = [sys.executable, "-m", "pytest", "-q"]
+        if os.path.exists(os.path.join(base_path, "package.json")):
+            cmd = ["npm", "test", "--", "--watch=false"]
         stdout, stderr, exit_code = self._run_command(
-            [sys.executable, "-m", "pytest", "-q"],
+            cmd,
             cwd=base_path,
-            timeout_s=120,
+            timeout_s=timeout_s,
         )
         await self.send_response(
             message,
@@ -175,10 +180,11 @@ class CodeWorker(BaseWorker):
         )
 
     async def _handle_lint(self, message: LucyMessage, base_path: str) -> None:
+        timeout_s = int(os.getenv("LUCY_CODE_LINT_TIMEOUT_S", "60"))
         stdout, stderr, exit_code = self._run_command(
             [sys.executable, "-m", "flake8", "."],
             cwd=base_path,
-            timeout_s=60,
+            timeout_s=timeout_s,
         )
         await self.send_response(
             message,

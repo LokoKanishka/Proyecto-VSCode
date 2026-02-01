@@ -209,6 +209,7 @@ def _summarize_bus_metrics(records, last_n: int = 10):
         return {}
     metrics = [rec.get("metrics", {}) for rec in records]
     bridge_records = [rec.get("bridge", {}) for rec in records if rec.get("bridge")]
+    latency_records = [rec.get("latency", {}) for rec in records if rec.get("latency")]
     keys = set().union(*(m.keys() for m in metrics))
     summary = {}
     for key in keys:
@@ -236,6 +237,7 @@ def _summarize_bus_metrics(records, last_n: int = 10):
         "summary": summary,
         "recent": records[-last_n:],
         "bridge": bridge_summary,
+        "latency": latency_records[-1] if latency_records else {},
     }
 
 

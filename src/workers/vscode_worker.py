@@ -47,6 +47,9 @@ class VSCodeWorker(BaseWorker):
         if cmd == "list_extensions":
             await self._list_extensions(message)
             return
+        if cmd == "ws_health":
+            await self._ws_health(message)
+            return
 
         await self.send_error(message, f"Comando desconocido: {cmd}")
 
@@ -155,6 +158,16 @@ class VSCodeWorker(BaseWorker):
             )
         except FileNotFoundError:
             await self.send_error(message, "No encontré la CLI de VS Code (code).")
+
+    async def _ws_health(self, message: LucyMessage):
+        if not self._should_use_ws(message):
+            await self.send_error(message, "ws_health requiere WebSocket (extensión VS Code).")
+            return
+        try:
+            result = await self._ws_call("ping", {})
+            await self.send_response(message, "WS OK.", result or {})
+        except Exception as exc:
+            await self.send_error(message, f"WS health falló: {exc}")
 
     def _should_use_ws(self, message: LucyMessage) -> bool:
         if message.data.get("use_ws") is not None:

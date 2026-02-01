@@ -28,6 +28,7 @@ class Manager(BaseWorker):
         self.swarm = swarm
         self.pending_interrupts: List[str] = []
         self._event_last_seen: dict[str, float] = {}
+        self._bridge_backpressure_until = 0.0
         self._register_worker_budgets()
         self.bus.subscribe("user_input", self.handle_user_input)
         self.bus.subscribe("broadcast", self.handle_broadcast_event)
@@ -168,6 +169,15 @@ class Manager(BaseWorker):
                 "final_response",
                 "GPU ocupada; priorizo tareas ligeras."
             )
+        if time.time() < self._bridge_backpressure_until and step.target in {
+            WorkerType.BROWSER,
+            WorkerType.VISION,
+        }:
+            await self.send_event(
+                "final_response",
+                "Bridge con presión; pospongo tareas pesadas."
+            )
+            return
         if isinstance(step.target, WorkerType):
             self.resource_manager.mark_worker_active(step.target.value)
         if self.swarm:
@@ -214,6 +224,7 @@ class Manager(BaseWorker):
                 message.data or {},
                 "current_session",
             )
+            self._bridge_backpressure_until = time.time() + 10.0
         if message.content == "browser_action_failed":
             screenshot_b64 = (message.data or {}).get("screenshot_b64")
             if screenshot_b64:

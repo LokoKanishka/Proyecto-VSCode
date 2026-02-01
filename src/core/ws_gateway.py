@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import os
+import ssl
 from typing import Optional
 
 import websockets
@@ -25,7 +27,8 @@ class WebSocketGateway:
         self._subscribed_topics: set[str] = set()
 
     async def start(self) -> None:
-        self._server = await websockets.serve(self._handler, self.host, self.port)
+        ssl_ctx = _build_ssl_context()
+        self._server = await websockets.serve(self._handler, self.host, self.port, ssl=ssl_ctx)
         logger.info("WS Gateway escuchando en ws://%s:%d", self.host, self.port)
 
     async def stop(self) -> None:
@@ -39,6 +42,9 @@ class WebSocketGateway:
             async for raw in websocket:
                 try:
                     payload = json.loads(raw)
+                    if _require_token(payload):
+                        await websocket.send(json.dumps({"status": "error", "error": "unauthorized"}))
+                        continue
                     action = payload.get("action")
                     if action == "subscribe":
                         topics = set(payload.get("topics", []))
@@ -89,3 +95,20 @@ class WebSocketGateway:
                     dead.append(ws)
         for ws in dead:
             self._clients.pop(ws, None)
+
+
+def _require_token(payload: dict) -> bool:
+    token = os.getenv("LUCY_WS_BRIDGE_TOKEN")
+    if not token:
+        return False
+    return payload.get("token") != token
+
+
+def _build_ssl_context() -> Optional[ssl.SSLContext]:
+    cert = os.getenv("LUCY_WS_TLS_CERT")
+    key = os.getenv("LUCY_WS_TLS_KEY")
+    if not cert or not key:
+        return None
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(certfile=cert, keyfile=key)
+    return ctx

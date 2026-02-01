@@ -65,6 +65,9 @@ class BrowserWorker(BaseWorker):
         if message.content == "gemini_prompt":
             await self._gemini_prompt(message)
             return
+        if message.content == "click_text":
+            await self._click_text(message)
+            return
 
         await self.send_error(message, f"Comando desconocido: {message.content}")
 
@@ -435,6 +438,39 @@ class BrowserWorker(BaseWorker):
         except Exception as exc:
             await self.send_error(message, f"Gemini flow falló: {exc}")
 
+    async def _click_text(self, message: LucyMessage):
+        if not HAS_PLAYWRIGHT:
+            await self.send_error(message, "Instalá playwright para click_text.")
+            return
+        text = message.data.get("text")
+        url = message.data.get("url")
+        if not text:
+            await self.send_error(message, "Necesito text para click_text.")
+            return
+        headless = message.data.get("headless", self.default_headless)
+        user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
+        storage_state = message.data.get("storage_state", self.default_storage_state)
+        try:
+            async with async_playwright() as pw:
+                browser, context = await self._launch_context(
+                    pw,
+                    headless=headless,
+                    user_data_dir=user_data_dir,
+                    storage_state=storage_state,
+                )
+                page = await context.new_page()
+                if url:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout_ms)
+                await page.get_by_text(text).first.click(timeout=self.default_timeout_ms)
+                if storage_state:
+                    await context.storage_state(path=storage_state)
+                await context.close()
+                if browser:
+                    await browser.close()
+            await self.send_response(message, "Click por texto ejecutado.", {"text": text, "url": url})
+        except Exception as exc:
+            await self.send_error(message, f"click_text falló: {exc}")
+
     def _distill_html(self, html: str) -> str:
         if not html:
             return ""
@@ -480,12 +516,25 @@ class BrowserWorker(BaseWorker):
                 if cells:
                     rows.append(cells)
             tables.append({"headers": headers, "rows": rows})
+        canonical = None
+        og_title = None
+        og_desc = None
+        canonical_tag = soup.find("link", rel="canonical")
+        if canonical_tag:
+            canonical = canonical_tag.get("href")
+        og_title_tag = soup.find("meta", property="og:title")
+        if og_title_tag:
+            og_title = og_title_tag.get("content")
+        og_desc_tag = soup.find("meta", property="og:description")
+        if og_desc_tag:
+            og_desc = og_desc_tag.get("content")
         return {
             "links": links,
             "buttons": buttons,
             "inputs": inputs,
             "headings": headings,
             "tables": tables,
+            "meta": {"canonical": canonical, "og_title": og_title, "og_description": og_desc},
             "counts": {
                 "links": len(links),
                 "buttons": len(buttons),

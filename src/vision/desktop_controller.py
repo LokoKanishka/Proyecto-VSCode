@@ -180,6 +180,16 @@ class DesktopController:
     def press_hotkey(self, *keys: str):
         pyautogui.hotkey(*keys)
 
+    def scroll(self, clicks: int):
+        pyautogui.scroll(clicks)
+
+    def drag_bbox(self, bbox: Tuple[int, int, int, int], dx: int, dy: int, duration: float = 0.4):
+        x, y, w, h = bbox
+        cx = int(x + w / 2)
+        cy = int(y + h / 2)
+        self._human_like_move(cx, cy, duration)
+        pyautogui.dragRel(dx, dy, duration=duration, button="left")
+
     def click_bbox(
         self,
         bbox: Tuple[int, int, int, int],

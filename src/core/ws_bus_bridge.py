@@ -7,6 +7,7 @@ import os
 import time
 from typing import Iterable, Optional
 
+import ssl
 import websockets
 
 from src.core.bus import EventBus
@@ -70,14 +71,14 @@ class WSBusBridge:
         max_backoff = float(os.getenv("LUCY_WS_BRIDGE_BACKOFF_MAX", "12"))
         while True:
             try:
-                async with websockets.connect(self.url) as ws:
+                async with websockets.connect(self.url, ssl=_build_client_ssl()) as ws:
                     backoff = 1.0
                     self._ws = ws
                     if self._sender_task:
                         self._sender_task.cancel()
                         await asyncio.gather(self._sender_task, return_exceptions=True)
                     self._sender_task = asyncio.create_task(self._sender_loop())
-                    await ws.send(json.dumps({"action": "subscribe", "topics": list(self.topics)}))
+                    await ws.send(json.dumps({"action": "subscribe", "topics": list(self.topics), "token": _bridge_token()}))
                     async for raw in ws:
                         try:
                             payload = json.loads(raw)
@@ -147,7 +148,7 @@ class WSBusBridge:
                 except Exception:
                     pass
                 self._metrics["dropped"] += 1
-            await self._outbound_queue.put(json.dumps({"action": "publish", "message": payload}))
+            await self._outbound_queue.put(json.dumps({"action": "publish", "message": payload, "token": _bridge_token()}))
             if self._outbound_queue.qsize() > self._backlog_max:
                 self._backlog_max = self._outbound_queue.qsize()
             if self._backlog_max >= self._backlog_warn:
@@ -200,6 +201,23 @@ class WSBusBridge:
         self.topics = {t for t in topics if t}
         for topic in self.topics:
             self.bus.subscribe(topic, self._forward_local)
+
+
+def _bridge_token() -> Optional[str]:
+    return os.getenv("LUCY_WS_BRIDGE_TOKEN")
+
+
+def _build_client_ssl() -> Optional[ssl.SSLContext]:
+    if not os.getenv("LUCY_WS_TLS_CERT"):
+        return None
+    ctx = ssl.create_default_context()
+    ca = os.getenv("LUCY_WS_TLS_CA")
+    if ca:
+        ctx.load_verify_locations(cafile=ca)
+    if os.getenv("LUCY_WS_TLS_INSECURE", "0") in {"1", "true", "yes"}:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
     async def _maybe_emit_stats(self) -> None:
         now = time.time()

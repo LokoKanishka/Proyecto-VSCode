@@ -50,6 +50,10 @@ class HandsWorker(BaseWorker):
             await self._handle_click_element(message, payload)
         elif command == "focus_and_type":
             await self._handle_focus_and_type(message, payload)
+        elif command == "scroll":
+            await self._handle_scroll(message, payload)
+        elif command == "drag_element":
+            await self._handle_drag_element(message, payload)
         elif command == "focus_window":
             await self._handle_focus_window(message, payload)
         else:
@@ -234,6 +238,35 @@ class HandsWorker(BaseWorker):
                 await self.send_error(msg, "No pude enfocar el elemento.")
         except Exception as exc:
             await self.send_error(msg, f"Error focus_and_type: {exc}")
+
+    async def _handle_scroll(self, msg: LucyMessage, payload: dict):
+        clicks = int(payload.get("clicks", -300))
+        try:
+            self.controller.scroll(clicks)
+            await self.send_response(msg, "Scroll ejecutado.", {"clicks": clicks})
+        except Exception as exc:
+            await self.send_error(msg, f"Error scroll: {exc}")
+
+    async def _handle_drag_element(self, msg: LucyMessage, payload: dict):
+        elements = payload.get("elements") or []
+        dx = int(payload.get("dx", 0))
+        dy = int(payload.get("dy", 0))
+        if not elements:
+            await self.send_error(msg, "Necesito elements para drag.")
+            return
+        selected = self._select_element(elements, payload.get("query", ""), payload.get("element_type", ""))
+        if not selected:
+            await self.send_error(msg, "No encontré elemento para drag.")
+            return
+        bbox = selected.get("bbox")
+        if not bbox:
+            await self.send_error(msg, "Elemento sin bbox.")
+            return
+        try:
+            self.controller.drag_bbox(tuple(bbox), dx, dy)
+            await self.send_response(msg, "Drag ejecutado.", {"element": selected, "dx": dx, "dy": dy})
+        except Exception as exc:
+            await self.send_error(msg, f"Error drag_element: {exc}")
 
     @staticmethod
     def _select_element(elements: list, query: str, element_type: str):

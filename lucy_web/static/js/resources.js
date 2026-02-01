@@ -155,6 +155,7 @@ async function updateBusMetricsPanel() {
         const payload = await resp.json();
         const summary = payload.summary?.summary || {};
         const bridge = payload.summary?.bridge || {};
+        const latency = payload.summary?.latency || {};
         if (!Object.keys(summary).length) {
             busMetricsSummary.textContent = 'Sin métricas registradas todavía.';
         } else {
@@ -163,6 +164,11 @@ async function updateBusMetricsPanel() {
             if (Object.keys(bridge).length) {
                 rows.push(
                     `<div><strong>bridge</strong>: latency_ms=${bridge.latency_avg_ms ?? '-'} p50=${bridge.latency_p50_ms ?? '-'} p95=${bridge.latency_p95_ms ?? '-'} backlog=${bridge.backlog_max ?? '-'} dropped=${bridge.dropped ?? '-'}</div>`
+                );
+            }
+            if (Object.keys(latency).length) {
+                rows.push(
+                    `<div><strong>latencia workers</strong>: ${Object.entries(latency).map(([k,v]) => `${k}=${v}ms`).join(' ')}</div>`
                 );
             }
             busMetricsSummary.innerHTML = rows.join('');
@@ -202,6 +208,14 @@ async function updateBridgeMetricsPanel() {
         }
         const last = records[records.length - 1];
         bridgeMetricsSummary.innerHTML = `latency_ms=${last.latency_avg_ms ?? '-'} p50=${last.latency_p50_ms ?? '-'} p95=${last.latency_p95_ms ?? '-'} backlog=${last.backlog_max ?? '-'} dropped=${last.dropped ?? '-'}`;
+        if (last.timestamp && window.updateStatus) {
+            const age = Date.now() - (last.timestamp * 1000);
+            if (age < 30000) {
+                updateStatus('Bridge conectado', 'success');
+            } else {
+                updateStatus('Bridge sin datos recientes', 'warning');
+            }
+        }
         bridgeMetricsRecent.innerHTML = '';
         records.slice(-10).forEach(record => {
             const el = document.createElement('div');
