@@ -9,6 +9,8 @@ const busMetricsSummary = document.getElementById('bus-metrics-summary');
 const busMetricsRecent = document.getElementById('bus-metrics-recent');
 const bridgeMetricsSummary = document.getElementById('bridge-metrics-summary');
 const bridgeMetricsRecent = document.getElementById('bridge-metrics-recent');
+const stageLatencySummary = document.getElementById('stage-latency-summary');
+const stageLatencyRecent = document.getElementById('stage-latency-recent');
 const memoryEventsList = document.getElementById('memory-events-list');
 const toastContainer = document.getElementById('toast-container');
 let lastBridgeToast = 0;
@@ -63,6 +65,7 @@ setInterval(updatePlanPanel, 45_000);
 setInterval(updateWatcherPanel, 25_000);
 setInterval(updateBusMetricsPanel, 20_000);
 setInterval(updateBridgeMetricsPanel, 20_000);
+setInterval(updateStageLatencyPanel, 25_000);
 setInterval(updateMemoryEventsPanel, 25_000);
 updateResourcePanel();
 updateMemorySummary();
@@ -70,6 +73,7 @@ updatePlanPanel();
 updateWatcherPanel();
 updateBusMetricsPanel();
 updateBridgeMetricsPanel();
+updateStageLatencyPanel();
 updateMemoryEventsPanel();
 
 const refreshMemoryBtn = document.getElementById('refresh-memory-btn');
@@ -227,6 +231,38 @@ async function updateBridgeMetricsPanel() {
     } catch (err) {
         console.error('No se pudo cargar métricas del bridge', err);
         bridgeMetricsSummary.textContent = 'Error cargando métricas del bridge.';
+    }
+}
+
+async function updateStageLatencyPanel() {
+    if (!stageLatencySummary || !stageLatencyRecent) return;
+    try {
+        const resp = await fetch('/api/stage_latency');
+        if (!resp.ok) throw new Error('Stage latency fetch failed');
+        const payload = await resp.json();
+        const summary = payload.summary || {};
+        if (!Object.keys(summary).length) {
+            stageLatencySummary.textContent = 'Sin latencias registradas.';
+            stageLatencyRecent.innerHTML = '';
+            return;
+        }
+        const rows = Object.entries(summary).map(([key, stats]) => {
+            return `<div><strong>${key}</strong>: avg=${stats.avg_ms}ms count=${stats.count}</div>`;
+        });
+        stageLatencySummary.innerHTML = rows.join('');
+        stageLatencyRecent.innerHTML = '';
+        (payload.events || []).slice(-10).forEach(evt => {
+            const el = document.createElement('div');
+            el.className = 'metrics-list-item';
+            const time = evt.timestamp ? new Date(evt.timestamp * 1000).toLocaleTimeString() : '—';
+            el.textContent = `${time} · ${evt.worker || 'unknown'}:${evt.action || 'unknown'} ${evt.elapsed_ms ?? '-'}ms`;
+            stageLatencyRecent.appendChild(el);
+        });
+    } catch (err) {
+        console.error('No se pudo cargar latencias de etapa', err);
+        if (stageLatencySummary) {
+            stageLatencySummary.textContent = 'Error cargando latencias.';
+        }
     }
 }
 

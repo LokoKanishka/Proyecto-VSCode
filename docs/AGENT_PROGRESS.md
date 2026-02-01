@@ -78,6 +78,7 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Telemetría: evento `stage_latency` por etapa en Manager: `src/core/manager.py`.
 - Focus ventanas: retry + verificación de ventana activa: `src/vision/desktop_controller.py`.
 - Browser: resumen destilado incluye URL como fuente en prompt: `src/core/manager.py`.
+- UI/API: panel de latencia por etapa y endpoint `/api/stage_latency`: `lucy_web/app.py`, `lucy_web/static/js/resources.js`, `lucy_web/templates/index.html`, `docs/LUCY-WEB-API.md`.
 
 ### Falta (prioriza en cada sesión)
 0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).

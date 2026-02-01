@@ -241,6 +241,44 @@ def _summarize_bus_metrics(records, last_n: int = 10):
     }
 
 
+def _load_stage_latency(limit: int = 200):
+    if not db_path.exists():
+        return []
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT details, timestamp FROM events WHERE type = ? ORDER BY timestamp DESC LIMIT ?",
+        ("stage_latency", limit),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    events = []
+    for details, ts in rows:
+        try:
+            payload = json.loads(details)
+        except Exception:
+            payload = {}
+        payload["timestamp"] = ts
+        events.append(payload)
+    return list(reversed(events))
+
+
+def _summarize_stage_latency(events):
+    summary = {}
+    for evt in events:
+        worker = evt.get("worker") or "unknown"
+        action = evt.get("action") or "unknown"
+        key = f"{worker}:{action}"
+        summary.setdefault(key, []).append(evt.get("elapsed_ms", 0))
+    return {
+        key: {
+            "avg_ms": round(sum(values) / len(values), 2) if values else 0,
+            "count": len(values),
+        }
+        for key, values in summary.items()
+    }
+
+
 def _tail_lines(path: Path, limit: int = 20):
     if not path.exists():
         return []
@@ -343,6 +381,13 @@ def get_bus_metrics():
 def get_bridge_metrics():
     records = _tail_jsonl(BRIDGE_METRICS_LOG, limit=40)
     return jsonify({"records": records})
+
+
+@app.route('/api/stage_latency')
+def get_stage_latency():
+    events = _load_stage_latency(limit=200)
+    summary = _summarize_stage_latency(events)
+    return jsonify({"summary": summary, "events": events[-20:]})
 
 
 @app.route('/api/memory_events')

@@ -34,6 +34,12 @@ Devuelve eventos de la tabla `events` (SQLite). Soporta filtro opcional por tipo
 ### `/api/bridge_metrics`
 Devuelve registros recientes de `logs/bridge_metrics.jsonl` con latencia/backlog/drops del bridge WS.
 
+### `/api/stage_latency`
+Resumen de latencia por etapa (worker:acción) a partir de eventos `stage_latency` guardados en SQLite. Retorna:
+
+- `summary`: promedio y cantidad por `worker:action`.
+- `events`: últimos eventos (con `elapsed_ms` y `timestamp`).
+
 ## Script de dashboard (`scripts/bus_metrics_dashboard.py`)
 
 El script lee `logs/bus_metrics.jsonl`, calcula promedios (`avg/min/max`) y muestra los últimos 5 registros en consola. Sirve para tener un monitoreo rápido fuera de la UI. Se ejecuta así:
