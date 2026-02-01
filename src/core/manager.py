@@ -34,7 +34,16 @@ class LucyManager:
         Main entry point for processing user input.
         Routes to Planner for complex tasks or handles simple vision commands.
         """
+        """
         logger.info(f"📥 Processing input: {input_data}")
+        
+        # Security Check
+        from src.core.security import SecurityGuard
+        guard = SecurityGuard()
+        input_data = guard.sanitize_input(input_data)
+        
+        if "[BLOCKED_COMMAND]" in input_data:
+            return "🚫 Security Alert: Command Blocked."
         
         if "/vision" in input_data:
             # Delegate to VisionActor (Direct Control)

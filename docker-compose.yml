@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  lucy-core:
+    build: .
+    image: lucy-agi:latest
+    container_name: lucy-core
+    restart: always
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - RAY_ADDRESS=auto
+      - NVIDIA_VISIBLE_DEVICES=all
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./docs:/app/docs
+      - ./logs:/app/logs
+      - ./generated_docs:/app/generated_docs
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    command: python -m src.main
+
+  ray-head:
+    image: rayproject/ray:latest-gpu
+    container_name: ray-head
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: ray start --head --dashboard-host=0.0.0.0 --port=6379 --num-gpus=1 --block
+    volumes:
+      - /dev/shm:/dev/shm
