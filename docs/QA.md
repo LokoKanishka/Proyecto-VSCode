@@ -40,4 +40,6 @@ Próximo paso recomendado: ...
 - Memoria: `scripts/memory_snapshot_smoke.py` valida snapshots y política de cifrado.
 - Bridge bench: `scripts/bridge_bench.sh` mide latencia/throughput local.
 - CI smoke: `scripts/ci_smoke.sh` corre tests clave + snapshot.
+- Bridge TLS+token: `scripts/bridge_tls_token_demo.sh`.
+- E2E WS (2 procesos): `LUCY_E2E_WS=1 python -m pytest tests/test_ws_bridge_process.py`
 - Agregar pruebas de integración que validen los nuevos watchers (GPU/ventanas), el resumen automático de `MemoryManager` y la orquestación Browser→Vision→Hands para un pedido complejo de YouTube.

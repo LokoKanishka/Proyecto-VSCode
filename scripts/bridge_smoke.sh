@@ -33,6 +33,7 @@ import websockets
 async def main():
     host = os.getenv("LUCY_WS_HOST", "127.0.0.1")
     port = os.getenv("LUCY_WS_PORT", "8766")
+    token = os.getenv("LUCY_WS_BRIDGE_TOKEN")
     url = f"ws://{host}:{port}"
     async with websockets.connect(url) as ws:
         payload = {
@@ -42,6 +43,8 @@ async def main():
             "content": "bridge_smoke_ping",
             "data": {"hello": "world"},
         }
+        if token:
+            payload["token"] = token
         await ws.send(json.dumps(payload))
         await ws.recv()
 

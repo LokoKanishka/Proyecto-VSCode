@@ -35,6 +35,7 @@ async def main():
     host = os.getenv("LUCY_WS_HOST", "127.0.0.1")
     port = os.getenv("LUCY_WS_PORT", "8766")
     count = int(os.getenv("BRIDGE_BENCH_COUNT", "200"))
+    token = os.getenv("LUCY_WS_BRIDGE_TOKEN")
     url = f"ws://{host}:{port}"
     start = time.time()
     async with websockets.connect(url) as ws:
@@ -46,6 +47,8 @@ async def main():
                 "content": "bridge_bench_ping",
                 "data": {"seq": i},
             }
+            if token:
+                payload["token"] = token
             await ws.send(json.dumps(payload))
             await ws.recv()
     elapsed = time.time() - start

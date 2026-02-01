@@ -248,6 +248,11 @@ ollama ps  # Show currently loaded model
 ./scripts/bridge_multi_node_demo.sh
 ```
 
+**Bridge WS (TLS + token)**:
+```bash
+./scripts/bridge_tls_token_demo.sh
+```
+
 **CI smoke (rápido)**:
 ```bash
 ./scripts/ci_smoke.sh

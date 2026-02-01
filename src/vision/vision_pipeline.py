@@ -165,10 +165,10 @@ class VisionPipeline:
         }
         if advanced:
             payload["morphology"] = self.morphology_features(image)
-            payload["som"] = self.build_semantic_map(elements)
+            payload["som"] = self.build_semantic_map(elements, image=image)
         return payload
 
-    def build_semantic_map(self, elements: List[UIElement]) -> Dict[str, Any]:
+    def build_semantic_map(self, elements: List[UIElement], image: Any = None) -> Dict[str, Any]:
         """Construye un mapa semántico simple con etiquetas y ids."""
         som_elements: List[Dict[str, Any]] = []
         for idx, el in enumerate(elements):
@@ -178,6 +178,22 @@ class VisionPipeline:
             w = bbox[2]
             h = bbox[3]
             shape = "wide" if w > h * 2 else ("tall" if h > w * 2 else "squareish")
+            area = w * h
+            size = "small"
+            if area > 40000:
+                size = "large"
+            elif area > 10000:
+                size = "medium"
+            color = None
+            if HAS_CV and image is not None:
+                try:
+                    x, y, w_, h_ = bbox
+                    crop = image[y : y + h_, x : x + w_]
+                    if crop is not None and crop.size:
+                        mean = crop.mean(axis=(0, 1))
+                        color = [int(mean[2]), int(mean[1]), int(mean[0])]
+                except Exception:
+                    color = None
             som_elements.append(
                 {
                     "id": f"el_{idx:03d}",
@@ -187,6 +203,8 @@ class VisionPipeline:
                     "type": el.element_type,
                     "confidence": el.confidence,
                     "shape": shape,
+                    "size": size,
+                    "color_rgb": color,
                     "source": "ocr" if el.text else "detector",
                 }
             )

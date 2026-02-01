@@ -17,6 +17,9 @@ Conectar múltiples nodos de Swarm vía WebSocket, compartiendo eventos y métri
 - `LUCY_WS_BRIDGE_TOPICS`: tópicos a replicar (`broadcast,final_response`).
 - `LUCY_WS_BRIDGE_MAX_HOPS`: límite de hops para evitar loops.
 - `LUCY_WS_BRIDGE_BACKLOG_WARN`: umbral de backlog.
+- `LUCY_WS_BRIDGE_TOKEN`: token simple de auth (gateway + bridge).
+- `LUCY_WS_TLS_CERT` / `LUCY_WS_TLS_KEY`: cert/key TLS para gateway.
+- `LUCY_WS_TLS_CA`: CA para clients bridge.
 
 ## Métricas
 - `logs/bridge_metrics.jsonl` guarda latencia/backlog.

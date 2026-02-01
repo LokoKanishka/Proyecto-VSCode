@@ -25,6 +25,10 @@ class MemoryBackupWatcher:
         self._running = False
 
     async def _request_backup(self) -> None:
+        require_enc = os.getenv("LUCY_BACKUP_REQUIRE_ENCRYPTION", "0") in {"1", "true", "yes"}
+        if require_enc and not os.getenv("LUCY_BACKUP_PASSPHRASE"):
+            logger.warning("Backup omitido: falta LUCY_BACKUP_PASSPHRASE con cifrado obligatorio.")
+            return
         logger.info("🧠 Backup de memoria programado.")
         msg = LucyMessage(
             sender="memory_backup_watcher",

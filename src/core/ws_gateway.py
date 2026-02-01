@@ -29,7 +29,8 @@ class WebSocketGateway:
     async def start(self) -> None:
         ssl_ctx = _build_ssl_context()
         self._server = await websockets.serve(self._handler, self.host, self.port, ssl=ssl_ctx)
-        logger.info("WS Gateway escuchando en ws://%s:%d", self.host, self.port)
+        scheme = "wss" if ssl_ctx else "ws"
+        logger.info("WS Gateway escuchando en %s://%s:%d", scheme, self.host, self.port)
 
     async def stop(self) -> None:
         if self._server:
