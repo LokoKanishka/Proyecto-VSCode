@@ -5,6 +5,7 @@ import logging
 import math
 import random
 import time
+import os
 from dataclasses import dataclass
 from typing import Dict, Optional, Sequence, Tuple, Union
 
@@ -202,6 +203,12 @@ class DesktopController:
         if shutil.which("wmctrl"):
             try:
                 subprocess.run(["wmctrl", "-a", title], check=False)
+                return True
+            except Exception:
+                return False
+        if shutil.which("swaymsg") and os.getenv("XDG_SESSION_TYPE") == "wayland":
+            try:
+                subprocess.run(["swaymsg", "[title=\"%s\"] focus" % title], check=False)
                 return True
             except Exception:
                 return False
