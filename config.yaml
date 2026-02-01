@@ -83,3 +83,9 @@ voice_modular:
 # swarm:
 #   persistent_models: true   # Mantener modelos calientes en VRAM
 #   keep_alive: -1            # -1 = no descargar mientras haya VRAM
+
+# vLLM (opcional)
+# vllm:
+#   url: "http://localhost:8000"
+#   model: "qwen2.5-32b"
+#   quantization: "awq"

@@ -37,6 +37,7 @@ from src.planners.tree_of_thought_llm import TreeOfThoughtLLMPlanner
 from lucy_voice.config import LucyConfig
 from lucy_voice.pipeline.audio import AudioCaptureGate
 from src.core.ws_gateway import WebSocketGateway
+from src.core.remote_worker import RemoteWorkerProxy
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ class SwarmRunner:
         self.ws_gateway: Optional[WebSocketGateway] = None
         self._stop_event = asyncio.Event()
         self._setup_audio_workers()
+        self._setup_remote_workers()
 
     def _setup_audio_workers(self) -> None:
         enable_audio = os.getenv("LUCY_SWARM_ENABLE_AUDIO", "0").lower() in {"1", "true", "yes"}
@@ -119,6 +121,21 @@ class SwarmRunner:
         self.ear_worker = EarWorker(WorkerType.EAR, self.bus, config, gate)
         self.mouth_worker = MouthWorker(WorkerType.MOUTH, self.bus, config, gate)
         self.workers.extend([self.ear_worker, self.mouth_worker])
+
+    def _setup_remote_workers(self) -> None:
+        spec = os.getenv("LUCY_REMOTE_WORKERS", "")
+        if not spec:
+            return
+        entries = [item.strip() for item in spec.split(";") if item.strip()]
+        for entry in entries:
+            if "=" not in entry:
+                continue
+            worker_id, url = entry.split("=", 1)
+            worker_id = worker_id.strip()
+            url = url.strip()
+            if not worker_id or not url:
+                continue
+            RemoteWorkerProxy(worker_id, self.bus, url)
 
     async def run(self) -> None:
         """Ejecuta el bus y los watchers hasta que el usuario interrumpe con Ctrl+C."""

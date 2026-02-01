@@ -32,6 +32,13 @@ class VectorStoreProtocol(Protocol):
     def recall(self, query: str, limit: int = 5) -> List[str]:
         ...
 
+
+class _DummyEncoder:
+    def encode(self, text: str, convert_to_numpy: bool = True):
+        vec = np.zeros(384, dtype="float32")
+        return vec
+
+
 class MemoryManager:
     """
     Gestor de persistencia híbrido con memoria semántica (RAG).
@@ -46,7 +53,10 @@ class MemoryManager:
     ):
         self.db_path = db_path
         self.vector_index_path = vector_index_path
-        self.encoder = SentenceTransformer(model_name)
+        if os.getenv("LUCY_NO_EMB", "0") in {"1", "true", "yes"}:
+            self.encoder = _DummyEncoder()
+        else:
+            self.encoder = SentenceTransformer(model_name)
         self.vector_store = vector_store
         self.faiss_index = None
         self.faiss_dim = None

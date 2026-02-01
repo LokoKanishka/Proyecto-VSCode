@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import sys
+import shutil
 from typing import List, Optional, Tuple
 import requests
 
@@ -97,6 +98,7 @@ class CodeWorker(BaseWorker):
         return seq[:n]
 
     def _run_python(self, code: str, timeout_s: int = 6) -> Tuple[str, str, int, Optional[str]]:
+        use_docker = os.getenv("LUCY_CODE_DOCKER", "0") in {"1", "true", "yes"}
         with tempfile.TemporaryDirectory() as tmpdir:
             script_path = os.path.join(tmpdir, "snippet.py")
             with open(script_path, "w", encoding="utf-8") as handle:
@@ -114,6 +116,30 @@ class CodeWorker(BaseWorker):
                 lint = exc.output
             except Exception:
                 lint = None
+
+            if use_docker and shutil.which("docker"):
+                cmd = [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{tmpdir}:/work",
+                    "-w",
+                    "/work",
+                    "python:3.11-slim",
+                    "python",
+                    "snippet.py",
+                ]
+                try:
+                    proc = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout_s,
+                    )
+                    return proc.stdout, proc.stderr, proc.returncode, lint
+                except subprocess.TimeoutExpired:
+                    return "", "Timeout ejecutando el script (docker).", 124, lint
 
             try:
                 proc = subprocess.run(

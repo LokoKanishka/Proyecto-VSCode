@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+import os
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional
 
@@ -41,6 +42,9 @@ class TreeOfThoughtLLMPlanner:
         self.beam_width = beam_width
         self.proposals = proposals
         self._last_tree: List[ThoughtNode] = []
+        self.backend = os.getenv("LUCY_TOT_LLM_BACKEND", "ollama")
+        self.vllm_url = os.getenv("LUCY_VLLM_URL", "http://localhost:8000")
+        self.vllm_model = os.getenv("LUCY_VLLM_MODEL", "qwen2.5-32b")
 
     def plan(self, prompt: str, context: Iterable[str] | None = None) -> List[PlanStep]:
         root_id = str(uuid.uuid4())
@@ -103,18 +107,8 @@ class TreeOfThoughtLLMPlanner:
             "Sos un planner. Devolvé SOLO JSON: {\"plans\": [[{action,target,args,rationale}]]}.\n"
             f"Generá {self.proposals} planes alternativos."
         )
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": f"Contexto:\n{chr(10).join(context)}\n\nPedido:\n{prompt}"},
-            ],
-            "stream": False,
-        }
         try:
-            response = requests.post(f"{self.host}/api/chat", json=payload, timeout=25)
-            response.raise_for_status()
-            content = response.json().get("message", {}).get("content", "")
+            content = self._call_llm(system, prompt, context)
             data = json.loads(_extract_json(content) or "{}")
             return data.get("plans", [])
         except Exception as exc:
@@ -129,18 +123,8 @@ class TreeOfThoughtLLMPlanner:
                 "Calificá el plan del 0 al 1 (score) y explicá en 1 frase.\n"
                 "Devolvé SOLO JSON: {\"score\":0.0,\"rationale\":\"...\"}."
             )
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": f"Pedido: {prompt}\nPlan: {plan_json}"},
-                ],
-                "stream": False,
-            }
             try:
-                response = requests.post(f"{self.host}/api/chat", json=payload, timeout=20)
-                response.raise_for_status()
-                content = response.json().get("message", {}).get("content", "")
+                content = self._call_llm(system, f"Pedido: {prompt}\nPlan: {plan_json}", [])
                 data = json.loads(_extract_json(content) or "{}")
                 scored.append(
                     {
@@ -153,6 +137,27 @@ class TreeOfThoughtLLMPlanner:
                 logger.warning("ToT value falló: %s", exc)
         scored.sort(key=lambda item: item.get("score", 0.0), reverse=True)
         return scored
+
+    def _call_llm(self, system: str, user: str, context: Iterable[str]) -> str:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"Contexto:\n{chr(10).join(context)}\n\n{user}"},
+        ]
+        if self.backend == "vllm":
+            payload = {
+                "model": self.vllm_model,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": 512,
+            }
+            response = requests.post(f"{self.vllm_url}/v1/chat/completions", json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        payload = {"model": self.model, "messages": messages, "stream": False}
+        response = requests.post(f"{self.host}/api/chat", json=payload, timeout=25)
+        response.raise_for_status()
+        return response.json().get("message", {}).get("content", "")
 
 
 def _extract_json(text: str) -> Optional[str]:
