@@ -21,6 +21,10 @@ class WorkerType(str, Enum):
     HANDS = "hands_worker"
     BROWSER = "browser_worker"
     MEMORY = "memory_worker"
+    SHELL = "shell_worker"
+    VSCODE = "vscode_worker"
+    GIT = "git_worker"
+    PACKAGE = "package_worker"
 
 class LucyMessage(BaseModel):
     """

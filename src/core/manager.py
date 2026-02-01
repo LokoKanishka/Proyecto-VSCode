@@ -1,5 +1,6 @@
 import logging
 import uuid
+from typing import List
 
 from src.core.base_worker import BaseWorker
 from src.core.bus import EventBus
@@ -22,6 +23,8 @@ class Manager(BaseWorker):
         self.memory = memory
         self.planner = TreeOfThoughtPlanner()
         self.resource_manager = ResourceManager()
+        self.pending_interrupts: List[str] = []
+        self._register_worker_budgets()
         self.bus.subscribe("user_input", self.handle_user_input)
         self.bus.subscribe("broadcast", self.handle_broadcast_event)
 
@@ -31,6 +34,8 @@ class Manager(BaseWorker):
             worker_name = message.sender
             content = message.content
             logger.info("🧠 Manager recibió data de %s", worker_name)
+
+            self.resource_manager.mark_worker_idle(worker_name)
 
             self.memory.add_message(MemoryEntry(
                 role="assistant",
@@ -92,6 +97,8 @@ class Manager(BaseWorker):
                     "target": step.target.value,
                     "args": step.args,
                     "rationale": step.rationale,
+                    "score": step.score,
+                    "label": step.label,
                 }
                 for step in plan
             ],
@@ -116,6 +123,19 @@ class Manager(BaseWorker):
             step.target.value if isinstance(step.target, WorkerType) else step.target,
             step.rationale or "sin justificación"
         )
+        if self.pending_interrupts:
+            interrupt = self.pending_interrupts.pop(0)
+            await self.send_event(
+                "final_response",
+                f"Interrumpí la tarea actual por evento: {interrupt}"
+            )
+            return
+        if isinstance(step.target, WorkerType) and not self.resource_manager.can_schedule(step.target.value):
+            await self.send_event(
+                "final_response",
+                f"Recursos insuficientes para {step.target.value}; pospongo el paso."
+            )
+            return
         cmd = LucyMessage(
             sender=self.worker_id,
             receiver=step.target,
@@ -128,16 +148,37 @@ class Manager(BaseWorker):
                 "final_response",
                 "GPU ocupada; priorizo tareas ligeras."
             )
+        if isinstance(step.target, WorkerType):
+            self.resource_manager.mark_worker_active(step.target.value)
         await self.bus.publish(cmd)
 
     async def handle_broadcast_event(self, message: LucyMessage):
         if message.type != MessageType.EVENT:
             return
         self.memory.log_event(message.content, message.data or {}, "current_session")
+        priority = self._event_priority(message.content)
+        if priority >= 2:
+            self.pending_interrupts.append(message.content)
         if message.content == "gpu_pressure":
             usage = message.data.get("usage_pct")
             self.resource_manager.update_gpu_usage(usage)
             logger.warning("⚠️ GPU presión detectada %.2f%%", (usage or 0) * 100)
+        if message.content == "browser_action_failed":
+            screenshot_b64 = (message.data or {}).get("screenshot_b64")
+            if screenshot_b64:
+                cmd = LucyMessage(
+                    sender=self.worker_id,
+                    receiver=WorkerType.VISION,
+                    type=MessageType.COMMAND,
+                    content="analyze_image",
+                    data={
+                        "image_b64": screenshot_b64,
+                        "prompt": "Detectá el elemento principal para continuar la acción.",
+                        "source": "browser_screenshot",
+                        "advanced": True,
+                    },
+                )
+                await self.bus.publish(cmd)
 
     async def _bridge_browser_response(self, message: LucyMessage):
         video_url = message.data.get("video_url")
@@ -155,6 +196,8 @@ class Manager(BaseWorker):
 
     async def _handle_vision_to_hands(self, message: LucyMessage):
         grid_hint = message.data.get("grid_hint")
+        if message.data.get("source") == "browser_screenshot":
+            return
         if not grid_hint:
             return
         cmd = LucyMessage(
@@ -167,3 +210,24 @@ class Manager(BaseWorker):
         await self.bus.publish(cmd)
 
     # Helper functions retained for future heuristics if needed.
+    def _register_worker_budgets(self):
+        budgets = {
+            WorkerType.SEARCH.value: 500,
+            WorkerType.CHAT.value: 8000,
+            WorkerType.CODE.value: 2000,
+            WorkerType.VISION.value: 6000,
+            WorkerType.BROWSER.value: 1500,
+            WorkerType.HANDS.value: 200,
+            WorkerType.MEMORY.value: 500,
+            WorkerType.SHELL.value: 200,
+            WorkerType.VSCODE.value: 200,
+            WorkerType.GIT.value: 100,
+            WorkerType.PACKAGE.value: 200,
+        }
+        for worker_id, mb in budgets.items():
+            self.resource_manager.register_worker_budget(worker_id, mb)
+    @staticmethod
+    def _event_priority(event_name: str) -> int:
+        if event_name in {"gpu_pressure", "notification_received", "window_opened"}:
+            return 2
+        return 0

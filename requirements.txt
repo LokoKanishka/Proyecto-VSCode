@@ -7,6 +7,8 @@ tenacity
 trafilatura
 webrtcvad>=2.0.10
 soundfile
+sounddevice
+faster-whisper
 # UI additions
 customtkinter
 pillow
@@ -24,3 +26,10 @@ numpy
 pyautogui
 pydantic
 playwright==1.44.0
+
+# Vision/extras (opcional pero recomendado)
+diskcache
+pytesseract
+opencv-python
+ultralytics
+faiss-cpu

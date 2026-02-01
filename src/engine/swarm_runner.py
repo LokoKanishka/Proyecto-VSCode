@@ -21,6 +21,10 @@ from src.workers.code_worker import CodeWorker
 from src.workers.hands_worker import HandsWorker
 from src.workers.memory_worker import MemoryWorker
 from src.workers.search_worker import SearchWorker
+from src.workers.shell_worker import ShellWorker
+from src.workers.vscode_worker import VSCodeWorker
+from src.workers.git_worker import GitWorker
+from src.workers.package_worker import PackageWorker
 from src.workers.vision_worker import VisionWorker
 from src.core.manager import Manager
 
@@ -46,6 +50,10 @@ class SwarmRunner:
             BrowserWorker(WorkerType.BROWSER, self.bus),
             HandsWorker(WorkerType.HANDS, self.bus),
             MemoryWorker(WorkerType.MEMORY, self.bus, self.memory),
+            ShellWorker(WorkerType.SHELL, self.bus),
+            VSCodeWorker(WorkerType.VSCODE, self.bus),
+            GitWorker(WorkerType.GIT, self.bus),
+            PackageWorker(WorkerType.PACKAGE, self.bus),
         ]
         self.resource_manager = ResourceManager()
         self.watchers = [

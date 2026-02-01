@@ -1,0 +1,25 @@
+{
+  "name": "lucy-agent",
+  "displayName": "Lucy Agent",
+  "description": "WebSocket bridge for Lucy to control VS Code",
+  "version": "0.0.1",
+  "publisher": "lucy-local",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "activationEvents": ["*"],
+  "main": "./out/extension.js",
+  "contributes": {},
+  "scripts": {
+    "build": "tsc -p ./"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.10"
+  }
+}

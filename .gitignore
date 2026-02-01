@@ -24,6 +24,9 @@ Thumbs.db
 # Editor/Workspace
 .vscode/
 
+# Node
+**/node_modules/
+
 # Local diagnostics/artifacts
 diagnostics/
 docs/backup/

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,10 @@ class BrowserWorker(BaseWorker):
 
     def __init__(self, worker_id: str, bus):
         super().__init__(worker_id, bus)
+        self.default_headless = True
+        self.default_timeout_ms = 12000
+        self.default_user_data_dir: Optional[str] = None
+        self.default_storage_state: Optional[str] = None
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
@@ -34,6 +39,10 @@ class BrowserWorker(BaseWorker):
 
         if message.content == "open_url":
             await self._open_url(message)
+            return
+
+        if message.content == "capture_state":
+            await self._capture_state(message)
             return
 
         await self.send_error(message, f"Comando desconocido: {message.content}")
@@ -55,14 +64,23 @@ class BrowserWorker(BaseWorker):
 
         logger.info("🌐 BrowserWorker ejecutando %d pasos", len(steps))
         actions_log = []
+        headless = message.data.get("headless", self.default_headless)
+        user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
+        storage_state = message.data.get("storage_state", self.default_storage_state)
+        fallback_vision = bool(message.data.get("fallback_vision", False))
         try:
             async with async_playwright() as pw:
-                browser = await pw.chromium.launch(headless=True)
-                page = await browser.new_page()
+                browser, context = await self._launch_context(
+                    pw,
+                    headless=headless,
+                    user_data_dir=user_data_dir,
+                    storage_state=storage_state,
+                )
+                page = await context.new_page()
                 for step in steps:
                     action = (step.get("action") or "").lower()
                     selector = step.get("selector")
-                    timeout = int(step.get("timeout", 12000))
+                    timeout = int(step.get("timeout", self.default_timeout_ms))
                     if action == "goto":
                         await page.goto(step.get("url"), wait_until="domcontentloaded", timeout=timeout)
                         actions_log.append(f"goto {step.get('url')}")
@@ -84,13 +102,31 @@ class BrowserWorker(BaseWorker):
                         actions_log.append(f"eval({result})")
                     else:
                         actions_log.append(f"skip({action})")
-                await browser.close()
+                if storage_state:
+                    await context.storage_state(path=storage_state)
+                await context.close()
+                if browser:
+                    await browser.close()
         except PlaywrightTimeoutError as exc:
             logger.exception("Timeout en pasos del navegador")
+            if fallback_vision:
+                payload = await self._capture_state_payload(message)
+                await self.send_event(
+                    "broadcast",
+                    "browser_action_failed",
+                    {"reason": "timeout", "detail": str(exc), "steps": steps, **payload},
+                )
             await self.send_error(message, f"Timeout: {exc}")
             return
         except Exception as exc:
             logger.exception("Error ejecutando pasos del navegador")
+            if fallback_vision:
+                payload = await self._capture_state_payload(message)
+                await self.send_event(
+                    "broadcast",
+                    "browser_action_failed",
+                    {"reason": "error", "detail": str(exc), "steps": steps, **payload},
+                )
             await self.send_error(message, f"Error: {exc}")
             return
 
@@ -108,7 +144,32 @@ class BrowserWorker(BaseWorker):
         if not url:
             await self.send_error(message, "Necesito una URL para abrir.")
             return
-        await self.send_response(message, f"URL lista para abrir: {url}", {"url": url})
+        if not HAS_PLAYWRIGHT:
+            await self.send_response(message, f"URL lista para abrir: {url}", {"url": url})
+            return
+
+        headless = message.data.get("headless", self.default_headless)
+        user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
+        storage_state = message.data.get("storage_state", self.default_storage_state)
+        try:
+            async with async_playwright() as pw:
+                browser, context = await self._launch_context(
+                    pw,
+                    headless=headless,
+                    user_data_dir=user_data_dir,
+                    storage_state=storage_state,
+                )
+                page = await context.new_page()
+                await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout_ms)
+                title = await page.title()
+                if storage_state:
+                    await context.storage_state(path=storage_state)
+                await context.close()
+                if browser:
+                    await browser.close()
+            await self.send_response(message, f"Abrí la URL: {title}", {"url": url, "title": title})
+        except Exception as exc:
+            await self.send_error(message, f"No pude abrir la URL: {exc}")
 
     async def _search_youtube(self, message: LucyMessage):
         if not HAS_PLAYWRIGHT:
@@ -136,3 +197,96 @@ class BrowserWorker(BaseWorker):
             },
             forced_steps=steps
         )
+
+    async def _capture_state(self, message: LucyMessage):
+        if not HAS_PLAYWRIGHT:
+            await self.send_error(message, "Instalá playwright para capturar el estado.")
+            return
+        url = message.data.get("url")
+        headless = message.data.get("headless", self.default_headless)
+        user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
+        storage_state = message.data.get("storage_state", self.default_storage_state)
+        try:
+            async with async_playwright() as pw:
+                browser, context = await self._launch_context(
+                    pw,
+                    headless=headless,
+                    user_data_dir=user_data_dir,
+                    storage_state=storage_state,
+                )
+                page = await context.new_page()
+                if url:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout_ms)
+                screenshot = await page.screenshot(full_page=True)
+                html = await page.content()
+                accessibility = None
+                if message.data.get("accessibility"):
+                    try:
+                        accessibility = await page.accessibility.snapshot()
+                    except Exception:
+                        accessibility = None
+                if storage_state:
+                    await context.storage_state(path=storage_state)
+                await context.close()
+                if browser:
+                    await browser.close()
+            payload = {
+                "url": url,
+                "screenshot_b64": base64.b64encode(screenshot).decode("utf-8"),
+                "html": html[:20000],
+                "accessibility": accessibility,
+            }
+            await self.send_response(message, "Estado capturado.", payload)
+        except Exception as exc:
+            await self.send_error(message, f"No pude capturar el estado: {exc}")
+
+    async def _launch_context(self, pw, headless: bool, user_data_dir: Optional[str], storage_state: Optional[str]):
+        if user_data_dir:
+            context = await pw.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=headless,
+            )
+            return None, context
+        browser = await pw.chromium.launch(headless=headless)
+        context = await browser.new_context(storage_state=storage_state if storage_state else None)
+        return browser, context
+
+    async def _capture_state_payload(self, message: LucyMessage) -> Dict[str, Any]:
+        """Captura estado en caso de error para fallback de visión."""
+        if not HAS_PLAYWRIGHT:
+            return {"capture_error": "playwright_no_disponible"}
+        url = message.data.get("url")
+        headless = message.data.get("headless", self.default_headless)
+        user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
+        storage_state = message.data.get("storage_state", self.default_storage_state)
+        try:
+            async with async_playwright() as pw:
+                browser, context = await self._launch_context(
+                    pw,
+                    headless=headless,
+                    user_data_dir=user_data_dir,
+                    storage_state=storage_state,
+                )
+                page = await context.new_page()
+                if url:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout_ms)
+                screenshot = await page.screenshot(full_page=True)
+                html = await page.content()
+                accessibility = None
+                try:
+                    accessibility = await page.accessibility.snapshot()
+                except Exception:
+                    accessibility = None
+                if storage_state:
+                    await context.storage_state(path=storage_state)
+                await context.close()
+                if browser:
+                    await browser.close()
+            return {
+                "url": url,
+                "screenshot_b64": base64.b64encode(screenshot).decode("utf-8"),
+                "html": html[:20000],
+                "accessibility": accessibility,
+            }
+        except Exception as exc:
+            return {"capture_error": str(exc)}

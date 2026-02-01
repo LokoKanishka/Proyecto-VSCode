@@ -42,5 +42,25 @@ class MemoryWorker(BaseWorker):
                 "Recuperación semántica completada.",
                 {"results": results},
             )
+        elif message.content == "backup_memory":
+            dest = self.memory.backup_db()
+            if dest:
+                await self.send_response(
+                    message,
+                    "Backup generado.",
+                    {"path": dest},
+                )
+            else:
+                await self.send_response(
+                    message,
+                    "No se pudo generar backup.",
+                )
+        elif message.content == "build_faiss":
+            ok = self.memory.build_faiss_index(limit=int(message.data.get("limit", 5000)))
+            await self.send_response(
+                message,
+                "Índice FAISS actualizado." if ok else "No se pudo crear índice FAISS.",
+                {"success": ok},
+            )
         else:
             await self.send_error(message, f"Comando desconocido en MemoryWorker: {message.content}")

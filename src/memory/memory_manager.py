@@ -3,10 +3,19 @@ import json
 import time
 import logging
 import uuid
+import os
+import shutil
+import subprocess
 from typing import Dict, List, Optional, Protocol
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
+
+try:
+    import faiss  # type: ignore
+    HAS_FAISS = True
+except ImportError:
+    HAS_FAISS = False
 
 from src.core.types import MemoryEntry
 
@@ -38,6 +47,9 @@ class MemoryManager:
         self.vector_index_path = vector_index_path
         self.encoder = SentenceTransformer(model_name)
         self.vector_store = vector_store
+        self.faiss_index = None
+        self.faiss_dim = None
+        self.faiss_texts: List[str] = []
         self._init_db()
 
     def _init_db(self):
@@ -191,6 +203,9 @@ class MemoryManager:
         if not query:
             return []
 
+        if self.faiss_index is not None:
+            return self._search_faiss(query, k)
+
         if self.vector_store:
             try:
                 results = self.vector_store.recall(query, limit=k)
@@ -325,3 +340,83 @@ class MemoryManager:
         if denom == 0:
             return 0.0
         return float(np.dot(a, b) / denom)
+
+    def backup_db(self, backup_dir: str = "backups") -> Optional[str]:
+        """Copia la base de datos a un snapshot local."""
+        if not os.path.exists(self.db_path):
+            return None
+        os.makedirs(backup_dir, exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        dest = os.path.join(backup_dir, f"lucy_memory_{timestamp}.db")
+        try:
+            shutil.copy2(self.db_path, dest)
+            passphrase = os.getenv("LUCY_BACKUP_PASSPHRASE")
+            if passphrase:
+                encrypted = f"{dest}.gpg"
+                try:
+                    subprocess.run(
+                        ["gpg", "--batch", "--yes", "--passphrase", passphrase, "-c", dest],
+                        check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if os.path.exists(encrypted):
+                        return encrypted
+                except Exception:
+                    return dest
+            return dest
+        except OSError as exc:
+            logger.warning("No pude crear backup: %s", exc)
+            return None
+
+    def build_faiss_index(self, limit: int = 5000) -> bool:
+        """Construye un índice FAISS con los últimos embeddings (si FAISS está disponible)."""
+        if not HAS_FAISS:
+            logger.info("FAISS no disponible, omito índice.")
+            return False
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT content, embedding FROM messages WHERE embedding IS NOT NULL ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        )
+        vectors = []
+        texts: List[str] = []
+        for content, embedding_json in cursor.fetchall():
+            if not embedding_json:
+                continue
+            try:
+                vec = np.array(json.loads(embedding_json), dtype="float32")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            vectors.append(vec)
+            texts.append(content)
+        conn.close()
+        if not vectors:
+            return False
+        mat = np.stack(vectors, axis=0)
+        self.faiss_dim = mat.shape[1]
+        self.faiss_index = faiss.IndexFlatIP(self.faiss_dim)
+        faiss.normalize_L2(mat)
+        self.faiss_index.add(mat)
+        self.faiss_texts = texts
+        if self.vector_index_path:
+            faiss.write_index(self.faiss_index, self.vector_index_path)
+        return True
+
+    def _search_faiss(self, query: str, k: int = 5) -> List[Dict[str, str]]:
+        if self.faiss_index is None:
+            return []
+        query_vec = np.array(self._encode_text(query), dtype="float32")
+        if query_vec.size == 0:
+            return []
+        query_vec = query_vec.reshape(1, -1)
+        faiss.normalize_L2(query_vec)
+        scores, indices = self.faiss_index.search(query_vec, k)
+        results: List[Dict[str, str]] = []
+        for idx in indices[0]:
+            if idx < 0:
+                continue
+            if idx < len(self.faiss_texts):
+                results.append({"role": "assistant", "content": self.faiss_texts[idx]})
+        return results

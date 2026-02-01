@@ -16,6 +16,7 @@ except ImportError:
 
 from src.core.base_worker import BaseWorker
 from src.core.types import LucyMessage, MessageType
+from src.vision.vision_pipeline import VisionPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class VisionWorker(BaseWorker):
         super().__init__(worker_id, bus)
         self.eye = ScreenEye()
         self.model = "llava"
+        self.pipeline = VisionPipeline()
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
@@ -68,6 +70,9 @@ class VisionWorker(BaseWorker):
         if command == "analyze_screen":
             prompt = message.data.get("prompt", "Describe qué ves en la pantalla.")
             await self.analyze_screen(message, prompt)
+        elif command == "analyze_image":
+            prompt = message.data.get("prompt", "Describe qué ves en la imagen.")
+            await self.analyze_image(message, prompt)
         else:
             await self.send_error(message, f"Comando desconocido: {command}")
 
@@ -78,10 +83,22 @@ class VisionWorker(BaseWorker):
         description = "No pude procesar la imagen."
         grid_hint = "E5"
         extra: Dict[str, Any] = {"meta": meta}
+        use_advanced = bool(original_msg.data.get("advanced", False))
 
         try:
             if not HAS_VISION_LIBS:
                 raise RuntimeError("Faltan librerías de visión (mss/cv2).")
+            if use_advanced:
+                img_bytes = base64.b64decode(img_b64)
+                img_arr = np.frombuffer(img_bytes, dtype=np.uint8)
+                frame = cv2.imdecode(img_arr, cv2.IMREAD_COLOR)
+                analysis = self.pipeline.analyze(frame)
+                extra["ui_elements"] = [
+                    {"bbox": el.bbox, "text": el.text, "type": el.element_type, "confidence": el.confidence}
+                    for el in analysis.get("elements", [])
+                ]
+                extra["ocr_count"] = analysis.get("ocr_count")
+                extra["detector_count"] = analysis.get("detector_count")
             logger.info(f"🧠 Consultando a {self.model}...")
             response = ollama.chat(
                 model=self.model,
@@ -104,6 +121,69 @@ class VisionWorker(BaseWorker):
             description,
             {"meta": meta, "grid_hint": grid_hint, **extra}
         )
+
+    async def analyze_image(self, original_msg: LucyMessage, prompt: str):
+        img_b64 = original_msg.data.get("image_b64")
+        if not img_b64:
+            await self.send_error(original_msg, "Falta image_b64 para analizar.")
+            return
+        description = "No pude procesar la imagen."
+        grid_hint = "E5"
+        extra: Dict[str, Any] = {"source": original_msg.data.get("source", "external_image")}
+
+        try:
+            if not HAS_VISION_LIBS:
+                raise RuntimeError("Faltan librerías de visión (mss/cv2).")
+            img_bytes = base64.b64decode(img_b64)
+            img_arr = np.frombuffer(img_bytes, dtype=np.uint8)
+            frame = cv2.imdecode(img_arr, cv2.IMREAD_COLOR)
+            if frame is None:
+                raise RuntimeError("No pude decodificar la imagen.")
+            if original_msg.data.get("advanced"):
+                analysis = self.pipeline.analyze(frame)
+                extra["ui_elements"] = [
+                    {"bbox": el.bbox, "text": el.text, "type": el.element_type, "confidence": el.confidence}
+                    for el in analysis.get("elements", [])
+                ]
+                extra["ocr_count"] = analysis.get("ocr_count")
+                extra["detector_count"] = analysis.get("detector_count")
+
+            # Overlay grid for grounding
+            grid_img = self._overlay_grid(frame.copy())
+            _, buffer = cv2.imencode(".jpg", grid_img)
+            grid_b64 = base64.b64encode(buffer).decode("utf-8")
+
+            response = ollama.chat(
+                model=self.model,
+                messages=[{
+                    "role": "user",
+                    "content": prompt,
+                    "images": [grid_b64],
+                }]
+            )
+            description = response["message"]["content"]
+            grid_hint = self._find_grid_hint(description)
+        except Exception as exc:
+            logger.warning("VisionWorker analyze_image fallback: %s", exc)
+            description = f"Modo degradado: {exc}"
+
+        await self.send_response(
+            original_msg,
+            description,
+            {"grid_hint": grid_hint, **extra}
+        )
+
+    def _overlay_grid(self, img):
+        h, w, _ = img.shape
+        dy, dx = h / self.eye.grid_rows, w / self.eye.grid_cols
+        color = (0, 255, 0)
+        for i in range(1, self.eye.grid_rows):
+            y = int(dy * i)
+            cv2.line(img, (0, y), (w, y), color, 1)
+        for j in range(1, self.eye.grid_cols):
+            x = int(dx * j)
+            cv2.line(img, (x, 0), (x, h), color, 1)
+        return img
 
     @staticmethod
     def _find_grid_hint(text: str) -> str:
