@@ -68,6 +68,28 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 1) **Hardening distribuido**: validar bridge WS en entorno real con nodos múltiples.
 2) **Memoria avanzada**: backups cifrados obligatorios en prod y conexión con CI.
 
+### Próximas 20 tareas (2026-02-01)
+1) Bridge: soporte TLS/WSS + verificación de certificado opcional.
+2) Bridge: auth token simple (`LUCY_WS_BRIDGE_TOKEN`) en gateway y bridge.
+3) Bus: métricas de cola (size actual y max) en `bus_metrics.jsonl`.
+4) UI: panel de latencia por worker (usar `bus_metrics.latency`).
+5) UI: badge de estado “bridge conectado/desconectado”.
+6) Manager: prioridad de acciones según `bridge_backpressure`.
+7) Memory: export/import de snapshots (`files` table) a JSONL.
+8) Memory: compresión configurable (zlib vs lz4) por env.
+9) Vision: cache de OCR por frame hash.
+10) Vision: etiquetado de UIElement por tipo + color/shape heurístico.
+11) Hands: scroll y drag por bbox/elemento.
+12) Browser: heurística para “click por texto” usando dom_summary.
+13) Browser: extraer links canónicos y metadata (og:title/description).
+14) CodeWorker: tests por proyecto (auto-detect pytest/node).
+15) CodeWorker: limits de timeout configurables por env.
+16) VSCodeWorker: handshake WS y health-check de extensión.
+17) E2E: test con `LUCY_WS_BRIDGE_URLS` usando dos procesos.
+18) CI: matriz de Python 3.11/3.12 y cache de pip.
+19) Docs: guía “Swarm distribuido” paso a paso.
+20) Docs: checklist de despliegue local (audio/WS/bridge/smokes).
+
 ### Ritual diario sugerido
 - Leer este archivo y marcar qué punto atacar hoy.
 - Actualizar la sección “Hecho/Falta” con cambios concretos (archivos y breve nota).
