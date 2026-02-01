@@ -7,6 +7,8 @@ const planSteps = document.getElementById('plan-steps');
 const watcherEventsList = document.getElementById('watcher-events-list');
 const busMetricsSummary = document.getElementById('bus-metrics-summary');
 const busMetricsRecent = document.getElementById('bus-metrics-recent');
+const bridgeMetricsSummary = document.getElementById('bridge-metrics-summary');
+const bridgeMetricsRecent = document.getElementById('bridge-metrics-recent');
 const memoryEventsList = document.getElementById('memory-events-list');
 
 async function updateResourcePanel() {
@@ -58,12 +60,14 @@ setInterval(updateMemorySummary, 30_000);
 setInterval(updatePlanPanel, 45_000);
 setInterval(updateWatcherPanel, 25_000);
 setInterval(updateBusMetricsPanel, 20_000);
+setInterval(updateBridgeMetricsPanel, 20_000);
 setInterval(updateMemoryEventsPanel, 25_000);
 updateResourcePanel();
 updateMemorySummary();
 updatePlanPanel();
 updateWatcherPanel();
 updateBusMetricsPanel();
+updateBridgeMetricsPanel();
 updateMemoryEventsPanel();
 
 const refreshMemoryBtn = document.getElementById('refresh-memory-btn');
@@ -126,6 +130,9 @@ async function updateWatcherPanel() {
             const details = typeof evt.details === 'object'
                 ? JSON.stringify(evt.details)
                 : evt.details;
+            if (evt.type && evt.type.startsWith('bridge_')) {
+                item.classList.add('bridge-event');
+            }
             item.innerHTML = `<strong>${timeText} · ${evt.type}</strong><div>${details}</div>`;
             watcherEventsList.appendChild(item);
         });
@@ -176,6 +183,34 @@ async function updateBusMetricsPanel() {
     }
 }
 
+async function updateBridgeMetricsPanel() {
+    if (!bridgeMetricsSummary || !bridgeMetricsRecent) return;
+    try {
+        const resp = await fetch('/api/bridge_metrics');
+        if (!resp.ok) throw new Error('Bridge metrics fetch failed');
+        const payload = await resp.json();
+        const records = payload.records || [];
+        if (!records.length) {
+            bridgeMetricsSummary.textContent = 'Sin métricas de bridge todavía.';
+            bridgeMetricsRecent.innerHTML = '';
+            return;
+        }
+        const last = records[records.length - 1];
+        bridgeMetricsSummary.innerHTML = `latency_ms=${last.latency_avg_ms ?? '-'} backlog=${last.backlog_max ?? '-'} dropped=${last.dropped ?? '-'}`;
+        bridgeMetricsRecent.innerHTML = '';
+        records.slice(-10).forEach(record => {
+            const el = document.createElement('div');
+            el.className = 'metrics-list-item';
+            const time = new Date(record.timestamp * 1000).toLocaleTimeString();
+            el.textContent = `${time} · sent=${record.sent ?? 0} recv=${record.received ?? 0} drop=${record.dropped ?? 0} latency=${record.latency_avg_ms ?? '-'}`;
+            bridgeMetricsRecent.appendChild(el);
+        });
+    } catch (err) {
+        console.error('No se pudo cargar métricas del bridge', err);
+        bridgeMetricsSummary.textContent = 'Error cargando métricas del bridge.';
+    }
+}
+
 async function updateMemoryEventsPanel() {
     if (!memoryEventsList) return;
     try {
@@ -190,6 +225,9 @@ async function updateMemoryEventsPanel() {
         payload.events.forEach(evt => {
             const el = document.createElement('div');
             el.className = 'memory-events-item';
+            if (evt.type && evt.type.startsWith('bridge_')) {
+                el.classList.add('bridge-event');
+            }
             const timestamp = evt.timestamp || '—';
             const detailText = evt.details ? evt.details : evt.raw || '';
             el.innerHTML = `<strong>${timestamp}</strong><div>${detailText}</div>`;

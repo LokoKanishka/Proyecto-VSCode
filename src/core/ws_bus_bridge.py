@@ -13,6 +13,7 @@ from src.core.bus import EventBus
 from src.core.types import LucyMessage, MessageType
 
 logger = logging.getLogger(__name__)
+BRIDGE_METRICS_LOG = "logs/bridge_metrics.jsonl"
 
 
 class WSBusBridge:
@@ -184,12 +185,42 @@ class WSBusBridge:
         self._last_stats_emit = now
 
     async def _emit_stats_event(self, latency: float) -> None:
+        try:
+            os.makedirs(os.path.dirname(BRIDGE_METRICS_LOG), exist_ok=True)
+            with open(BRIDGE_METRICS_LOG, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps({
+                    "timestamp": time.time(),
+                    "sent": self._metrics["sent"],
+                    "received": self._metrics["received"],
+                    "dropped": self._metrics["dropped"],
+                    "backlog_max": self._backlog_max,
+                    "latency_avg_ms": round(latency, 2),
+                    "url": self.url,
+                }) + "\n")
+        except Exception:
+            pass
         await self.bus.publish(
             LucyMessage(
                 sender="ws_bridge",
                 receiver="broadcast",
                 type=MessageType.EVENT,
                 content="bridge_stats",
+                data={
+                    "sent": self._metrics["sent"],
+                    "received": self._metrics["received"],
+                    "dropped": self._metrics["dropped"],
+                    "backlog_max": self._backlog_max,
+                    "latency_avg_ms": round(latency, 2),
+                    "url": self.url,
+                },
+            )
+        )
+        await self.bus.publish(
+            LucyMessage(
+                sender="ws_bridge",
+                receiver="broadcast",
+                type=MessageType.EVENT,
+                content="bridge_stats_audit",
                 data={
                     "sent": self._metrics["sent"],
                     "received": self._metrics["received"],

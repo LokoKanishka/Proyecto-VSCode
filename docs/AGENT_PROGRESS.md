@@ -52,6 +52,8 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Smokes extra: `scripts/memory_snapshot_smoke.py` y flags en `scripts/run_all_smokes.sh`.
 - UI/Docs: bridge stats en UI y `/api/bus_metrics`: `lucy_web/static/js/resources.js`, `docs/LUCY-WEB-API.md`.
 - Demo multi-nodo bridge: `scripts/bridge_multi_node_demo.sh`.
+- Bridge metrics persistentes + panel UI: `src/core/ws_bus_bridge.py`, `lucy_web/app.py`, `lucy_web/static/js/resources.js`.
+- CI smoke script: `scripts/ci_smoke.sh`.
 - Tests: backup requiere cifrado si `LUCY_BACKUP_REQUIRE_ENCRYPTION=1`: `tests/test_memory_manager.py`.
 
 ### Falta (prioriza en cada sesión)

@@ -8,6 +8,7 @@ SUMMARY="$REPORT_DIR/smoke_summary.md"
 SKYSCANNER_SMOKE=${SKYSCANNER_SMOKE:-1}
 BRIDGE_SMOKE=${BRIDGE_SMOKE:-0}
 MEMORY_SMOKE=${MEMORY_SMOKE:-1}
+BRIDGE_BENCH=${BRIDGE_BENCH:-0}
 
 mkdir -p "$REPORT_DIR"
 > "$SMOKE_LOG"
@@ -49,13 +50,19 @@ else
   echo "5) Memory snapshot smoke: skipped (MEMORY_SMOKE=0)" | tee -a "$SMOKE_LOG"
   results["5) Memory snapshot smoke"]="skipped"
 fi
+if [ "$BRIDGE_BENCH" -ne 0 ]; then
+  run_step "6) Bridge bench" "./scripts/bridge_bench.sh"
+else
+  echo "6) Bridge bench: skipped (BRIDGE_BENCH=0)" | tee -a "$SMOKE_LOG"
+  results["6) Bridge bench"]="skipped"
+fi
 
 echo "Smoke suite finished at $(date)" | tee -a "$SMOKE_LOG"
 echo "Summary log: $SMOKE_LOG"
 
 {
   echo "# Smoke suite summary ($(date))"
-  for key in "1) Health smoke" "2) Plan verification" "3) Skyscanner smoke" "4) Bridge smoke" "5) Memory snapshot smoke"; do
+  for key in "1) Health smoke" "2) Plan verification" "3) Skyscanner smoke" "4) Bridge smoke" "5) Memory snapshot smoke" "6) Bridge bench"; do
     echo "- **$key**: ${results[$key]}"
   done
   echo ""

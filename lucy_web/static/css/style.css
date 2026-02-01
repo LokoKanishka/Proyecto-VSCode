@@ -486,6 +486,11 @@ body {
     color: var(--text-secondary);
 }
 
+.bridge-event {
+    border-left: 2px solid #ffb703;
+    padding-left: 8px;
+}
+
 .sparkline-wrapper {
     margin-top: 0.75rem;
     background: var(--bg-primary);

@@ -25,6 +25,15 @@ Si la línea no puede separarse por `|`, el mapa contiene `raw`.
 ### `/api/resource_events` y `/api/plan_log`
 Ya existían previamente; la UI consumía `/api/resource_events` para información de GPU/ventanas y `/api/plan_log` para mostrar el último plan ejecutado. Nada se modifica en ellos en esta iteración.
 
+### `/api/events`
+Devuelve eventos de la tabla `events` (SQLite). Soporta filtro opcional por tipo:
+
+- `GET /api/events`
+- `GET /api/events?type=bridge_backpressure`
+
+### `/api/bridge_metrics`
+Devuelve registros recientes de `logs/bridge_metrics.jsonl` con latencia/backlog/drops del bridge WS.
+
 ## Script de dashboard (`scripts/bus_metrics_dashboard.py`)
 
 El script lee `logs/bus_metrics.jsonl`, calcula promedios (`avg/min/max`) y muestra los últimos 5 registros en consola. Sirve para tener un monitoreo rápido fuera de la UI. Se ejecuta así:

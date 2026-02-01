@@ -38,4 +38,6 @@ Próximo paso recomendado: ...
 - Bridge WS: `scripts/bridge_smoke.sh` valida gateway y publicación básica.
 - Bridge multi-nodo: `scripts/bridge_multi_node_demo.sh` levanta 2 nodos con bridge y dispara un evento.
 - Memoria: `scripts/memory_snapshot_smoke.py` valida snapshots y política de cifrado.
+- Bridge bench: `scripts/bridge_bench.sh` mide latencia/throughput local.
+- CI smoke: `scripts/ci_smoke.sh` corre tests clave + snapshot.
 - Agregar pruebas de integración que validen los nuevos watchers (GPU/ventanas), el resumen automático de `MemoryManager` y la orquestación Browser→Vision→Hands para un pedido complejo de YouTube.

@@ -243,6 +243,16 @@ ollama list
 ollama ps  # Show currently loaded model
 ```
 
+**Bridge WS (multi-nodo)**:
+```bash
+./scripts/bridge_multi_node_demo.sh
+```
+
+**CI smoke (rápido)**:
+```bash
+./scripts/ci_smoke.sh
+```
+
 ### Important Notes
 
 - **No modifications to `external/nodo-de-voz-modular-de-lucy/` without consultation**: This is a git submodule

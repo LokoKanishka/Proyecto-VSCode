@@ -31,6 +31,8 @@ FFMPEG_BIN = shutil.which("ffmpeg")
 RESOURCE_LOG = Path("logs/resource_events.jsonl")
 BUS_METRICS_LOG = Path("logs/bus_metrics.jsonl")
 MEMORY_EVENTS_LOG = Path("logs/memory_retrieval.log")
+BRIDGE_METRICS_LOG = Path("logs/bridge_metrics.jsonl")
+db_path = Path("lucy_memory.db")
 
 _log_emit_started = False
 
@@ -333,6 +335,12 @@ def get_bus_metrics():
     return jsonify({"records": records, "summary": summary})
 
 
+@app.route('/api/bridge_metrics')
+def get_bridge_metrics():
+    records = _tail_jsonl(BRIDGE_METRICS_LOG, limit=40)
+    return jsonify({"records": records})
+
+
 @app.route('/api/memory_events')
 def get_memory_events():
     lines = _tail_lines(MEMORY_EVENTS_LOG, limit=25)
@@ -416,6 +424,40 @@ def get_watcher_events():
             "type": row["type"],
             "timestamp": row["timestamp"],
             "details": details,
+        })
+    return jsonify({"events": events})
+
+
+@app.route('/api/events')
+def get_events():
+    event_type = request.args.get("type")
+    if not db_path.exists():
+        return jsonify({"events": []})
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    if event_type:
+        cursor.execute(
+            "SELECT type, details, timestamp FROM events WHERE type = ? ORDER BY timestamp DESC LIMIT 50",
+            (event_type,),
+        )
+    else:
+        cursor.execute(
+            "SELECT type, details, timestamp FROM events ORDER BY timestamp DESC LIMIT 50"
+        )
+    rows = cursor.fetchall()
+    conn.close()
+    events = []
+    for row in rows:
+        details = row["details"]
+        try:
+            details = json.loads(details)
+        except Exception:
+            pass
+        events.append({
+            "type": row["type"],
+            "details": details,
+            "timestamp": row["timestamp"],
         })
     return jsonify({"events": events})
 

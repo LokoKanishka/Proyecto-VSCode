@@ -192,6 +192,18 @@ class Manager(BaseWorker):
                     self.swarm.auto_manage_vram(usage)
                 except Exception as exc:
                     logger.debug("Swarm auto_manage_vram falló: %s", exc)
+        if message.content == "bridge_stats_audit":
+            self.memory.log_event(
+                message.content,
+                message.data or {},
+                "current_session",
+            )
+        if message.content == "bridge_backpressure":
+            self.memory.log_event(
+                message.content,
+                message.data or {},
+                "current_session",
+            )
         if message.content == "browser_action_failed":
             screenshot_b64 = (message.data or {}).get("screenshot_b64")
             if screenshot_b64:
