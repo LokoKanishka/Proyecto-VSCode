@@ -123,6 +123,8 @@ class PlannerActor:
         - Tool: ShippingCalculator.calculate_shipping(destination, weight_kg)
         - Tool: PaymentStatus.check_payment_status(order_id)
         - Tool: PDFGenerator.generate_quote_pdf(items, customer_name)
+        - Tool: VisualAutomation.click_element(label)
+        - Tool: VisualAutomation.type_into_field(label, text)
         
         Propose {k} distinct, valid NEXT single actions to advance towards the goal.
         Return ONLY valid JSON list of strings.

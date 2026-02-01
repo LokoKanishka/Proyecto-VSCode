@@ -6,6 +6,7 @@ import random
 import math
 import os
 import subprocess
+import ast
 
 # Human-like mouse movement logic
 def bezier_point(t, P0, P1, P2):
@@ -32,6 +33,9 @@ class ActionActor:
         # Initialize Skills
         from src.skills.business_tools import BusinessTools
         self.business_tools = BusinessTools()
+        
+        from src.skills.gui_automation import GUIAutomation
+        self.gui_automation = GUIAutomation()
 
     async def execute_plan(self, plan: list) -> str:
         """
@@ -81,6 +85,10 @@ class ActionActor:
                     # Find method on BusinessTools instance
                     if hasattr(self.business_tools, method_name):
                         func = getattr(self.business_tools, method_name)
+                        res = func(*pos_args, **kw_args)
+                        results.append(f"Tool Output ({method_name}): {res}")
+                    elif hasattr(self.gui_automation, method_name):
+                        func = getattr(self.gui_automation, method_name)
                         res = func(*pos_args, **kw_args)
                         results.append(f"Tool Output ({method_name}): {res}")
                     else:

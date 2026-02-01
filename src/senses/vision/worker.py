@@ -101,3 +101,35 @@ class VisionActor:
         except Exception as e:
             logger.error(f"Error in segment_point: {e}")
             return {"error": str(e)}
+
+    async def find_text(self, image_path: str, text: str) -> Dict[str, Any]:
+        """
+        Finds the coordinates of a specific text using Tesseract OCR.
+        Returns the center point {x, y} of the found text.
+        """
+        import pytesseract
+        try:
+            img = Image.open(image_path)
+            # Get data including box coordinates
+            data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+            
+            text_lower = text.lower()
+            found_indices = [i for i, word in enumerate(data['text']) if text_lower in word.lower()]
+            
+            if not found_indices:
+                return {} # Not found
+            
+            # Pick the first match with highest confidence? Or just first.
+            idx = found_indices[0]
+            x, y, w, h = data['left'][idx], data['top'][idx], data['width'][idx], data['height'][idx]
+            conf = data['conf'][idx]
+            
+            center_x = x + w // 2
+            center_y = y + h // 2
+            
+            logger.info(f"👁️ OCR Found '{text}' at ({center_x}, {center_y}) with conf {conf}")
+            return {"x": center_x, "y": center_y, "confidence": conf}
+            
+        except Exception as e:
+            logger.error(f"OCR Error: {e}")
+            return {"error": str(e)}
