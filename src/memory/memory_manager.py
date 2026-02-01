@@ -330,8 +330,34 @@ class MemoryManager:
             json.dumps({**(metadata or {}), "compressed": compressed, "compressor": compressor if compressed else None}),
         ))
         conn.commit()
+        self._prune_file_snapshots(conn)
         conn.close()
         return file_id
+
+    def _prune_file_snapshots(self, conn: sqlite3.Connection) -> None:
+        max_count = int(os.getenv("LUCY_SNAPSHOT_MAX_COUNT", "5000"))
+        max_bytes = int(os.getenv("LUCY_SNAPSHOT_MAX_BYTES", "1073741824"))
+        cursor = conn.cursor()
+        if max_count > 0:
+            cursor.execute(
+                "DELETE FROM files WHERE id IN ("
+                "SELECT id FROM files ORDER BY rowid DESC LIMIT -1 OFFSET ?"
+                ")",
+                (max_count,),
+            )
+        if max_bytes > 0:
+            cursor.execute("SELECT COALESCE(SUM(LENGTH(content)), 0) FROM files")
+            total = cursor.fetchone()[0] or 0
+            while total > max_bytes:
+                cursor.execute(
+                    "SELECT id, COALESCE(LENGTH(content),0) FROM files ORDER BY rowid ASC LIMIT 1"
+                )
+                row = cursor.fetchone()
+                if not row:
+                    break
+                cursor.execute("DELETE FROM files WHERE id = ?", (row[0],))
+                total -= int(row[1] or 0)
+        conn.commit()
 
     def export_snapshots_jsonl(self, path: str) -> int:
         conn = sqlite3.connect(self.db_path)

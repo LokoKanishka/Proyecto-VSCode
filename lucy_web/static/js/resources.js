@@ -11,6 +11,7 @@ const bridgeMetricsSummary = document.getElementById('bridge-metrics-summary');
 const bridgeMetricsRecent = document.getElementById('bridge-metrics-recent');
 const stageLatencySummary = document.getElementById('stage-latency-summary');
 const stageLatencyRecent = document.getElementById('stage-latency-recent');
+const workerStatusList = document.getElementById('worker-status-list');
 const memoryEventsList = document.getElementById('memory-events-list');
 const toastContainer = document.getElementById('toast-container');
 let lastBridgeToast = 0;
@@ -67,6 +68,7 @@ setInterval(updateBusMetricsPanel, 20_000);
 setInterval(updateBridgeMetricsPanel, 20_000);
 setInterval(updateStageLatencyPanel, 25_000);
 setInterval(updateMemoryEventsPanel, 25_000);
+setInterval(updateWorkerStatusPanel, 25_000);
 updateResourcePanel();
 updateMemorySummary();
 updatePlanPanel();
@@ -75,6 +77,7 @@ updateBusMetricsPanel();
 updateBridgeMetricsPanel();
 updateStageLatencyPanel();
 updateMemoryEventsPanel();
+updateWorkerStatusPanel();
 
 const refreshMemoryBtn = document.getElementById('refresh-memory-btn');
 if (refreshMemoryBtn) {
@@ -263,6 +266,31 @@ async function updateStageLatencyPanel() {
         if (stageLatencySummary) {
             stageLatencySummary.textContent = 'Error cargando latencias.';
         }
+    }
+}
+
+async function updateWorkerStatusPanel() {
+    if (!workerStatusList) return;
+    try {
+        const resp = await fetch('/api/worker_status');
+        if (!resp.ok) throw new Error('Worker status fetch failed');
+        const payload = await resp.json();
+        const workers = payload.workers || [];
+        workerStatusList.innerHTML = '';
+        if (!workers.length) {
+            workerStatusList.textContent = 'Sin datos de workers.';
+            return;
+        }
+        workers.forEach(item => {
+            const el = document.createElement('div');
+            el.className = 'worker-status-item';
+            const time = item.last_seen ? new Date(item.last_seen * 1000).toLocaleTimeString() : '—';
+            el.textContent = `${item.worker} · ${time}`;
+            workerStatusList.appendChild(el);
+        });
+    } catch (err) {
+        console.error('No se pudo cargar estado de workers', err);
+        workerStatusList.textContent = 'Error cargando estado.';
     }
 }
 

@@ -479,6 +479,13 @@ body {
     border-bottom: none;
 }
 
+.worker-status-item {
+    padding: 0.45rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
 .memory-events-item {
     padding: 0.5rem 0;
     border-bottom: 1px solid rgba(255,255,255,0.07);

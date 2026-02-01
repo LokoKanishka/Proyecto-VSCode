@@ -82,6 +82,11 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Dataset: script de descarga RICO con hash opcional: `scripts/rico_download.sh`, `docs/DATASETS.md`.
 - Replay: script para reemitir eventos por WS: `scripts/replay_events.py`.
 - CI: smoke headless mínimo: `scripts/ci_headless.sh`.
+- Healthcheck extendido + estado DB: `lucy_web/app.py`.
+- Estado de workers (last seen): `lucy_web/app.py`, `lucy_web/static/js/resources.js`, `lucy_web/templates/index.html`.
+- Logs: rotación simple por líneas: `scripts/rotate_logs.sh`.
+- Hands: safe mode por acción: `src/workers/hands_worker.py`.
+- Snapshots: retención por tamaño/cantidad: `src/memory/memory_manager.py`.
 
 ### Falta (prioriza en cada sesión)
 0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).

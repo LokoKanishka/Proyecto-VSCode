@@ -33,6 +33,7 @@ class Manager(BaseWorker):
         self._bridge_backpressure_until = 0.0
         self._worker_last_used: dict[str, float] = {}
         self._stage_started: dict[str, tuple[float, str, str]] = {}
+        self._worker_seen_last: dict[str, float] = {}
         self._register_worker_budgets()
         self.bus.subscribe("user_input", self.handle_user_input)
         self.bus.subscribe("broadcast", self.handle_broadcast_event)
@@ -43,6 +44,7 @@ class Manager(BaseWorker):
             worker_name = message.sender
             content = message.content
             logger.info("🧠 Manager recibió data de %s", worker_name)
+            self._log_worker_seen(worker_name)
             self._emit_stage_latency(message)
 
             self.resource_manager.mark_worker_idle(worker_name)
@@ -368,6 +370,18 @@ class Manager(BaseWorker):
                 {"worker": worker_id, "action": action, "elapsed_ms": elapsed_ms},
             )
         )
+
+    def _log_worker_seen(self, worker: str) -> None:
+        throttle = float(os.getenv("LUCY_WORKER_SEEN_THROTTLE_S", "30"))
+        now = time.time()
+        last = self._worker_seen_last.get(worker, 0.0)
+        if now - last < throttle:
+            return
+        self._worker_seen_last[worker] = now
+        try:
+            self.memory.log_event("worker_seen", {"worker": worker}, "current_session")
+        except Exception as exc:
+            logger.debug("No pude loguear worker_seen: %s", exc)
 
     def _get_worker_cooldown(self, worker_id: str) -> float:
         raw = os.getenv("LUCY_WORKER_COOLDOWN_S", "0")

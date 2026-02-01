@@ -311,6 +311,16 @@ class HandsWorker(BaseWorker):
         return best
 
     async def _maybe_confirm(self, msg: LucyMessage, action: str, payload: dict) -> bool:
+        if os.getenv("LUCY_HANDS_SAFE_MODE", "0").lower() in {"1", "true", "yes"}:
+            allow = os.getenv("LUCY_HANDS_SAFE_ACTIONS", "focus_window,scroll,type_text").lower()
+            allowed = {item.strip() for item in allow.split(",") if item.strip()}
+            if action not in allowed:
+                await self.send_response(
+                    msg,
+                    "Acción bloqueada por safe mode (requiere confirmación).",
+                    {"action": action, "payload": payload, "confirm_required": True},
+                )
+                return True
         if payload.get("confirm_only"):
             await self.send_response(
                 msg,

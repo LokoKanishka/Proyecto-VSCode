@@ -390,6 +390,31 @@ def get_stage_latency():
     return jsonify({"summary": summary, "events": events[-20:]})
 
 
+@app.route('/api/worker_status')
+def get_worker_status():
+    if not db_path.exists():
+        return jsonify({"workers": []})
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT details, timestamp FROM events WHERE type = ? ORDER BY timestamp DESC LIMIT 200",
+        ("worker_seen",),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    seen = {}
+    for details, ts in rows:
+        try:
+            payload = json.loads(details) if details else {}
+        except Exception:
+            payload = {}
+        worker = payload.get("worker")
+        if worker and worker not in seen:
+            seen[worker] = ts
+    workers = [{"worker": name, "last_seen": ts} for name, ts in seen.items()]
+    return jsonify({"workers": workers})
+
+
 @app.route('/api/memory_events')
 def get_memory_events():
     lines = _tail_lines(MEMORY_EVENTS_LOG, limit=25)
@@ -641,10 +666,13 @@ def handle_update_config(data):
 def api_health():
     """Simple health/status for web UI."""
     backend = "soundfile" if sf is not None else ("ffmpeg" if FFMPEG_BIN else "none")
+    db_ok = db_path.exists()
     return jsonify({
         "status": "ok" if orchestrator else "not_initialized",
         "audio_backend": backend,
         "model": getattr(orchestrator.llm, "model_name", None) if orchestrator else None,
+        "db_ok": db_ok,
+        "db_path": str(db_path),
     })
 
 if __name__ == '__main__':
