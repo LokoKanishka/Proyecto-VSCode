@@ -4,7 +4,9 @@ import logging
 import os
 import re
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 try:
     from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
@@ -23,6 +25,7 @@ except Exception:  # pragma: no cover
     HAS_BS4 = False
 
 from src.core.base_worker import BaseWorker
+from src.core.ray_manager import distill_dom_ray
 from src.core.types import LucyMessage, MessageType
 
 logger = logging.getLogger(__name__)
@@ -39,6 +42,8 @@ class BrowserWorker(BaseWorker):
         self.default_storage_state: Optional[str] = os.getenv("LUCY_BROWSER_STORAGE_STATE")
         self._distill_cache: Dict[str, Dict[str, Any]] = {}
         self._distill_ttl_s = float(os.getenv("LUCY_BROWSER_DISTILL_TTL_S", "120"))
+        self.state_dir = Path(os.getenv("LUCY_BROWSER_STATE_DIR", "cache/browser_states"))
+        self.state_dir.mkdir(parents=True, exist_ok=True)
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
@@ -97,6 +102,9 @@ class BrowserWorker(BaseWorker):
         fallback_vision = bool(message.data.get("fallback_vision", False))
         if not fallback_vision:
             fallback_vision = os.getenv("LUCY_BROWSER_AUTO_FALLBACK", "0").lower() in {"1", "true", "yes"}
+        storage_state = self._storage_state_for_url(message.data.get("url") or "")
+        final_html = ""
+        url = message.data.get("url")
         try:
             async with async_playwright() as pw:
                 browser, context = await self._launch_context(
@@ -131,6 +139,7 @@ class BrowserWorker(BaseWorker):
                         actions_log.append(f"eval({result})")
                     else:
                         actions_log.append(f"skip({action})")
+                final_html = await page.content()
                 if storage_state:
                     await context.storage_state(path=storage_state)
                 await context.close()
@@ -162,6 +171,9 @@ class BrowserWorker(BaseWorker):
         payload = {"log": actions_log}
         if extra_log:
             payload.update(extra_log)
+        if final_html:
+            payload["dom_access"] = await self._dom_access_summary(final_html, url)
+        payload["storage_state"] = storage_state
         await self.send_response(
             message,
             "Acciones ejecutadas correctamente.",
@@ -179,7 +191,7 @@ class BrowserWorker(BaseWorker):
 
         headless = message.data.get("headless", self.default_headless)
         user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
-        storage_state = message.data.get("storage_state", self.default_storage_state)
+        storage_state = self._storage_state_for_url(url)
         try:
             async with async_playwright() as pw:
                 browser, context = await self._launch_context(
@@ -191,12 +203,18 @@ class BrowserWorker(BaseWorker):
                 page = await context.new_page()
                 await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout_ms)
                 title = await page.title()
+                html = await page.content()
                 if storage_state:
                     await context.storage_state(path=storage_state)
                 await context.close()
                 if browser:
                     await browser.close()
-            await self.send_response(message, f"Abrí la URL: {title}", {"url": url, "title": title})
+            dom = await self._dom_access_summary(html, url)
+            await self.send_response(
+                message,
+                f"Abrí la URL: {title}",
+                {"url": url, "title": title, "dom_access": dom, "storage_state": storage_state},
+            )
         except Exception as exc:
             await self.send_error(message, f"No pude abrir la URL: {exc}")
 
@@ -284,6 +302,23 @@ class BrowserWorker(BaseWorker):
         browser = await pw.chromium.launch(headless=headless)
         context = await browser.new_context(storage_state=storage_state if storage_state else None)
         return browser, context
+
+    def _storage_state_for_url(self, url: str) -> Optional[str]:
+        if not url:
+            return str(self.state_dir / "default.json")
+        parsed = urlparse(url)
+        domain = parsed.netloc.replace(":", "_")
+        if not domain:
+            domain = "default"
+        return str(self.state_dir / f"{domain}.json")
+
+    async def _dom_access_summary(self, html: str, url: Optional[str]) -> Dict[str, Any]:
+        if not html:
+            return {"headings": [], "links": [], "tables": [], "url": url, "timestamp": time.time()}
+        distill = distill_dom_ray(html)
+        distill["url"] = url
+        distill["timestamp"] = time.time()
+        return distill
 
     async def _capture_state_payload(self, message: LucyMessage) -> Dict[str, Any]:
         """Captura estado en caso de error para fallback de visión."""

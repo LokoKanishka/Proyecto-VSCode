@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 from flask_socketio import SocketIO, emit
 import logging
 import asyncio
@@ -14,6 +14,7 @@ import wave
 import shutil
 from collections import defaultdict, deque
 from pathlib import Path
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 # Add parent directory to path to import lucy_voice
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -407,6 +408,12 @@ def get_stage_latency():
     events = _load_stage_latency(limit=200)
     summary = _summarize_stage_latency(events)
     return jsonify({"summary": summary, "events": events[-20:]})
+
+
+@app.route('/metrics')
+def metrics():
+    data = generate_latest()
+    return Response(data, mimetype=CONTENT_TYPE_LATEST)
 
 
 @app.route('/api/worker_status')

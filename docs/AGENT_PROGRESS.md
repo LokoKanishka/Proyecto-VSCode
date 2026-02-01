@@ -26,6 +26,8 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Manager ahora puede priorizar interrupciones y aplicar budget básico por worker: `src/core/manager.py`.
 - Pipeline de visión avanzado (OCR + YOLO opcional) integrado en VisionWorker: `src/vision/vision_pipeline.py`, `src/workers/vision_worker.py`.
 - BrowserWorker ahora soporta contexto persistente, captura de estado y snapshot accesible: `src/workers/browser_worker.py`.
+- BrowserAgent documentado con DOM distillation + storage state + Ray: `docs/BROWSER-AGENT.md`, `src/workers/browser_worker.py`.
+- BrowserWorker con DOM distillation via Ray y estados persistentes por dominio: `src/workers/browser_worker.py`, `src/core/ray_manager.py`.
 - Fallback browser → visión conectado (solo screenshot/headless): `src/workers/browser_worker.py`, `src/core/manager.py`, `src/workers/vision_worker.py`.
 - Audio en swarm (Ear/Mouth) integrado y activable por env: `src/workers/ear_worker.py`, `src/workers/mouth_worker.py`, `src/engine/swarm_runner.py`.
 - Planner ToT con LLM + persistencia del árbol en DB: `src/planners/tree_of_thought_llm.py`, `src/core/manager.py`, `src/memory/memory_manager.py`.
@@ -77,6 +79,7 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Memoria: cache persistente de embeddings con invalidación por hash: `src/memory/memory_manager.py`.
 - VS Code WS: reintentos con backoff + buffer offline: `src/workers/vscode_worker.py`.
 - Telemetría: evento `stage_latency` por etapa en Manager: `src/core/manager.py`.
+- Prometheus: `/metrics` endpoint y histogramas para latencias/DOM tasks: `lucy_web/app.py`, `src/metrics/prometheus_metrics.py`, `src/core/manager.py`.
 - Focus ventanas: retry + verificación de ventana activa: `src/vision/desktop_controller.py`.
 - Browser: resumen destilado incluye URL como fuente en prompt: `src/core/manager.py`.
 - UI/API: panel de latencia por etapa y endpoint `/api/stage_latency`: `lucy_web/app.py`, `lucy_web/static/js/resources.js`, `lucy_web/templates/index.html`, `docs/LUCY-WEB-API.md`.

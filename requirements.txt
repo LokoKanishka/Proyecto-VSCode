@@ -36,3 +36,5 @@ pytesseract
 opencv-python
 ultralytics
 faiss-cpu
+ray>=2.5.0
+prometheus-client>=0.18.0

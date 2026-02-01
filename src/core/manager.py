@@ -12,6 +12,7 @@ from src.core.types import LucyMessage, MessageType, WorkerType, MemoryEntry
 from src.memory.memory_manager import MemoryManager
 from src.planners.tree_of_thought import TreeOfThoughtPlanner, PlanStep
 from src.resources.resource_manager import ResourceManager
+from src.metrics.prometheus_metrics import STAGE_LATENCY_HISTOGRAM
 
 logger = logging.getLogger(__name__)
 
@@ -370,6 +371,10 @@ class Manager(BaseWorker):
                 {"worker": worker_id, "action": action, "elapsed_ms": elapsed_ms},
             )
         )
+        try:
+            STAGE_LATENCY_HISTOGRAM.observe(elapsed_ms)
+        except Exception:
+            pass
 
     def _log_worker_seen(self, worker: str) -> None:
         throttle = float(os.getenv("LUCY_WORKER_SEEN_THROTTLE_S", "30"))
