@@ -37,6 +37,7 @@ try:
 except Exception:
     yaml = None
 
+from src.engine.lora_manager import LoraManager
 
 class SwarmManager:
     def __init__(
@@ -78,6 +79,7 @@ class SwarmManager:
         )
         self.timeout_s = timeout_s
         self._active_profile: Optional[str] = None
+        self.lora = LoraManager()
 
         logger.info(
             "🧠 SwarmManager listo (host={}, main={}, vision={}, persistente={})",
@@ -178,6 +180,15 @@ class SwarmManager:
         model = getattr(self, "worker_profiles", {}).get(worker)
         if model:
             self.load_model(model)
+
+    def register_lora(self, name: str, path: str) -> None:
+        self.lora.register(name, path)
+
+    def activate_lora(self, name: str) -> bool:
+        return self.lora.activate(name)
+
+    def deactivate_lora(self) -> None:
+        self.lora.deactivate()
 
     @staticmethod
     def _load_config(config_path: str) -> Dict[str, Any]:
