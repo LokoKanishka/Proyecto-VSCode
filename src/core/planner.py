@@ -25,6 +25,10 @@ class PlannerActor:
         
         self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         logger.info(f"🧠 Planner connected to LLM at {base_url} (Model: {self.model_name})")
+        
+        # Load Skills
+        from src.skills.business_tools import BusinessTools
+        self.business_tools = BusinessTools()
 
     async def plan(self, goal: str) -> List[str]:
         """
@@ -93,7 +97,10 @@ class PlannerActor:
         Quick evaluation if we need to plan or just chat.
         """
         # Simple heuristic for now, can be upgraded to LLM call
-        if any(keyword in user_input.lower() for keyword in ["abrir", "open", "ejecutar", "run", "click", "type", "search", "buscar"]):
+        keywords = ["abrir", "open", "ejecutar", "run", "click", "type", "search", "buscar", 
+                   "calcular", "calculate", "presupuesto", "quote", "payment", "pago", "status", "envio", "shipping"]
+        
+        if any(keyword in user_input.lower() for keyword in keywords):
             return "PLAN"
         return "CHAT"
 
@@ -113,6 +120,9 @@ class PlannerActor:
         - Action: Type 'text'
         - Action: Press Enter
         - Action: Press Key (e.g. Return, BackSpace, Tab)
+        - Tool: ShippingCalculator.calculate_shipping(destination, weight_kg)
+        - Tool: PaymentStatus.check_payment_status(order_id)
+        - Tool: PDFGenerator.generate_quote_pdf(items, customer_name)
         
         Propose {k} distinct, valid NEXT single actions to advance towards the goal.
         Return ONLY valid JSON list of strings.
