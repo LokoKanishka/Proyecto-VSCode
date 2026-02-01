@@ -70,6 +70,13 @@ class SwarmRunner:
                 profiles[WorkerType.CHAT.value] = os.getenv("LUCY_WORKER_MODEL_CHAT")
             if profiles:
                 swarm_manager.set_worker_profiles(profiles)
+            lora_specs = os.getenv("LUCY_LORA_SPECS", "")
+            if lora_specs:
+                for item in lora_specs.split(";"):
+                    if "=" not in item:
+                        continue
+                    name, path = item.split("=", 1)
+                    swarm_manager.register_lora(name.strip(), path.strip())
         self.manager = Manager(self.bus, self.memory, planner=planner, swarm=swarm_manager)
         self.workers = [
             SearchWorker(WorkerType.SEARCH, self.bus),

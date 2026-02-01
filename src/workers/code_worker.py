@@ -199,19 +199,36 @@ class CodeWorker(BaseWorker):
     def _generate_code_with_llm(self, prompt: str) -> Tuple[str, dict]:
         model = os.getenv("LUCY_CODE_MODEL", "qwen2.5:14b")
         host = os.getenv("LUCY_OLLAMA_HOST", "http://localhost:11434")
+        use_vllm = os.getenv("LUCY_CODE_USE_VLLM", "0") in {"1", "true", "yes"}
+        vllm_url = os.getenv("LUCY_VLLM_URL", "http://localhost:8000")
+        vllm_model = os.getenv("LUCY_VLLM_MODEL", "qwen2.5-32b")
         system = (
             "Sos un asistente de programación. Responde SOLO con el código solicitado, "
             "sin explicaciones ni markdown."
         )
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            "stream": False,
-        }
         try:
+            if use_vllm:
+                payload = {
+                    "model": vllm_model,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 512,
+                }
+                response = requests.post(f"{vllm_url}/v1/chat/completions", json=payload, timeout=25)
+                response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"]
+                return content, {"model": "vllm"}
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+            }
             response = requests.post(f"{host}/api/chat", json=payload, timeout=25)
             response.raise_for_status()
             content = response.json().get("message", {}).get("content", "")
