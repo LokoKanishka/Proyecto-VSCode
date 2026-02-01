@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -23,6 +24,11 @@ class VSCodeWorker(BaseWorker):
         super().__init__(worker_id, bus)
         self.ws_url = os.getenv("LUCY_VSCODE_WS", "ws://127.0.0.1:8765")
         self.prefer_ws = os.getenv("LUCY_VSCODE_WS_ENABLED", "1").lower() in {"1", "true", "yes"}
+        self._ws_backlog = []
+        self._ws_backlog_max = int(os.getenv("LUCY_VSCODE_WS_BACKLOG_MAX", "50"))
+        self._ws_retries = int(os.getenv("LUCY_VSCODE_WS_RETRIES", "3"))
+        self._ws_backoff_s = float(os.getenv("LUCY_VSCODE_WS_BACKOFF_S", "0.5"))
+        self._ws_buffer = os.getenv("LUCY_VSCODE_WS_BUFFER", "1").lower() in {"1", "true", "yes"}
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
@@ -179,10 +185,42 @@ class VSCodeWorker(BaseWorker):
             raise RuntimeError("Falta dependencia websockets.")
         url = args.pop("ws_url", None) or self.ws_url
         payload = {"type": "command", "action": action, "args": args}
-        async with websockets.connect(url) as ws:
-            await ws.send(json.dumps(payload))
-            raw = await ws.recv()
-        data = json.loads(raw)
-        if data.get("type") == "error":
-            raise RuntimeError(data.get("error", "Error desconocido"))
-        return data.get("result")
+        try:
+            return await self._ws_send_with_retries(url, payload)
+        except Exception as exc:
+            if self._ws_buffer:
+                self._enqueue_ws(payload)
+                raise RuntimeError(f"WS offline, comando en cola: {exc}")
+            raise
+
+    async def _ws_send_with_retries(self, url: str, payload: dict):
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, self._ws_retries + 1):
+            try:
+                async with websockets.connect(url) as ws:
+                    await self._flush_backlog(ws)
+                    await ws.send(json.dumps(payload))
+                    raw = await ws.recv()
+                data = json.loads(raw)
+                if data.get("type") == "error":
+                    raise RuntimeError(data.get("error", "Error desconocido"))
+                return data.get("result")
+            except Exception as exc:
+                last_exc = exc
+                if attempt < self._ws_retries:
+                    await asyncio.sleep(self._ws_backoff_s * attempt)
+        raise last_exc or RuntimeError("WS no disponible")
+
+    async def _flush_backlog(self, ws):
+        if not self._ws_backlog:
+            return
+        pending = list(self._ws_backlog)
+        self._ws_backlog.clear()
+        for item in pending:
+            await ws.send(json.dumps(item))
+            await ws.recv()
+
+    def _enqueue_ws(self, payload: dict) -> None:
+        self._ws_backlog.append(payload)
+        if len(self._ws_backlog) > self._ws_backlog_max:
+            self._ws_backlog = self._ws_backlog[-self._ws_backlog_max:]
