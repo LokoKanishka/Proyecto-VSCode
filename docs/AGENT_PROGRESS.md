@@ -65,7 +65,7 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - E2E bridge multi-nodo (in-process): `tests/test_ws_bridge_multi.py`.
 - Docs: `docs/SWARM_DISTRIBUTED.md` y `docs/DEPLOY_CHECKLIST.md`.
 - Tests: backup requiere cifrado si `LUCY_BACKUP_REQUIRE_ENCRYPTION=1`: `tests/test_memory_manager.py`.
-- Smoke remoto multi-host: `scripts/bridge_remote_smoke.sh`.
+- Smoke remoto multi-host: `scripts/bridge_remote_smoke.sh` (ejecutado en local).
 - Fix: import `os` en Manager para throttling de eventos: `src/core/manager.py`.
 
 ### Falta (prioriza en cada sesión)
