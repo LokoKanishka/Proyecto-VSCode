@@ -3,6 +3,7 @@ import base64
 import logging
 import os
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 try:
@@ -36,6 +37,8 @@ class BrowserWorker(BaseWorker):
         self.default_timeout_ms = 12000
         self.default_user_data_dir: Optional[str] = os.getenv("LUCY_BROWSER_PROFILE")
         self.default_storage_state: Optional[str] = os.getenv("LUCY_BROWSER_STORAGE_STATE")
+        self._distill_cache: Dict[str, Dict[str, Any]] = {}
+        self._distill_ttl_s = float(os.getenv("LUCY_BROWSER_DISTILL_TTL_S", "120"))
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
@@ -335,6 +338,14 @@ class BrowserWorker(BaseWorker):
         if not url:
             await self.send_error(message, "Necesito una URL para destilar.")
             return
+        cached = self._get_distill_cache(url)
+        if cached:
+            await self.send_response(
+                message,
+                "Contenido destilado (cache).",
+                {**cached, "url": url, "action": "distill_url", "cached": True},
+            )
+            return
         headless = message.data.get("headless", self.default_headless)
         user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
         storage_state = message.data.get("storage_state", self.default_storage_state)
@@ -356,6 +367,7 @@ class BrowserWorker(BaseWorker):
                 await context.close()
                 if browser:
                     await browser.close()
+            self._set_distill_cache(url, distilled, dom_summary)
             await self.send_response(
                 message,
                 "Contenido destilado.",
@@ -365,6 +377,7 @@ class BrowserWorker(BaseWorker):
                     "distilled_len": len(distilled),
                     "dom_summary": dom_summary,
                     "action": "distill_url",
+                    "cached": False,
                 },
             )
         except Exception as exc:
@@ -548,3 +561,28 @@ class BrowserWorker(BaseWorker):
     def _clean_text(text: str) -> str:
         text = re.sub(r"\s+", " ", text or "")
         return text.strip()
+
+    def _get_distill_cache(self, url: str) -> Optional[Dict[str, Any]]:
+        if self._distill_ttl_s <= 0:
+            return None
+        cached = self._distill_cache.get(url)
+        if not cached:
+            return None
+        if time.time() - cached["ts"] > self._distill_ttl_s:
+            self._distill_cache.pop(url, None)
+            return None
+        return {
+            "distilled_text": cached["distilled_text"],
+            "distilled_len": cached["distilled_len"],
+            "dom_summary": cached["dom_summary"],
+        }
+
+    def _set_distill_cache(self, url: str, distilled: str, dom_summary: Dict[str, Any]) -> None:
+        if self._distill_ttl_s <= 0:
+            return
+        self._distill_cache[url] = {
+            "ts": time.time(),
+            "distilled_text": distilled[:12000],
+            "distilled_len": len(distilled),
+            "dom_summary": dom_summary,
+        }

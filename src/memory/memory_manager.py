@@ -203,7 +203,25 @@ class MemoryManager:
             VALUES (?, ?, ?, ?, ?)
         ''', (str(uuid.uuid4()), time.time(), event_type, json.dumps(details), session_id))
         conn.commit()
+        self._prune_events(conn)
         conn.close()
+
+    def _prune_events(self, conn: sqlite3.Connection) -> None:
+        """Aplica retención y límites de tamaño sobre la tabla events."""
+        retention_days = float(os.getenv("LUCY_EVENTS_RETENTION_DAYS", "30"))
+        max_rows = int(os.getenv("LUCY_EVENTS_MAX_ROWS", "20000"))
+        cursor = conn.cursor()
+        if retention_days > 0:
+            cutoff = time.time() - (retention_days * 86400)
+            cursor.execute("DELETE FROM events WHERE timestamp < ?", (cutoff,))
+        if max_rows > 0:
+            cursor.execute(
+                "DELETE FROM events WHERE id IN ("
+                "SELECT id FROM events ORDER BY timestamp DESC LIMIT -1 OFFSET ?"
+                ")",
+                (max_rows,),
+            )
+        conn.commit()
 
     def retrieve_relevant(self, query: str, k: int = 5) -> List[Dict[str, str]]:
         """Recupera recuerdos semánticos similares a la consulta."""

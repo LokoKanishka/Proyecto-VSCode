@@ -67,6 +67,9 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Tests: backup requiere cifrado si `LUCY_BACKUP_REQUIRE_ENCRYPTION=1`: `tests/test_memory_manager.py`.
 - Smoke remoto multi-host: `scripts/bridge_remote_smoke.sh` (ejecutado en local).
 - Fix: import `os` en Manager para throttling de eventos: `src/core/manager.py`.
+- Memoria: pruning configurable de eventos por retención/tamaño: `src/memory/memory_manager.py`.
+- Browser: cache TTL para `distill_url`: `src/workers/browser_worker.py`.
+- Hands: modo `confirm_only` / `LUCY_HANDS_CONFIRM` para acciones: `src/workers/hands_worker.py`.
 
 ### Falta (prioriza en cada sesión)
 0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).

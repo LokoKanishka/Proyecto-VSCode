@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from typing import Optional
 
 from src.core.base_worker import BaseWorker
@@ -60,6 +61,8 @@ class HandsWorker(BaseWorker):
             await self.send_error(message, f"Comando desconocido: {command}")
 
     async def _handle_click_grid(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "click_grid", payload):
+            return
         raw_code = payload.get("grid_code")
         code = raw_code.upper() if isinstance(raw_code, str) else None
         button = payload.get("button", "left")
@@ -101,6 +104,8 @@ class HandsWorker(BaseWorker):
             )
 
     async def _handle_type(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "type_text", payload):
+            return
         text = payload.get("text") or msg.content
         if not text:
             await self.send_error(msg, "No recibí texto para escribir.")
@@ -113,6 +118,8 @@ class HandsWorker(BaseWorker):
             await self.send_error(msg, f"No pude escribir: {exc}")
 
     async def _handle_hotkey(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "press_hotkey", payload):
+            return
         keys = payload.get("keys")
         if not keys:
             await self.send_error(msg, "No recibí la combinación de teclas.")
@@ -125,6 +132,8 @@ class HandsWorker(BaseWorker):
             await self.send_error(msg, f"Error al presionar {keys}: {exc}")
 
     async def _handle_paste_text(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "paste_text", payload):
+            return
         text = payload.get("text")
         if not text:
             await self.send_error(msg, "No recibí texto para pegar.")
@@ -143,6 +152,8 @@ class HandsWorker(BaseWorker):
             await self.send_error(msg, f"No pude pegar: {exc}")
 
     async def _handle_click_bbox(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "click_bbox", payload):
+            return
         bbox = payload.get("bbox")
         if not bbox or len(bbox) != 4:
             await self.send_error(msg, "Se requiere bbox [x,y,w,h].")
@@ -157,6 +168,8 @@ class HandsWorker(BaseWorker):
             await self.send_error(msg, f"Error click_bbox: {exc}")
 
     async def _handle_focus_window(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "focus_window", payload):
+            return
         title = payload.get("title")
         if not title:
             await self.send_error(msg, "Se requiere title para enfocar.")
@@ -168,6 +181,8 @@ class HandsWorker(BaseWorker):
             await self.send_error(msg, "No pude enfocar la ventana.")
 
     async def _handle_click_element(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "click_element", payload):
+            return
         elements = payload.get("elements") or []
         query = (payload.get("query") or "").strip()
         element_type = (payload.get("element_type") or "").strip().lower()
@@ -216,6 +231,8 @@ class HandsWorker(BaseWorker):
             await self.send_error(msg, f"Error click_element: {exc}")
 
     async def _handle_focus_and_type(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "focus_and_type", payload):
+            return
         elements = payload.get("elements") or []
         text = payload.get("text") or ""
         if not elements or not text:
@@ -240,6 +257,8 @@ class HandsWorker(BaseWorker):
             await self.send_error(msg, f"Error focus_and_type: {exc}")
 
     async def _handle_scroll(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "scroll", payload):
+            return
         clicks = int(payload.get("clicks", -300))
         try:
             self.controller.scroll(clicks)
@@ -248,6 +267,8 @@ class HandsWorker(BaseWorker):
             await self.send_error(msg, f"Error scroll: {exc}")
 
     async def _handle_drag_element(self, msg: LucyMessage, payload: dict):
+        if await self._maybe_confirm(msg, "drag_element", payload):
+            return
         elements = payload.get("elements") or []
         dx = int(payload.get("dx", 0))
         dy = int(payload.get("dy", 0))
@@ -288,3 +309,20 @@ class HandsWorker(BaseWorker):
                 best_score = score
                 best = el
         return best
+
+    async def _maybe_confirm(self, msg: LucyMessage, action: str, payload: dict) -> bool:
+        if payload.get("confirm_only"):
+            await self.send_response(
+                msg,
+                "Acción pendiente de confirmación.",
+                {"action": action, "payload": payload, "confirm_required": True},
+            )
+            return True
+        if os.getenv("LUCY_HANDS_CONFIRM", "0").lower() in {"1", "true", "yes"}:
+            await self.send_response(
+                msg,
+                "Acción pendiente de confirmación.",
+                {"action": action, "payload": payload, "confirm_required": True},
+            )
+            return True
+        return False
