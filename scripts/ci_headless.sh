@@ -12,6 +12,6 @@ export LUCY_SWARM_CONSOLE=0
 PY_BIN="${PY_BIN:-python3}"
 
 echo "🧪 CI headless: tests clave"
-"${PY_BIN}" -m pytest tests/test_swarm_e2e_pipeline.py tests/test_ws_bridge_multi.py -q
+"${PY_BIN}" -m pytest tests/test_swarm_e2e_pipeline.py tests/test_ws_bridge_multi.py tests/test_web_api.py tests/test_browser_dom_summary.py -q
 
 echo "✅ CI headless OK"

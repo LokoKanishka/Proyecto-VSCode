@@ -204,6 +204,9 @@ class HandsWorker(BaseWorker):
         if not selected:
             await self.send_error(msg, "No encontré un elemento que coincida.")
             return
+        if not self._verify_element(selected, payload):
+            await self.send_error(msg, "Elemento no cumple verificación estricta.")
+            return
 
         bbox = selected.get("bbox")
         if not bbox or len(bbox) != 4:
@@ -242,6 +245,9 @@ class HandsWorker(BaseWorker):
         if not selected:
             await self.send_error(msg, "No encontré elemento para focus.")
             return
+        if not self._verify_element(selected, payload):
+            await self.send_error(msg, "Elemento no cumple verificación estricta.")
+            return
         bbox = selected.get("bbox")
         if not bbox:
             await self.send_error(msg, "Elemento sin bbox.")
@@ -279,6 +285,9 @@ class HandsWorker(BaseWorker):
         if not selected:
             await self.send_error(msg, "No encontré elemento para drag.")
             return
+        if not self._verify_element(selected, payload):
+            await self.send_error(msg, "Elemento no cumple verificación estricta.")
+            return
         bbox = selected.get("bbox")
         if not bbox:
             await self.send_error(msg, "Elemento sin bbox.")
@@ -309,6 +318,24 @@ class HandsWorker(BaseWorker):
                 best_score = score
                 best = el
         return best
+
+    @staticmethod
+    def _verify_element(element: dict, payload: dict) -> bool:
+        if not payload.get("verify_strict"):
+            return True
+        expected_text = (payload.get("verify_text") or payload.get("query") or "").strip().lower()
+        expected_type = (payload.get("verify_type") or payload.get("element_type") or "").strip().lower()
+        expected_source = (payload.get("verify_source") or "").strip().lower()
+        text = (element.get("text") or "").strip().lower()
+        etype = (element.get("type") or "").strip().lower()
+        source = (element.get("source") or "").strip().lower()
+        if expected_text and expected_text not in text:
+            return False
+        if expected_type and expected_type != etype:
+            return False
+        if expected_source and expected_source != source:
+            return False
+        return True
 
     async def _maybe_confirm(self, msg: LucyMessage, action: str, payload: dict) -> bool:
         if os.getenv("LUCY_HANDS_SAFE_MODE", "0").lower() in {"1", "true", "yes"}:

@@ -90,6 +90,10 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Web: rate limiting simple por IP: `lucy_web/app.py`.
 - WS: límite de payload configurable: `src/core/ws_gateway.py`.
 - Snapshots: retención por antigüedad (metadata timestamp): `src/memory/memory_manager.py`.
+- Golden traces: export/compare de eventos: `scripts/event_trace_export.py`, `scripts/event_trace_compare.py`.
+- Profiling: CPU/GPU session profiler: `scripts/profile_session.py`.
+- Hands: verificación estricta de UIElement: `src/workers/hands_worker.py`.
+- CI: headless extendido con más tests: `scripts/ci_headless.sh`.
 
 ### Falta (prioriza en cada sesión)
 0) **Pendiente menor**: ejecutar `scripts/bridge_remote_smoke.sh` en hosts reales (multi-host).
