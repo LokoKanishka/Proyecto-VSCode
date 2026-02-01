@@ -6,6 +6,7 @@ import tempfile
 import sys
 import shutil
 from typing import List, Optional, Tuple
+import asyncio
 import requests
 
 from src.core.base_worker import BaseWorker
@@ -66,6 +67,9 @@ class CodeWorker(BaseWorker):
                 f"Fibonacci(10) = {sequence[-1]} | Serie: {sequence}",
                 {"script": prompt, "mode": "simulated"},
             )
+
+        if normalized.startswith("write_file:"):
+            return self._handle_write_file(prompt)
 
         code = prompt
         if not code:
@@ -235,6 +239,41 @@ class CodeWorker(BaseWorker):
             return content, {"model": model}
         except Exception as exc:
             return f"Error generando código: {exc}", {"model": model, "error": str(exc)}
+
+    def _handle_write_file(self, prompt: str) -> Tuple[str, dict]:
+        if "::" not in prompt:
+            return ("Formato inválido. Usá write_file:PATH::CONTENIDO", {"error": "bad_format"})
+        _, path_and_body = prompt.split(":", 1)
+        if "::" not in path_and_body:
+            return ("Formato inválido. Usá write_file:PATH::CONTENIDO", {"error": "bad_format"})
+        path, body = path_and_body.split("::", 1)
+        path = path.strip()
+        if not path:
+            return ("Path vacío en write_file.", {"error": "bad_path"})
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(body)
+            if os.getenv("LUCY_SNAPSHOT_ON_WRITE", "0").lower() in {"1", "true", "yes"}:
+                try:
+                    from src.core.types import LucyMessage, MessageType, WorkerType
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
+                        self.bus.publish(
+                            LucyMessage(
+                                sender=self.worker_id,
+                                receiver=WorkerType.MEMORY,
+                                type=MessageType.COMMAND,
+                                content="snapshot_files",
+                                data={"paths": [path], "metadata": {"source": "code_worker"}},
+                            )
+                        )
+                    )
+                except Exception:
+                    pass
+            return (f"Archivo escrito en {path}.", {"path": path, "mode": "write_file"})
+        except Exception as exc:
+            return (f"No pude escribir archivo: {exc}", {"error": str(exc)})
 
     def _load_snippets(self) -> List[dict]:
         path = os.getenv("LUCY_SNIPPETS_PATH", "snippets/snippets.json")

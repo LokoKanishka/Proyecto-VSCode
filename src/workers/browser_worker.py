@@ -241,6 +241,7 @@ class BrowserWorker(BaseWorker):
                 screenshot = await page.screenshot(full_page=True)
                 html = await page.content()
                 distilled = self._distill_html(html)
+                dom_summary = self._distill_dom(html)
                 accessibility = None
                 if message.data.get("accessibility"):
                     try:
@@ -258,6 +259,7 @@ class BrowserWorker(BaseWorker):
                 "html": html[:20000],
                 "distilled_text": distilled[:8000] if distilled else "",
                 "distilled_len": len(distilled) if distilled else 0,
+                "dom_summary": dom_summary,
                 "accessibility": accessibility,
             }
             await self.send_response(message, "Estado capturado.", payload)
@@ -297,6 +299,7 @@ class BrowserWorker(BaseWorker):
                 screenshot = await page.screenshot(full_page=True)
                 html = await page.content()
                 distilled = self._distill_html(html)
+                dom_summary = self._distill_dom(html)
                 accessibility = None
                 try:
                     accessibility = await page.accessibility.snapshot()
@@ -313,6 +316,7 @@ class BrowserWorker(BaseWorker):
                 "html": html[:20000],
                 "distilled_text": distilled[:8000] if distilled else "",
                 "distilled_len": len(distilled) if distilled else 0,
+                "dom_summary": dom_summary,
                 "accessibility": accessibility,
             }
         except Exception as exc:
@@ -341,6 +345,7 @@ class BrowserWorker(BaseWorker):
                 await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout_ms)
                 html = await page.content()
                 distilled = self._distill_html(html)
+                dom_summary = self._distill_dom(html)
                 if storage_state:
                     await context.storage_state(path=storage_state)
                 await context.close()
@@ -353,6 +358,7 @@ class BrowserWorker(BaseWorker):
                     "url": url,
                     "distilled_text": distilled[:12000],
                     "distilled_len": len(distilled),
+                    "dom_summary": dom_summary,
                     "action": "distill_url",
                 },
             )
@@ -447,6 +453,34 @@ class BrowserWorker(BaseWorker):
             except Exception:
                 pass
         return self._clean_text(re.sub(r"<[^>]+>", " ", html))
+
+    def _distill_dom(self, html: str) -> Dict[str, Any]:
+        if not (html and HAS_BS4):
+            return {"links": [], "buttons": [], "inputs": [], "headings": []}
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.extract()
+        def _summarize(node, attrs: List[str]) -> Dict[str, Any]:
+            return {
+                "text": self._clean_text(node.get_text(" ") or "")[:160],
+                **{attr: node.get(attr) for attr in attrs if node.get(attr)},
+            }
+        links = [_summarize(a, ["href", "aria-label", "title"]) for a in soup.select("a")][:40]
+        buttons = [_summarize(b, ["aria-label", "title", "type"]) for b in soup.select("button")][:40]
+        inputs = [_summarize(i, ["name", "placeholder", "type", "aria-label"]) for i in soup.select("input, textarea, select")][:40]
+        headings = [_summarize(h, []) for h in soup.select("h1, h2, h3")][:20]
+        return {
+            "links": links,
+            "buttons": buttons,
+            "inputs": inputs,
+            "headings": headings,
+            "counts": {
+                "links": len(links),
+                "buttons": len(buttons),
+                "inputs": len(inputs),
+                "headings": len(headings),
+            },
+        }
 
     @staticmethod
     def _clean_text(text: str) -> str:

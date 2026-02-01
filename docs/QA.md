@@ -34,4 +34,5 @@ Próximo paso recomendado: ...
 - Siempre revisar `reports/smoke_summary.md` después de un smoke.
 - Si falla `skyscanner_smoke.sh`, probar `SKYSCANNER_SMOKE=0` y ver `logs/skyscanner_smoke.log`.
 - Para problemas de audio, correr `scripts/check_voice_pipeline.sh`.
+- En Ubuntu, si `python` no existe, usar `python3` o instalar alias: `sudo apt install python-is-python3`.
 - Agregar pruebas de integración que validen los nuevos watchers (GPU/ventanas), el resumen automático de `MemoryManager` y la orquestación Browser→Vision→Hands para un pedido complejo de YouTube.

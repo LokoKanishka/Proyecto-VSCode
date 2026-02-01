@@ -4,8 +4,12 @@ set -e
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONPATH="${ROOT_DIR}"
 
-MODE="${LUCY_MODE:-gui}"
+MODE="${LUCY_MODE:-swarm}"
 PY_BIN="${PY_BIN:-python3}"
+
+if [ "${MODE}" = "swarm" ] && [ -z "${LUCY_SWARM_CONSOLE}" ]; then
+    export LUCY_SWARM_CONSOLE=1
+fi
 
 echo "🚀 Verificando sintaxis..."
 if "${PY_BIN}" -m py_compile src/engine/voice_bridge.py; then

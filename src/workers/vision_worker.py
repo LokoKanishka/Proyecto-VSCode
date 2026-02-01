@@ -3,6 +3,7 @@ import base64
 import io
 import time
 import json
+import os
 from typing import Tuple, Dict, Any
 
 try:
@@ -68,8 +69,15 @@ class VisionWorker(BaseWorker):
     def __init__(self, worker_id, bus):
         super().__init__(worker_id, bus)
         self.eye = ScreenEye()
-        self.model = "llava"
-        self.pipeline = VisionPipeline()
+        self.model = os.getenv("LUCY_VISION_MODEL", "llava")
+        yolo_model = os.getenv("LUCY_YOLO_MODEL")
+        sam_ckpt = os.getenv("LUCY_SAM_CHECKPOINT")
+        sam_type = os.getenv("LUCY_SAM_MODEL_TYPE", "vit_h")
+        self.pipeline = VisionPipeline(
+            yolo_model_path=yolo_model,
+            sam_checkpoint=sam_ckpt,
+            sam_model_type=sam_type,
+        )
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
@@ -82,6 +90,11 @@ class VisionWorker(BaseWorker):
         elif command == "analyze_image":
             prompt = message.data.get("prompt", "Describe qué ves en la imagen.")
             await self.analyze_image(message, prompt)
+        elif command == "analyze_som":
+            prompt = message.data.get("prompt", "Describe qué ves en la pantalla.")
+            message.data["advanced"] = True
+            message.data["som"] = True
+            await self.analyze_screen(message, prompt)
         else:
             await self.send_error(message, f"Comando desconocido: {command}")
 
@@ -93,6 +106,7 @@ class VisionWorker(BaseWorker):
         grid_hint = "E5"
         extra: Dict[str, Any] = {"meta": meta}
         use_advanced = bool(original_msg.data.get("advanced", False))
+        include_som = bool(original_msg.data.get("som", False))
 
         try:
             if not HAS_VISION_LIBS:
@@ -108,6 +122,8 @@ class VisionWorker(BaseWorker):
                 ]
                 extra["ocr_count"] = analysis.get("ocr_count")
                 extra["detector_count"] = analysis.get("detector_count")
+                if include_som:
+                    extra["som"] = analysis.get("som")
             logger.info(f"🧠 Consultando a {self.model}...")
             response = ollama.chat(
                 model=self.model,

@@ -5,7 +5,7 @@ import signal
 from typing import List, Optional
 
 from src.core.bus import EventBus
-from src.core.types import WorkerType
+from src.core.types import LucyMessage, MessageType, WorkerType
 from src.memory.memory_manager import MemoryManager
 from src.memory.vector_store import EmbeddedMemory
 from src.resources.resource_manager import ResourceManager
@@ -38,6 +38,7 @@ from lucy_voice.config import LucyConfig
 from lucy_voice.pipeline.audio import AudioCaptureGate
 from src.core.ws_gateway import WebSocketGateway
 from src.core.remote_worker import RemoteWorkerProxy
+from src.core.ws_bus_bridge import WSBusBridge
 
 logger = logging.getLogger(__name__)
 
@@ -111,8 +112,11 @@ class SwarmRunner:
         self.watcher_tasks: List[asyncio.Task] = []
         self.bus_task: Optional[asyncio.Task] = None
         self.audio_tasks: List[asyncio.Task] = []
+        self.console_task: Optional[asyncio.Task] = None
         self.ws_gateway: Optional[WebSocketGateway] = None
+        self.ws_bridge: Optional[WSBusBridge] = None
         self._stop_event = asyncio.Event()
+        self.enable_console = os.getenv("LUCY_SWARM_CONSOLE", "0").lower() in {"1", "true", "yes"}
         self._setup_audio_workers()
         self._setup_remote_workers()
 
@@ -158,7 +162,9 @@ class SwarmRunner:
         self.bus_task = asyncio.create_task(self.bus.start())
         self._start_watchers()
         self._start_audio()
+        self._start_console()
         await self._start_ws_gateway()
+        await self._start_ws_bridge()
         logger.info("🤖 Swarm en marcha. Presioná Ctrl+C para detener.")
         await self._stop_event.wait()
         await self.stop()
@@ -172,12 +178,26 @@ class SwarmRunner:
         if getattr(self, "ear_worker", None):
             self.audio_tasks.append(asyncio.create_task(self.ear_worker.run()))
 
+    def _start_console(self) -> None:
+        if not self.enable_console:
+            return
+        self.console_task = asyncio.create_task(self._console_loop())
+
     async def _start_ws_gateway(self) -> None:
         if os.getenv("LUCY_WS_GATEWAY", "0").lower() in {"1", "true", "yes"}:
             host = os.getenv("LUCY_WS_HOST", "127.0.0.1")
             port = int(os.getenv("LUCY_WS_PORT", "8766"))
             self.ws_gateway = WebSocketGateway(self.bus, host=host, port=port)
             await self.ws_gateway.start()
+
+    async def _start_ws_bridge(self) -> None:
+        url = os.getenv("LUCY_WS_BRIDGE_URL")
+        if not url:
+            return
+        topics_raw = os.getenv("LUCY_WS_BRIDGE_TOPICS", "broadcast,final_response")
+        topics = [item.strip() for item in topics_raw.split(",") if item.strip()]
+        self.ws_bridge = WSBusBridge(self.bus, url, topics)
+        await self.ws_bridge.start()
 
     async def stop(self) -> None:
         """Detiene watchers, el bus y limpia el entorno."""
@@ -192,17 +212,41 @@ class SwarmRunner:
         for task in self.audio_tasks:
             task.cancel()
         await asyncio.gather(*self.audio_tasks, return_exceptions=True)
+        if self.console_task:
+            self.console_task.cancel()
+            await asyncio.gather(self.console_task, return_exceptions=True)
         if self.bus_task:
             await self.bus.stop()
             await self.bus_task
         if self.ws_gateway:
             await self.ws_gateway.stop()
+        if self.ws_bridge:
+            await self.ws_bridge.stop()
         logger.info("✅ Swarm detenido.")
 
     def _request_stop(self) -> None:
         if not self._stop_event.is_set():
             logger.info("📩 Señal recibida, preparando apagado...")
             self._stop_event.set()
+
+    async def _console_loop(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                text = await asyncio.to_thread(input, "\n👉 Tú: ")
+            except (EOFError, KeyboardInterrupt):
+                self._request_stop()
+                break
+            if not text or not text.strip():
+                continue
+            await self.bus.publish(
+                LucyMessage(
+                    sender="console",
+                    receiver="user_input",
+                    type=MessageType.EVENT,
+                    content=text.strip(),
+                    data={},
+                )
+            )
 
 
 async def _main() -> None:

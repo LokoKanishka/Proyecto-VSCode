@@ -7,7 +7,8 @@ import os
 import shutil
 import subprocess
 import requests
-from typing import Dict, List, Optional, Protocol
+import hashlib
+from typing import Any, Dict, List, Optional, Protocol
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -167,6 +168,8 @@ class MemoryManager:
                 self.vector_store.save_memory(entry.content, meta_type=meta_type)
             except Exception as exc:
                 logger.warning("No se pudo guardar en vector_store: %s", exc)
+        if os.getenv("LUCY_FAISS_ALWAYS_ON", "0") in {"1", "true", "yes"}:
+            self._append_faiss(entry)
 
     def get_context(self, session_id: str, limit: int = 10) -> List[Dict]:
         """Recupera contexto reciente (short-term memory)."""
@@ -254,6 +257,27 @@ class MemoryManager:
         ))
         conn.commit()
         conn.close()
+
+    def log_file_snapshot(self, path: str, content: bytes, metadata: Optional[Dict] = None) -> Optional[str]:
+        if not path:
+            return None
+        file_id = str(uuid.uuid4())
+        sha = hashlib.sha256(content).hexdigest() if content is not None else None
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO files (id, path, content, hash, metadata)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            file_id,
+            path,
+            content,
+            sha,
+            json.dumps(metadata or {}),
+        ))
+        conn.commit()
+        conn.close()
+        return file_id
 
     def get_last_plan(self) -> Optional[Dict]:
         conn = sqlite3.connect(self.db_path)
@@ -367,6 +391,51 @@ class MemoryManager:
         self._mark_condensed([row["id"] for row in rows])
         return summary_id
 
+    def summarize_hierarchical(
+        self,
+        session_id: str,
+        chunk_size: int = 25,
+        model: Optional[str] = None,
+        host: Optional[str] = None,
+    ) -> Optional[str]:
+        rows = self._fetch_uncondensed(session_id)
+        if len(rows) < chunk_size:
+            return None
+        summaries: List[str] = []
+        summary_ids: List[str] = []
+        for i in range(0, len(rows), chunk_size):
+            chunk = rows[i:i + chunk_size]
+            chunk_text = "\n".join(f"[{row['role']}] {row['content']}" for row in chunk)
+            summary = self._call_ollama(
+                "Resumí en 3-4 frases concisas:\n\n" + chunk_text,
+                model=model,
+                host=host,
+            ) or self._heuristic_summary(chunk)
+            entry = MemoryEntry(
+                role="system",
+                content="Resumen automático: " + summary.strip(),
+                session_id=session_id,
+            )
+            self.add_message(entry, metadata={"summary_level": 1, "summary_of": [row["id"] for row in chunk]})
+            summary_ids.append(entry.id)
+            summaries.append(summary)
+            self._mark_condensed([row["id"] for row in chunk])
+        if len(summaries) < 2:
+            return summary_ids[-1] if summary_ids else None
+        merged = "\n".join(f"- {text}" for text in summaries)
+        final_summary = self._call_ollama(
+            "Resumí los siguientes resúmenes en 4-6 frases:\n\n" + merged,
+            model=model,
+            host=host,
+        ) or " | ".join(summaries[:5])
+        final_entry = MemoryEntry(
+            role="system",
+            content="Resumen jerárquico: " + final_summary.strip(),
+            session_id=session_id,
+        )
+        self.add_message(final_entry, metadata={"summary_level": 2, "summary_of": summary_ids})
+        return final_entry.id
+
     def _fetch_recent(self, session_id: str, limit: int) -> List[sqlite3.Row]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -380,6 +449,28 @@ class MemoryManager:
         rows = cursor.fetchall()
         conn.close()
         return rows
+
+    def _fetch_uncondensed(self, session_id: str) -> List[sqlite3.Row]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, role, content FROM messages
+            WHERE session_id = ? AND condensed = 0
+            ORDER BY timestamp ASC
+        ''', (session_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+
+    @staticmethod
+    def _heuristic_summary(rows: List[sqlite3.Row]) -> str:
+        sample = rows[:5]
+        summary_lines = [
+            f"[{row['role']}] {row['content'][:120].strip()}"
+            for row in sample
+        ]
+        return " | ".join(summary_lines)
 
     def _mark_condensed(self, ids: List[str]):
         if not ids:
@@ -412,12 +503,16 @@ class MemoryManager:
         """Copia la base de datos a un snapshot local."""
         if not os.path.exists(self.db_path):
             return None
+        require_encryption = os.getenv("LUCY_BACKUP_REQUIRE_ENCRYPTION", "0") in {"1", "true", "yes"}
+        passphrase = os.getenv("LUCY_BACKUP_PASSPHRASE")
+        if require_encryption and not passphrase:
+            logger.warning("Backup requiere cifrado pero no hay passphrase.")
+            return None
         os.makedirs(backup_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         dest = os.path.join(backup_dir, f"lucy_memory_{timestamp}.db")
         try:
             shutil.copy2(self.db_path, dest)
-            passphrase = os.getenv("LUCY_BACKUP_PASSPHRASE")
             if passphrase:
                 encrypted = f"{dest}.gpg"
                 try:
@@ -429,8 +524,14 @@ class MemoryManager:
                     )
                     if os.path.exists(encrypted):
                         return encrypted
-                except Exception:
-        return dest
+                except Exception as exc:
+                    logger.warning("No pude cifrar backup: %s", exc)
+                    if require_encryption:
+                        return None
+            return dest
+        except OSError as exc:
+            logger.warning("No pude crear backup: %s", exc)
+            return None
 
     def log_thought_tree(self, plan_id: str, nodes: List[Dict[str, Any]]) -> None:
         if not nodes:
@@ -478,10 +579,6 @@ class MemoryManager:
             return data.get("message", {}).get("content", "")
         except Exception as exc:
             logger.warning("LLM summary falló: %s", exc)
-            return None
-            return dest
-        except OSError as exc:
-            logger.warning("No pude crear backup: %s", exc)
             return None
 
     def build_faiss_index(self, limit: int = 5000) -> bool:
@@ -535,3 +632,22 @@ class MemoryManager:
             if idx < len(self.faiss_texts):
                 results.append({"role": "assistant", "content": self.faiss_texts[idx]})
         return results
+
+    def _append_faiss(self, entry: MemoryEntry) -> None:
+        if not HAS_FAISS or not entry.content:
+            return
+        if entry.embedding:
+            vec = np.array(entry.embedding, dtype="float32")
+        else:
+            vec = np.array(self._encode_text(entry.content), dtype="float32")
+        if vec.size == 0:
+            return
+        if self.faiss_index is None:
+            self.faiss_dim = int(vec.shape[0])
+            self.faiss_index = faiss.IndexFlatIP(self.faiss_dim)
+        if vec.shape[0] != self.faiss_dim:
+            return
+        vec = vec.reshape(1, -1)
+        faiss.normalize_L2(vec)
+        self.faiss_index.add(vec)
+        self.faiss_texts.append(entry.content)

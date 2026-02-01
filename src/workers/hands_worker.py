@@ -40,6 +40,8 @@ class HandsWorker(BaseWorker):
             await self._handle_paste_text(message, payload)
         elif command == "click_bbox":
             await self._handle_click_bbox(message, payload)
+        elif command == "click_element":
+            await self._handle_click_element(message, payload)
         elif command == "focus_window":
             await self._handle_focus_window(message, payload)
         else:
@@ -152,3 +154,65 @@ class HandsWorker(BaseWorker):
             await self.send_response(msg, f"Ventana enfocada: {title}")
         else:
             await self.send_error(msg, "No pude enfocar la ventana.")
+
+    async def _handle_click_element(self, msg: LucyMessage, payload: dict):
+        elements = payload.get("elements") or []
+        query = (payload.get("query") or "").strip()
+        element_type = (payload.get("element_type") or "").strip().lower()
+        index = payload.get("index")
+
+        if not elements:
+            await self.send_error(msg, "No recibí elementos para elegir.")
+            return
+
+        selected = None
+        if index is not None:
+            try:
+                selected = elements[int(index)]
+            except Exception:
+                selected = None
+        if selected is None:
+            selected = self._select_element(elements, query, element_type)
+
+        if not selected:
+            await self.send_error(msg, "No encontré un elemento que coincida.")
+            return
+
+        bbox = selected.get("bbox")
+        if not bbox or len(bbox) != 4:
+            await self.send_error(msg, "Elemento seleccionado sin bbox válido.")
+            return
+
+        try:
+            ok = self.controller.click_bbox(tuple(bbox), verify=bool(payload.get("verify", True)))
+            if ok:
+                await self.send_response(
+                    msg,
+                    "Clic en elemento confirmado.",
+                    {"element": selected}
+                )
+            else:
+                await self.send_error(msg, "No pude confirmar el clic en el elemento.")
+        except Exception as exc:
+            await self.send_error(msg, f"Error click_element: {exc}")
+
+    @staticmethod
+    def _select_element(elements: list, query: str, element_type: str):
+        best = None
+        best_score = -1.0
+        for el in elements:
+            text = (el.get("text") or "").strip().lower()
+            etype = (el.get("type") or "").strip().lower()
+            conf = float(el.get("confidence") or 0.0)
+            score = conf
+            if element_type and etype == element_type:
+                score += 1.0
+            if query:
+                if query.lower() == text:
+                    score += 2.0
+                elif query.lower() in text:
+                    score += 1.0
+            if score > best_score:
+                best_score = score
+                best = el
+        return best

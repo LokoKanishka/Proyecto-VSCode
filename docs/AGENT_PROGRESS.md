@@ -27,18 +27,28 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Pipeline de visión avanzado (OCR + YOLO opcional) integrado en VisionWorker: `src/vision/vision_pipeline.py`, `src/workers/vision_worker.py`.
 - BrowserWorker ahora soporta contexto persistente, captura de estado y snapshot accesible: `src/workers/browser_worker.py`.
 - Fallback browser → visión conectado (solo screenshot/headless): `src/workers/browser_worker.py`, `src/core/manager.py`, `src/workers/vision_worker.py`.
+- Audio en swarm (Ear/Mouth) integrado y activable por env: `src/workers/ear_worker.py`, `src/workers/mouth_worker.py`, `src/engine/swarm_runner.py`.
+- Planner ToT con LLM + persistencia del árbol en DB: `src/planners/tree_of_thought_llm.py`, `src/core/manager.py`, `src/memory/memory_manager.py`.
+- vLLM server y soporte vLLM en planner/code: `scripts/start_vllm_server.py`, `src/planners/ollama_planner.py`, `src/workers/code_worker.py`.
+- VS Code por WebSocket soportado en worker + extensión WS: `src/workers/vscode_worker.py`, `vscode_extension/lucy-agent/`.
+- Entrypoint único (swarm como default) con consola integrada y flags de audio/WS: `scripts/run_lucy.py`, `run_lucy.sh`, `src/engine/swarm_runner.py`.
+- Gestión VRAM/swapping mejorada: eventos `gpu_usage`, política de presión, unload de modelos inactivos y keep-alive dinámico + LoRA targets: `src/watchers/resource_watcher.py`, `src/core/manager.py`, `src/engine/swarm_manager.py`.
+- Visión/Manos/Browser: SoM básico + SAM opcional, click por UIElement y DOM summary en BrowserWorker: `src/vision/vision_pipeline.py`, `src/workers/vision_worker.py`, `src/workers/hands_worker.py`, `src/workers/browser_worker.py`.
+- Loader RICO opcional para calibración/datasets: `src/vision/rico_dataset.py`, `src/vision/vision_pipeline.py`.
+- Concurrencia distribuida básica: WS gateway con suscripciones + bridge entre buses: `src/core/ws_gateway.py`, `src/core/ws_bus_bridge.py`, `src/engine/swarm_runner.py`.
+- Memoria avanzada: backups con política de cifrado, FAISS always-on incremental y resumen jerárquico: `src/memory/memory_manager.py`, `src/workers/memory_worker.py`.
+- E2E pipeline (mock): prueba “voz→plan→visión→manos→browser→respuesta” con planner falso: `tests/test_swarm_e2e_pipeline.py`.
+- QA: nota para usar `python3` o alias `python-is-python3`: `docs/QA.md`.
+- Hardening bridge WS: límite de hops y dedupe simple para evitar loops: `src/core/ws_bus_bridge.py`.
+- Trazabilidad: snapshots de archivos persistidos en memoria: `src/memory/memory_manager.py`, `src/workers/memory_worker.py`.
+- Bridge WS: backpressure con cola y métricas básicas: `src/core/ws_bus_bridge.py`.
+- Snapshots automáticos al escribir archivos (VSCodeWorker): `src/workers/vscode_worker.py`.
+- Bridge WS: latencia promedio y backlog máximo en métricas: `src/core/ws_bus_bridge.py`.
+- Snapshots automáticos desde CodeWorker (write_file): `src/workers/code_worker.py`.
 
 ### Falta (prioriza en cada sesión)
-1) **Visión avanzada**: ajustar modelos/datasets (YOLOv8/SAM), calibrar morfología y grafo de conectividad; validar resultados reales en pantalla.
-2) **Búsqueda robusta**: validar en entorno real y ajustar configuración vía `config.yaml`.
-3) **BrowserWorker**: completar fallback visión/DOM inteligente y scripts para Gemini/ChatGPT; logging más detallado.
-4) **Code/Chat Workers**: robustecer aislamiento (sandbox real), delegación avanzada y soporte LoRA estable.
-5) **Planner ToT real**: generación/valoración de ramas, persistencia de nodos, etiquetas seguro/maybe/imposible, límites de coste.
-6) **Gestión de recursos**: monitor VRAM/`nvidia-smi`, carga/descarga dinámica de modelos/LoRAs, reducción de contexto cuando hay presión.
-7) **Memoria avanzada**: backups/cifrado, FAISS real, resúmenes jerárquicos, uso de tablas `files/plan_logs` para trazabilidad de código.
-8) **Watchers → interrupción**: priorización/throttle y puente al planner para pausar tareas en eventos críticos.
-9) **IDE/terminal**: compilar/instalar extensión WS de VS Code y mejorar `ShellWorker` con pexpect/PTY, manejo seguro de comandos y validación avanzada.
-10) **Seguridad/Sandbox**: fortalecer aislamiento; hoy hay blocklist básica en Shell/Code pero falta auditoría cifrada y contenedores.
+1) **Hardening distribuido**: validar bridge WS en entorno real y alertas por backlog.
+2) **Memoria avanzada**: backups cifrados obligatorios en prod y conexión con CI.
 
 ### Ritual diario sugerido
 - Leer este archivo y marcar qué punto atacar hoy.

@@ -3,6 +3,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+import os
+
+from src.vision.rico_dataset import load_rico_annotations
 
 try:
     import cv2
@@ -23,6 +26,12 @@ try:
 except ImportError:
     HAS_YOLO = False
 
+try:
+    from segment_anything import sam_model_registry, SamPredictor  # type: ignore
+    HAS_SAM = True
+except Exception:
+    HAS_SAM = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,7 +46,12 @@ class UIElement:
 class VisionPipeline:
     """Pipeline de visión: preprocesado, OCR y detección de UI."""
 
-    def __init__(self, yolo_model_path: Optional[str] = None):
+    def __init__(
+        self,
+        yolo_model_path: Optional[str] = None,
+        sam_checkpoint: Optional[str] = None,
+        sam_model_type: str = "vit_h",
+    ):
         self.yolo_model_path = yolo_model_path
         self._yolo = None
         if HAS_YOLO and yolo_model_path:
@@ -45,6 +59,17 @@ class VisionPipeline:
                 self._yolo = YOLO(yolo_model_path)
             except Exception as exc:
                 logger.warning("No pude cargar YOLO: %s", exc)
+        self._sam = None
+        self._sam_predictor = None
+        if HAS_SAM and sam_checkpoint:
+            try:
+                sam = sam_model_registry[sam_model_type](checkpoint=sam_checkpoint)
+                self._sam_predictor = SamPredictor(sam)
+                self._sam = sam
+            except Exception as exc:
+                logger.warning("No pude cargar SAM: %s", exc)
+        rico_path = os.getenv("LUCY_RICO_PATH")
+        self.rico_samples = load_rico_annotations(rico_path, limit=200) if rico_path else []
 
     def preprocess(self, image: Any) -> Any:
         if not HAS_CV:
@@ -121,7 +146,52 @@ class VisionPipeline:
         }
         if advanced:
             payload["morphology"] = self.morphology_features(image)
+            payload["som"] = self.build_semantic_map(elements)
         return payload
+
+    def build_semantic_map(self, elements: List[UIElement]) -> Dict[str, Any]:
+        """Construye un mapa semántico simple con etiquetas y ids."""
+        som_elements: List[Dict[str, Any]] = []
+        for idx, el in enumerate(elements):
+            label = el.text.strip() if el.text else (el.element_type or "element")
+            som_elements.append(
+                {
+                    "id": f"el_{idx:03d}",
+                    "label": label,
+                    "bbox": el.bbox,
+                    "type": el.element_type,
+                    "confidence": el.confidence,
+                    "source": "ocr" if el.text else "detector",
+                }
+            )
+        return {
+            "count": len(som_elements),
+            "elements": som_elements,
+        }
+
+    def segment_with_sam(self, image: Any, bbox: Tuple[int, int, int, int]) -> Optional[Dict[str, Any]]:
+        """Refina un bbox usando SAM (si está disponible)."""
+        if not (HAS_SAM and self._sam_predictor):
+            return None
+        import numpy as np
+        x, y, w, h = bbox
+        x1, y1, x2, y2 = x, y, x + w, y + h
+        try:
+            self._sam_predictor.set_image(image)
+            masks, scores, _ = self._sam_predictor.predict(
+                box=np.array([x1, y1, x2, y2]),
+                multimask_output=True,
+            )
+            if masks is None or len(masks) == 0:
+                return None
+            best_idx = int(np.argmax(scores))
+            return {
+                "mask": masks[best_idx],
+                "score": float(scores[best_idx]),
+            }
+        except Exception as exc:
+            logger.warning("SAM segment falló: %s", exc)
+            return None
 
     def _skeletonize(self, binary: Any):
         if not HAS_CV:

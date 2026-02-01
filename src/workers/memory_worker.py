@@ -51,6 +51,28 @@ class MemoryWorker(BaseWorker):
                     message,
                     "No se pudo generar resumen LLM.",
                 )
+        elif message.content == "summarize_hierarchical":
+            session_id = message.data.get("session_id", "current_session")
+            chunk_size = int(message.data.get("chunk_size", 25))
+            model = message.data.get("model")
+            host = message.data.get("host")
+            summary_id = self.memory.summarize_hierarchical(
+                session_id,
+                chunk_size=chunk_size,
+                model=model,
+                host=host,
+            )
+            if summary_id:
+                await self.send_response(
+                    message,
+                    "Resumen jerárquico guardado en la memoria.",
+                    {"summary_id": summary_id},
+                )
+            else:
+                await self.send_response(
+                    message,
+                    "No hubo suficiente contenido para resumen jerárquico.",
+                )
         elif message.content == "retrieve_semantic":
             query = message.data.get("query", "")
             results = self.memory.semantic_search(query, k=int(message.data.get("limit", 5)))
@@ -78,6 +100,24 @@ class MemoryWorker(BaseWorker):
                 message,
                 "Índice FAISS actualizado." if ok else "No se pudo crear índice FAISS.",
                 {"success": ok},
+            )
+        elif message.content == "snapshot_files":
+            paths = message.data.get("paths") or []
+            metadata = message.data.get("metadata") or {}
+            saved = []
+            for path in paths:
+                try:
+                    with open(path, "rb") as fh:
+                        content = fh.read()
+                    file_id = self.memory.log_file_snapshot(path, content, metadata=metadata)
+                    if file_id:
+                        saved.append({"path": path, "id": file_id})
+                except Exception as exc:
+                    saved.append({"path": path, "error": str(exc)})
+            await self.send_response(
+                message,
+                "Snapshots guardados." if saved else "No pude guardar snapshots.",
+                {"saved": saved},
             )
         else:
             await self.send_error(message, f"Comando desconocido en MemoryWorker: {message.content}")

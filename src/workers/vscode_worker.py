@@ -11,7 +11,7 @@ except Exception:  # pragma: no cover - optional dependency
     HAS_WEBSOCKETS = False
 
 from src.core.base_worker import BaseWorker
-from src.core.types import LucyMessage, MessageType
+from src.core.types import LucyMessage, MessageType, WorkerType
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,19 @@ class VSCodeWorker(BaseWorker):
             with open(path, mode, encoding="utf-8") as fh:
                 fh.write(content)
             await self.send_response(message, "Archivo escrito.", {"path": path})
+            if os.getenv("LUCY_SNAPSHOT_ON_WRITE", "0").lower() in {"1", "true", "yes"}:
+                await self.bus.publish(
+                    LucyMessage(
+                        sender=self.worker_id,
+                        receiver=WorkerType.MEMORY,
+                        type=MessageType.COMMAND,
+                        content="snapshot_files",
+                        data={
+                            "paths": [path],
+                            "metadata": {"source": "vscode_worker"},
+                        },
+                    )
+                )
         except OSError as exc:
             await self.send_error(message, f"No pude escribir el archivo: {exc}")
 

@@ -151,6 +151,14 @@ web_search:
   - `/api/health` expone backend y modelo activo; la UI avisa si falta backend de audio.
   - `scripts/start_web_ui.sh` elige puerto libre, `scripts/stop_web_ui.sh` lo apaga y `scripts/web_health_smoke.sh` prueba el endpoint sin dejar UI permanentemente.
 - **Smoke suite (2026-01-30)**: `scripts/run_all_smokes.sh` encadena `web_health_smoke`, `verify_skyscanner_plan.py` y `skyscanner_smoke.sh`; el log queda en `/tmp/lucy_smoke_summary.log`.
+- **Swarm entrypoint + mejoras AGI (2026-02-01)**:
+  - Swarm es el entrypoint por defecto con consola integrada; flags para audio/WS (`scripts/run_lucy.py`, `run_lucy.sh`).
+  - Gestión VRAM con presión: keep-alive dinámico, unload de inactivos, LoRA targets, eventos `gpu_usage`.
+  - Visión: SoM básico + SAM opcional, loader RICO, y acciones de manos por UIElement.
+  - Browser: DOM summary para distillation.
+  - Concurrencia distribuida: bridge WS con backpressure, dedupe, hops y métricas de latencia.
+  - Memoria: backups con política de cifrado, FAISS always-on incremental y resumen jerárquico; snapshots automáticos por escritura en VSCode/CodeWorker.
+  - E2E mock test: `tests/test_swarm_e2e_pipeline.py`.
 - **Onboarding y atajos**: `docs/ONBOARDING.md` resume los comandos esenciales... (existing text)
 - **Dependencias/QA**: `docs/DEPENDENCIES.md` lista cómo verificar ffmpeg/soundfile/WeRTC/Firefox/wmctrl, y `docs/QA.md` ofrece checklist/manual e incident template.
 

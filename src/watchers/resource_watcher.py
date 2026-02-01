@@ -29,15 +29,23 @@ class ResourceWatcher:
         while self._running:
             try:
                 usage = self._query_gpu()
-                if usage and usage >= self.gpu_threshold:
+                if usage is not None:
                     await self.bus.publish(LucyMessage(
                         sender="resource_watcher",
                         receiver="broadcast",
                         type=MessageType.EVENT,
-                        content="gpu_pressure",
+                        content="gpu_usage",
                         data={"usage_pct": usage}
                     ))
-                    self._log_event("gpu_pressure", {"usage_pct": usage})
+                    if usage >= self.gpu_threshold:
+                        await self.bus.publish(LucyMessage(
+                            sender="resource_watcher",
+                            receiver="broadcast",
+                            type=MessageType.EVENT,
+                            content="gpu_pressure",
+                            data={"usage_pct": usage}
+                        ))
+                        self._log_event("gpu_pressure", {"usage_pct": usage})
             except Exception as exc:
                 logger.debug("ResourceWatcher falló: %s", exc)
             await asyncio.sleep(self.poll_interval)

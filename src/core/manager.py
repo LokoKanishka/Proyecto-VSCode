@@ -182,10 +182,11 @@ class Manager(BaseWorker):
         priority = self._event_priority(message.content)
         if priority >= 2:
             self.pending_interrupts.append(message.content)
-        if message.content == "gpu_pressure":
+        if message.content in {"gpu_pressure", "gpu_usage"}:
             usage = message.data.get("usage_pct")
             self.resource_manager.update_gpu_usage(usage)
-            logger.warning("⚠️ GPU presión detectada %.2f%%", (usage or 0) * 100)
+            if message.content == "gpu_pressure":
+                logger.warning("⚠️ GPU presión detectada %.2f%%", (usage or 0) * 100)
             if self.swarm:
                 try:
                     self.swarm.auto_manage_vram(usage)
