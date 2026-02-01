@@ -30,6 +30,7 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Audio en swarm (Ear/Mouth) integrado y activable por env: `src/workers/ear_worker.py`, `src/workers/mouth_worker.py`, `src/engine/swarm_runner.py`.
 - Planner ToT con LLM + persistencia del árbol en DB: `src/planners/tree_of_thought_llm.py`, `src/core/manager.py`, `src/memory/memory_manager.py`.
 - vLLM server y soporte vLLM en planner/code: `scripts/start_vllm_server.py`, `src/planners/ollama_planner.py`, `src/workers/code_worker.py`.
+- Manager/vLLM 20B AWQ: `scripts/start_vllm_server.py` configurado para `gpt-oss:20b` y `docs/VLLM-20B-DEPLOY.md` describe el despliegue con cache cuantizado.
 - VS Code por WebSocket soportado en worker + extensión WS: `src/workers/vscode_worker.py`, `vscode_extension/lucy-agent/`.
 - Entrypoint único (swarm como default) con consola integrada y flags de audio/WS: `scripts/run_lucy.py`, `run_lucy.sh`, `src/engine/swarm_runner.py`.
 - Gestión VRAM/swapping mejorada: eventos `gpu_usage`, política de presión, unload de modelos inactivos y keep-alive dinámico + LoRA targets: `src/watchers/resource_watcher.py`, `src/core/manager.py`, `src/engine/swarm_manager.py`.
