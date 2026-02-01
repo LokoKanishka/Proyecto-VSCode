@@ -89,6 +89,8 @@ class BrowserWorker(BaseWorker):
         user_data_dir = message.data.get("user_data_dir", self.default_user_data_dir)
         storage_state = message.data.get("storage_state", self.default_storage_state)
         fallback_vision = bool(message.data.get("fallback_vision", False))
+        if not fallback_vision:
+            fallback_vision = os.getenv("LUCY_BROWSER_AUTO_FALLBACK", "0").lower() in {"1", "true", "yes"}
         try:
             async with async_playwright() as pw:
                 browser, context = await self._launch_context(
@@ -469,16 +471,27 @@ class BrowserWorker(BaseWorker):
         buttons = [_summarize(b, ["aria-label", "title", "type"]) for b in soup.select("button")][:40]
         inputs = [_summarize(i, ["name", "placeholder", "type", "aria-label"]) for i in soup.select("input, textarea, select")][:40]
         headings = [_summarize(h, []) for h in soup.select("h1, h2, h3")][:20]
+        tables = []
+        for table in soup.select("table")[:10]:
+            headers = [self._clean_text(th.get_text(" ")) for th in table.select("th")][:10]
+            rows = []
+            for row in table.select("tr")[:10]:
+                cells = [self._clean_text(td.get_text(" ")) for td in row.select("td")][:10]
+                if cells:
+                    rows.append(cells)
+            tables.append({"headers": headers, "rows": rows})
         return {
             "links": links,
             "buttons": buttons,
             "inputs": inputs,
             "headings": headings,
+            "tables": tables,
             "counts": {
                 "links": len(links),
                 "buttons": len(buttons),
                 "inputs": len(inputs),
                 "headings": len(headings),
+                "tables": len(tables),
             },
         }
 

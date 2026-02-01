@@ -68,6 +68,9 @@ class VisionPipeline:
                 self._sam = sam
             except Exception as exc:
                 logger.warning("No pude cargar SAM: %s", exc)
+        self._sam_cache: Dict[str, Dict[str, Any]] = {}
+        self._sam_cache_order: List[str] = []
+        self._sam_cache_size = int(os.getenv("LUCY_SAM_CACHE_SIZE", "32"))
         rico_path = os.getenv("LUCY_RICO_PATH")
         self.rico_samples = load_rico_annotations(rico_path, limit=200) if rico_path else []
 
@@ -154,10 +157,12 @@ class VisionPipeline:
         som_elements: List[Dict[str, Any]] = []
         for idx, el in enumerate(elements):
             label = el.text.strip() if el.text else (el.element_type or "element")
+            norm_label = label.lower().strip()
             som_elements.append(
                 {
                     "id": f"el_{idx:03d}",
                     "label": label,
+                    "label_norm": norm_label,
                     "bbox": el.bbox,
                     "type": el.element_type,
                     "confidence": el.confidence,
@@ -174,6 +179,9 @@ class VisionPipeline:
         if not (HAS_SAM and self._sam_predictor):
             return None
         import numpy as np
+        key = f"{bbox}"
+        if key in self._sam_cache:
+            return self._sam_cache[key]
         x, y, w, h = bbox
         x1, y1, x2, y2 = x, y, x + w, y + h
         try:
@@ -185,10 +193,16 @@ class VisionPipeline:
             if masks is None or len(masks) == 0:
                 return None
             best_idx = int(np.argmax(scores))
-            return {
+            result = {
                 "mask": masks[best_idx],
                 "score": float(scores[best_idx]),
             }
+            self._sam_cache[key] = result
+            self._sam_cache_order.append(key)
+            if len(self._sam_cache_order) > self._sam_cache_size:
+                old = self._sam_cache_order.pop(0)
+                self._sam_cache.pop(old, None)
+            return result
         except Exception as exc:
             logger.warning("SAM segment falló: %s", exc)
             return None

@@ -191,13 +191,19 @@ class SwarmRunner:
             await self.ws_gateway.start()
 
     async def _start_ws_bridge(self) -> None:
-        url = os.getenv("LUCY_WS_BRIDGE_URL")
-        if not url:
+        urls = os.getenv("LUCY_WS_BRIDGE_URLS") or os.getenv("LUCY_WS_BRIDGE_URL")
+        if not urls:
             return
         topics_raw = os.getenv("LUCY_WS_BRIDGE_TOPICS", "broadcast,final_response")
         topics = [item.strip() for item in topics_raw.split(",") if item.strip()]
-        self.ws_bridge = WSBusBridge(self.bus, url, topics)
+        url_list = [item.strip() for item in urls.split(",") if item.strip()]
+        self.ws_bridge = WSBusBridge(self.bus, url_list[0], topics)
         await self.ws_bridge.start()
+        self.ws_bridge_extra = []
+        for extra in url_list[1:]:
+            bridge = WSBusBridge(self.bus, extra, topics)
+            await bridge.start()
+            self.ws_bridge_extra.append(bridge)
 
     async def stop(self) -> None:
         """Detiene watchers, el bus y limpia el entorno."""
@@ -222,6 +228,8 @@ class SwarmRunner:
             await self.ws_gateway.stop()
         if self.ws_bridge:
             await self.ws_bridge.stop()
+        for bridge in getattr(self, "ws_bridge_extra", []):
+            await bridge.stop()
         logger.info("✅ Swarm detenido.")
 
     def _request_stop(self) -> None:

@@ -212,7 +212,7 @@ def _summarize_bus_metrics(records, last_n: int = 10):
     keys = set().union(*(m.keys() for m in metrics))
     summary = {}
     for key in keys:
-        values = [m.get(key, 0) for m in metrics]
+        values = [m.get(key, 0) for m in metrics if isinstance(m.get(key, 0), (int, float))]
         summary[key] = {
             "latest": values[-1] if values else 0,
             "avg": round(sum(values) / len(values), 2) if values else 0,
@@ -224,6 +224,8 @@ def _summarize_bus_metrics(records, last_n: int = 10):
         last = bridge_records[-1]
         bridge_summary = {
             "latency_avg_ms": last.get("latency_avg_ms"),
+            "latency_p50_ms": last.get("latency_p50_ms"),
+            "latency_p95_ms": last.get("latency_p95_ms"),
             "backlog_max": last.get("backlog_max"),
             "dropped": last.get("dropped"),
             "sent": last.get("sent"),

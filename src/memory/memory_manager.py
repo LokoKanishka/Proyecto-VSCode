@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import requests
 import hashlib
+import zlib
 from typing import Any, Dict, List, Optional, Protocol
 
 import numpy as np
@@ -63,6 +64,12 @@ class MemoryManager:
         self.faiss_dim = None
         self.faiss_texts: List[str] = []
         self._init_db()
+        if HAS_FAISS and self.vector_index_path and os.path.exists(self.vector_index_path):
+            try:
+                self.faiss_index = faiss.read_index(self.vector_index_path)
+                self.faiss_dim = self.faiss_index.d
+            except Exception:
+                self.faiss_index = None
 
     def _init_db(self):
         """Inicializa el esquema SQLite."""
@@ -263,6 +270,15 @@ class MemoryManager:
             return None
         file_id = str(uuid.uuid4())
         sha = hashlib.sha256(content).hexdigest() if content is not None else None
+        compress_threshold = int(os.getenv("LUCY_SNAPSHOT_COMPRESS_THRESHOLD", "200000"))
+        compressed = False
+        blob = content
+        if content is not None and len(content) >= compress_threshold:
+            try:
+                blob = zlib.compress(content, level=6)
+                compressed = True
+            except Exception:
+                blob = content
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute('''
@@ -271,9 +287,9 @@ class MemoryManager:
         ''', (
             file_id,
             path,
-            content,
+            blob,
             sha,
-            json.dumps(metadata or {}),
+            json.dumps({**(metadata or {}), "compressed": compressed}),
         ))
         conn.commit()
         conn.close()
@@ -511,6 +527,7 @@ class MemoryManager:
         os.makedirs(backup_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         dest = os.path.join(backup_dir, f"lucy_memory_{timestamp}.db")
+        keep = int(os.getenv("LUCY_BACKUP_KEEP", "5"))
         try:
             shutil.copy2(self.db_path, dest)
             if passphrase:
@@ -528,10 +545,27 @@ class MemoryManager:
                     logger.warning("No pude cifrar backup: %s", exc)
                     if require_encryption:
                         return None
+            self._rotate_backups(backup_dir, keep=keep)
             return dest
         except OSError as exc:
             logger.warning("No pude crear backup: %s", exc)
             return None
+
+    def _rotate_backups(self, backup_dir: str, keep: int = 5) -> None:
+        if keep <= 0:
+            return
+        try:
+            files = sorted(
+                [f for f in os.listdir(backup_dir) if f.startswith("lucy_memory_")],
+                reverse=True,
+            )
+            for name in files[keep:]:
+                try:
+                    os.remove(os.path.join(backup_dir, name))
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def log_thought_tree(self, plan_id: str, nodes: List[Dict[str, Any]]) -> None:
         if not nodes:

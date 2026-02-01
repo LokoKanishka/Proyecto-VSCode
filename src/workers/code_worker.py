@@ -122,10 +122,16 @@ class CodeWorker(BaseWorker):
                 lint = None
 
             if use_docker and shutil.which("docker"):
+                cpu_limit = os.getenv("LUCY_CODE_DOCKER_CPUS", "1")
+                mem_limit = os.getenv("LUCY_CODE_DOCKER_MEM", "512m")
                 cmd = [
                     "docker",
                     "run",
                     "--rm",
+                    "--cpus",
+                    str(cpu_limit),
+                    "--memory",
+                    str(mem_limit),
                     "-v",
                     f"{tmpdir}:/work",
                     "-w",

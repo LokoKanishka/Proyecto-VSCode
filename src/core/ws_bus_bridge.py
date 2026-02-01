@@ -15,6 +15,13 @@ from src.core.types import LucyMessage, MessageType
 logger = logging.getLogger(__name__)
 BRIDGE_METRICS_LOG = "logs/bridge_metrics.jsonl"
 
+def _percentile(values, pct: int):
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    idx = int(round((pct / 100) * (len(ordered) - 1)))
+    return round(float(ordered[idx]), 2)
+
 
 class WSBusBridge:
     """
@@ -43,6 +50,7 @@ class WSBusBridge:
         self._seen_fifo = deque(maxlen=2000)
         for topic in self.topics:
             self.bus.subscribe(topic, self._forward_local)
+        self.bus.subscribe("bridge_control", self._handle_control)
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._run())
@@ -58,9 +66,12 @@ class WSBusBridge:
             await self._ws.close()
 
     async def _run(self) -> None:
+        backoff = 1.0
+        max_backoff = float(os.getenv("LUCY_WS_BRIDGE_BACKOFF_MAX", "12"))
         while True:
             try:
                 async with websockets.connect(self.url) as ws:
+                    backoff = 1.0
                     self._ws = ws
                     if self._sender_task:
                         self._sender_task.cancel()
@@ -108,7 +119,9 @@ class WSBusBridge:
                             logger.debug("WSBusBridge inbound error: %s", exc)
             except Exception as exc:
                 logger.warning("WSBusBridge reconnecting: %s", exc)
-                await asyncio.sleep(2.0)
+                jitter = 0.2 + (0.6 * (time.time() % 1))
+                await asyncio.sleep(min(max_backoff, backoff) + jitter)
+                backoff = min(max_backoff, backoff * 2)
 
     async def _forward_local(self, message: LucyMessage) -> None:
         if message.data.get("origin") == self.bridge_id:
@@ -176,6 +189,18 @@ class WSBusBridge:
                 logger.debug("WSBusBridge sender error: %s", exc)
                 await asyncio.sleep(0.2)
 
+    async def _handle_control(self, message: LucyMessage) -> None:
+        if message.type != MessageType.COMMAND:
+            return
+        if message.content != "set_topics":
+            return
+        topics = message.data.get("topics") or []
+        if not isinstance(topics, list):
+            return
+        self.topics = {t for t in topics if t}
+        for topic in self.topics:
+            self.bus.subscribe(topic, self._forward_local)
+
     async def _maybe_emit_stats(self) -> None:
         now = time.time()
         if now - self._last_stats_emit < 15.0:
@@ -195,10 +220,14 @@ class WSBusBridge:
                     "dropped": self._metrics["dropped"],
                     "backlog_max": self._backlog_max,
                     "latency_avg_ms": round(latency, 2),
+                    "latency_p50_ms": _percentile(self._latency_ms, 50),
+                    "latency_p95_ms": _percentile(self._latency_ms, 95),
                     "url": self.url,
                 }) + "\n")
         except Exception:
             pass
+        p50 = _percentile(self._latency_ms, 50)
+        p95 = _percentile(self._latency_ms, 95)
         await self.bus.publish(
             LucyMessage(
                 sender="ws_bridge",
@@ -211,6 +240,8 @@ class WSBusBridge:
                     "dropped": self._metrics["dropped"],
                     "backlog_max": self._backlog_max,
                     "latency_avg_ms": round(latency, 2),
+                    "latency_p50_ms": p50,
+                    "latency_p95_ms": p95,
                     "url": self.url,
                 },
             )
@@ -227,6 +258,8 @@ class WSBusBridge:
                     "dropped": self._metrics["dropped"],
                     "backlog_max": self._backlog_max,
                     "latency_avg_ms": round(latency, 2),
+                    "latency_p50_ms": p50,
+                    "latency_p95_ms": p95,
                     "url": self.url,
                 },
             )

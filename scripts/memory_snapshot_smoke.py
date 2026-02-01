@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import tempfile
+import shutil
 from pathlib import Path
 
 from src.core.types import MemoryEntry
@@ -22,14 +23,15 @@ def main() -> int:
         if backup is not None:
             print("❌ Backup debería fallar sin passphrase")
             return 1
-        os.environ["LUCY_BACKUP_PASSPHRASE"] = "test-passphrase"
-        backup = manager.backup_db(backup_dir=str(Path(tmpdir) / "backups"))
-        if not backup:
-            print("❌ Backup cifrado no se generó")
-            return 1
-        if not str(backup).endswith(".gpg"):
-            print("❌ Backup cifrado esperado con .gpg")
-            return 1
+        if shutil.which("gpg"):
+            os.environ["LUCY_BACKUP_PASSPHRASE"] = "test-passphrase"
+            backup = manager.backup_db(backup_dir=str(Path(tmpdir) / "backups"))
+            if not backup:
+                print("❌ Backup cifrado no se generó")
+                return 1
+            if not str(backup).endswith(".gpg"):
+                print("❌ Backup cifrado esperado con .gpg")
+                return 1
     print("✅ Memory snapshot smoke OK")
     return 0
 

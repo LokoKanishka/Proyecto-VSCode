@@ -32,3 +32,16 @@ The LLM can invoke tools by generating a JSON object in its response.
 
 ### Half-Duplex
 The system currently operates in a half-duplex manner where the Wake Word detection is paused (or rather, the node is in "Pass Through" mode) during the conversation turn, and reset only after the assistant finishes speaking. This prevents Lucy from listening to herself.
+
+## Distributed Swarm (WS Bridge)
+
+```mermaid
+graph LR
+    A[Swarm Node A] -->|WS Gateway| G((ws://host:8766))
+    B[Swarm Node B] -->|WS Bridge| G
+    C[Swarm Node C] -->|WS Bridge| G
+    G -->|bridge_stats/backpressure| A
+```
+
+- Variables: `LUCY_WS_BRIDGE_URLS`, `LUCY_WS_BRIDGE_TOPICS`, `LUCY_WS_BRIDGE_MAX_HOPS`.
+- Logs: `logs/bridge_metrics.jsonl` y eventos `bridge_stats`/`bridge_backpressure`.

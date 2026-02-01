@@ -1,6 +1,8 @@
 import asyncio
 import logging
 from collections import Counter
+from collections import defaultdict, deque
+import time
 from typing import Awaitable, Callable, Dict, List, Optional
 
 from src.core.types import LucyMessage, MessageType
@@ -19,6 +21,8 @@ class EventBus:
         self._running = False
         self._response_futures: Dict[str, asyncio.Future] = {}
         self._metrics: Counter = Counter()
+        self._inflight: Dict[str, tuple[float, str]] = {}
+        self._latency: Dict[str, deque] = defaultdict(lambda: deque(maxlen=100))
 
     def get_metrics(self) -> Dict[str, int]:
         """Devuelve un snapshot de métricas del bus (publicaciones, despachos, respuestas)."""
@@ -28,6 +32,14 @@ class EventBus:
             "responses": self._metrics["responses"],
             "errors": self._metrics["errors"],
         }
+
+    def get_latency_metrics(self) -> Dict[str, float]:
+        summary = {}
+        for worker, values in self._latency.items():
+            if not values:
+                continue
+            summary[worker] = round(sum(values) / len(values), 2)
+        return summary
 
     async def start(self):
         """Inicia el loop de procesamiento."""
@@ -55,6 +67,8 @@ class EventBus:
     async def publish(self, message: LucyMessage):
         """Publicar mensaje en el bus."""
         self._metrics["published"] += 1
+        if message.type == MessageType.COMMAND:
+            self._inflight[message.id] = (time.time(), str(message.receiver))
         await self._queue.put(message)
 
     async def publish_and_wait(self, message: LucyMessage, timeout: float | None = None) -> LucyMessage:
@@ -88,6 +102,10 @@ class EventBus:
         if not future or future.done():
             return
         self._metrics["responses"] += 1
+        start = self._inflight.pop(message.in_reply_to, None)
+        if start:
+            elapsed = (time.time() - start[0]) * 1000.0
+            self._latency[start[1]].append(elapsed)
         if message.type == MessageType.ERROR:
             self._metrics["errors"] += 1
             future.set_exception(RuntimeError(message.content))

@@ -10,6 +10,8 @@ const busMetricsRecent = document.getElementById('bus-metrics-recent');
 const bridgeMetricsSummary = document.getElementById('bridge-metrics-summary');
 const bridgeMetricsRecent = document.getElementById('bridge-metrics-recent');
 const memoryEventsList = document.getElementById('memory-events-list');
+const toastContainer = document.getElementById('toast-container');
+let lastBridgeToast = 0;
 
 async function updateResourcePanel() {
     try {
@@ -132,6 +134,9 @@ async function updateWatcherPanel() {
                 : evt.details;
             if (evt.type && evt.type.startsWith('bridge_')) {
                 item.classList.add('bridge-event');
+                if (evt.type === 'bridge_backpressure') {
+                    showToast(`Bridge backlog alto (${details})`);
+                }
             }
             item.innerHTML = `<strong>${timeText} · ${evt.type}</strong><div>${details}</div>`;
             watcherEventsList.appendChild(item);
@@ -157,7 +162,7 @@ async function updateBusMetricsPanel() {
                 .map(([key, stats]) => `<div><strong>${key}</strong>: última=${stats.latest} avg=${stats.avg}</div>`);
             if (Object.keys(bridge).length) {
                 rows.push(
-                    `<div><strong>bridge</strong>: latency_ms=${bridge.latency_avg_ms ?? '-'} backlog=${bridge.backlog_max ?? '-'} dropped=${bridge.dropped ?? '-'}</div>`
+                    `<div><strong>bridge</strong>: latency_ms=${bridge.latency_avg_ms ?? '-'} p50=${bridge.latency_p50_ms ?? '-'} p95=${bridge.latency_p95_ms ?? '-'} backlog=${bridge.backlog_max ?? '-'} dropped=${bridge.dropped ?? '-'}</div>`
                 );
             }
             busMetricsSummary.innerHTML = rows.join('');
@@ -196,13 +201,13 @@ async function updateBridgeMetricsPanel() {
             return;
         }
         const last = records[records.length - 1];
-        bridgeMetricsSummary.innerHTML = `latency_ms=${last.latency_avg_ms ?? '-'} backlog=${last.backlog_max ?? '-'} dropped=${last.dropped ?? '-'}`;
+        bridgeMetricsSummary.innerHTML = `latency_ms=${last.latency_avg_ms ?? '-'} p50=${last.latency_p50_ms ?? '-'} p95=${last.latency_p95_ms ?? '-'} backlog=${last.backlog_max ?? '-'} dropped=${last.dropped ?? '-'}`;
         bridgeMetricsRecent.innerHTML = '';
         records.slice(-10).forEach(record => {
             const el = document.createElement('div');
             el.className = 'metrics-list-item';
             const time = new Date(record.timestamp * 1000).toLocaleTimeString();
-            el.textContent = `${time} · sent=${record.sent ?? 0} recv=${record.received ?? 0} drop=${record.dropped ?? 0} latency=${record.latency_avg_ms ?? '-'}`;
+            el.textContent = `${time} · sent=${record.sent ?? 0} recv=${record.received ?? 0} drop=${record.dropped ?? 0} latency=${record.latency_avg_ms ?? '-'} p95=${record.latency_p95_ms ?? '-'}`;
             bridgeMetricsRecent.appendChild(el);
         });
     } catch (err) {
@@ -237,4 +242,18 @@ async function updateMemoryEventsPanel() {
         console.error('No se pudo cargar eventos de memoria', err);
         memoryEventsList.textContent = 'Error cargando eventos de memoria.';
     }
+}
+
+function showToast(message) {
+    if (!toastContainer) return;
+    const now = Date.now();
+    if (now - lastBridgeToast < 8000) return;
+    lastBridgeToast = now;
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+        toast.remove();
+    }, 6000);
 }

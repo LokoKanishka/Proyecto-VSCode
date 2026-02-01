@@ -2,6 +2,7 @@ import logging
 import uuid
 import re
 from typing import List
+import time
 
 from src.core.base_worker import BaseWorker
 from src.core.bus import EventBus
@@ -26,6 +27,7 @@ class Manager(BaseWorker):
         self.resource_manager = ResourceManager()
         self.swarm = swarm
         self.pending_interrupts: List[str] = []
+        self._event_last_seen: dict[str, float] = {}
         self._register_worker_budgets()
         self.bus.subscribe("user_input", self.handle_user_input)
         self.bus.subscribe("broadcast", self.handle_broadcast_event)
@@ -178,6 +180,14 @@ class Manager(BaseWorker):
     async def handle_broadcast_event(self, message: LucyMessage):
         if message.type != MessageType.EVENT:
             return
+        throttle_s = float(os.getenv("LUCY_EVENT_THROTTLE_S", "1.0"))
+        last_seen = self._event_last_seen.get(message.content)
+        now = time.time()
+        if last_seen and now - last_seen < throttle_s and message.content in {
+            "gpu_usage", "gpu_pressure", "bridge_stats_audit"
+        }:
+            return
+        self._event_last_seen[message.content] = now
         self.memory.log_event(message.content, message.data or {}, "current_session")
         priority = self._event_priority(message.content)
         if priority >= 2:

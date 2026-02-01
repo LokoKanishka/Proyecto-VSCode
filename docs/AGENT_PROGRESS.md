@@ -54,6 +54,14 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Demo multi-nodo bridge: `scripts/bridge_multi_node_demo.sh`.
 - Bridge metrics persistentes + panel UI: `src/core/ws_bus_bridge.py`, `lucy_web/app.py`, `lucy_web/static/js/resources.js`.
 - CI smoke script: `scripts/ci_smoke.sh`.
+- Bridge: p50/p95, backoff con jitter, multi-URL, control dinámico de tópicos: `src/core/ws_bus_bridge.py`, `src/engine/swarm_runner.py`.
+- Bus: métricas de latencia por worker en bus_metrics: `src/core/bus.py`, `src/watchers/bus_metrics_watcher.py`.
+- Manager: throttling de eventos ruidosos: `src/core/manager.py`.
+- Memoria: rotación de backups + snapshots comprimidos + FAISS reload: `src/memory/memory_manager.py`.
+- Visión/Manos/Browser: cache SAM, SoM con label_norm, acciones extra de manos, DOM tables, auto-fallback: `src/vision/vision_pipeline.py`, `src/workers/hands_worker.py`, `src/workers/browser_worker.py`.
+- Code/VSCode: límites de contenedor y WS default: `src/workers/code_worker.py`, `src/workers/vscode_worker.py`.
+- UI/API: bridge metrics panel + endpoint `/api/bridge_metrics`: `lucy_web/app.py`, `lucy_web/static/js/resources.js`, `docs/LUCY-WEB-API.md`.
+- Tests/CI: dom_summary tables + events endpoint + GitHub Actions CI: `tests/test_browser_dom_summary.py`, `tests/test_web_api.py`, `.github/workflows/ci.yml`.
 - Tests: backup requiere cifrado si `LUCY_BACKUP_REQUIRE_ENCRYPTION=1`: `tests/test_memory_manager.py`.
 
 ### Falta (prioriza en cada sesión)

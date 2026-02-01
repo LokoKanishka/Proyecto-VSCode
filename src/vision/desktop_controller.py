@@ -180,14 +180,21 @@ class DesktopController:
     def press_hotkey(self, *keys: str):
         pyautogui.hotkey(*keys)
 
-    def click_bbox(self, bbox: Tuple[int, int, int, int], verify: bool = True) -> bool:
+    def click_bbox(
+        self,
+        bbox: Tuple[int, int, int, int],
+        verify: bool = True,
+        button: str = "left",
+        clicks: int = 1,
+        interval: float = 0.2,
+    ) -> bool:
         x, y, w, h = bbox
         cx = int(x + w / 2)
         cy = int(y + h / 2)
         before = self.screen_state.capture_region((x, y, w, h)) if verify else None
         try:
             self._human_like_move(cx, cy, self.default_duration)
-            pyautogui.click()
+            pyautogui.click(button=button, clicks=clicks, interval=interval)
         except Exception:
             if not self._click_cli(cx, cy):
                 raise

@@ -42,6 +42,14 @@ class HandsWorker(BaseWorker):
             await self._handle_click_bbox(message, payload)
         elif command == "click_element":
             await self._handle_click_element(message, payload)
+        elif command == "double_click_element":
+            payload["clicks"] = 2
+            await self._handle_click_element(message, payload)
+        elif command == "right_click_element":
+            payload["button"] = "right"
+            await self._handle_click_element(message, payload)
+        elif command == "focus_and_type":
+            await self._handle_focus_and_type(message, payload)
         elif command == "focus_window":
             await self._handle_focus_window(message, payload)
         else:
@@ -184,7 +192,14 @@ class HandsWorker(BaseWorker):
             return
 
         try:
-            ok = self.controller.click_bbox(tuple(bbox), verify=bool(payload.get("verify", True)))
+            button = payload.get("button", "left")
+            clicks = int(payload.get("clicks", 1))
+            ok = self.controller.click_bbox(
+                tuple(bbox),
+                verify=bool(payload.get("verify", True)),
+                button=button,
+                clicks=clicks,
+            )
             if ok:
                 await self.send_response(
                     msg,
@@ -195,6 +210,30 @@ class HandsWorker(BaseWorker):
                 await self.send_error(msg, "No pude confirmar el clic en el elemento.")
         except Exception as exc:
             await self.send_error(msg, f"Error click_element: {exc}")
+
+    async def _handle_focus_and_type(self, msg: LucyMessage, payload: dict):
+        elements = payload.get("elements") or []
+        text = payload.get("text") or ""
+        if not elements or not text:
+            await self.send_error(msg, "Necesito elements y text.")
+            return
+        selected = self._select_element(elements, payload.get("query", ""), payload.get("element_type", ""))
+        if not selected:
+            await self.send_error(msg, "No encontré elemento para focus.")
+            return
+        bbox = selected.get("bbox")
+        if not bbox:
+            await self.send_error(msg, "Elemento sin bbox.")
+            return
+        try:
+            ok = self.controller.click_bbox(tuple(bbox), verify=bool(payload.get("verify", True)))
+            if ok:
+                self.controller.type_text(text)
+                await self.send_response(msg, "Focus y tipeo completados.", {"element": selected})
+            else:
+                await self.send_error(msg, "No pude enfocar el elemento.")
+        except Exception as exc:
+            await self.send_error(msg, f"Error focus_and_type: {exc}")
 
     @staticmethod
     def _select_element(elements: list, query: str, element_type: str):

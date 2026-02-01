@@ -32,10 +32,12 @@ class BusMetricsWatcher:
     async def run(self) -> None:
         while self._running:
             metrics = self.bus.get_metrics()
+            latency = self.bus.get_latency_metrics()
             record = {
                 "timestamp": datetime.now().isoformat(),
                 "metrics": metrics,
                 "bridge": self._bridge_stats,
+                "latency": latency,
             }
             try:
                 with open(self.log_path, "a", encoding="utf-8") as fh:

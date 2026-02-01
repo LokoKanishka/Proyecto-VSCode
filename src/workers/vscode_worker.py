@@ -22,7 +22,7 @@ class VSCodeWorker(BaseWorker):
     def __init__(self, worker_id: str, bus):
         super().__init__(worker_id, bus)
         self.ws_url = os.getenv("LUCY_VSCODE_WS", "ws://127.0.0.1:8765")
-        self.prefer_ws = os.getenv("LUCY_VSCODE_WS_ENABLED", "0").lower() in {"1", "true", "yes"}
+        self.prefer_ws = os.getenv("LUCY_VSCODE_WS_ENABLED", "1").lower() in {"1", "true", "yes"}
 
     async def handle_message(self, message: LucyMessage):
         if message.type != MessageType.COMMAND:
