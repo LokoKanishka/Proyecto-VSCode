@@ -1,0 +1,34 @@
+cluster_name: lucy-blackwell
+
+# The maximum number of workers nodes to launch in addition to the head node.
+min_workers: 0
+max_workers: 0
+
+# Cloud-provider specific configuration.
+provider:
+    type: local
+    head_ip: 127.0.0.1
+    # worker_ips: []
+
+# How Ray will authenticate with newly launched nodes.
+auth:
+    ssh_user: lucy-ubuntu
+
+# The resources available to the head node.
+head_node:
+    resources: {"CPU": 16, "GPU": 1.0}
+
+# Worker nodes resources
+worker_nodes: {}
+
+# Files or directories to copy to the head and worker nodes.
+file_mounts: {}
+
+# Initialization commands
+setup_commands:
+    - pip install -r requirements.txt
+
+# Command to start ray on the head node.
+head_start_ray_commands:
+    - ray stop
+    - ray start --head --port=6379 --num-cpus=16 --num-gpus=1

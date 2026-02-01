@@ -13,9 +13,8 @@ import pyautogui
 import ollama
 from PIL import Image
 
-from src.skills.base_skill import BaseSkill
-from src.skills.desktop_skill_wrapper import DesktopSkillWrapper
 from src.skills.research_memory import ResearchMemorySkill
+from src.skills.sam2_skill import SAM2SegmentationSkill
 from src.engine.voice_bridge import LucyVoiceBridge
 from src.engine.semantic_router import SemanticRouter
 from src.engine.swarm_manager import SwarmManager
@@ -101,6 +100,7 @@ class OllamaEngine:
         for skill in self.desktop_skills.tools():
             self.register_skill(skill)
         self.register_skill(ResearchMemorySkill(self.research_memory))
+        self.register_skill(SAM2SegmentationSkill())
 
         # Modelo de vision (configurable por entorno o config.yaml)
         self.vision_model = self.swarm.vision_model

@@ -1,0 +1,14 @@
+[Unit]
+Description=Lucy Watchdog Service
+After=lucy-core.service
+
+[Service]
+Type=simple
+User=lucy-ubuntu
+WorkingDirectory=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode
+ExecStart=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/scripts/healthcheck.sh
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=default.target

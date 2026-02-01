@@ -59,3 +59,6 @@ final_test.log
 final_test_v2.log
 final_test_v3.log
 .venv_win/
+
+checkpoints/
+models/

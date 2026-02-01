@@ -1,0 +1,30 @@
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+
+# Base utilities
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-dev \
+    git \
+    wget \
+    ccache \
+    && rm -rf /var/lib/apt/lists/*
+
+# PyTorch Nightly with CUDA 12.x support (Blackwell requires latest PT)
+RUN pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu124
+
+# Build tools for vLLM
+RUN pip3 install packaging ninja setuptools wheel
+
+# Ray for orchestration
+RUN pip3 install "ray[default]"
+
+# Set arch list for Blackwell (SM120 is theoretical, often uses 9.0+ or specific flag)
+# For now we use 9.0 (Hopper) + PTX as fallback, or 10.0 if supported by compiler.
+# Audit suggested 12.0 architecture, sticking to that.
+ENV TORCH_CUDA_ARCH_LIST="9.0+PTX" 
+
+WORKDIR /app
+COPY . /app
+
+# Ensure we can build vLLM
+CMD ["/bin/bash"]

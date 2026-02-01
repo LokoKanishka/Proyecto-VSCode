@@ -20,11 +20,31 @@ class DesktopEye:
         out_path: str = "/tmp/lucy_vision.jpg",
         region: Optional[Tuple[int, int, int, int]] = None,
     ) -> str:
-        region = region or self._active_window_region()
-        if region:
-            screenshot = pyautogui.screenshot(region=region)
+        # Check if we are on Wayland
+        is_wayland = os.environ.get("XDG_SESSION_TYPE") == "wayland" or os.environ.get("WAYLAND_DISPLAY")
+        
+        if is_wayland:
+            from src.vision.wayland_capture import WaylandCapture
+            wc = WaylandCapture(output_dir=os.path.dirname(out_path))
+            filename = os.path.basename(out_path)
+            if region:
+                x, y, w, h = region
+                path = wc.capture_region(x, y, w, h, filename=filename)
+            else:
+                path = wc.capture_full(filename=filename)
+            
+            if path:
+                screenshot = Image.open(path)
+            else:
+                # Fallback to pyautogui if grim fails
+                screenshot = pyautogui.screenshot()
         else:
-            screenshot = pyautogui.screenshot()
+            region = region or self._active_window_region()
+            if region:
+                screenshot = pyautogui.screenshot(region=region)
+            else:
+                screenshot = pyautogui.screenshot()
+                
         if overlay_grid:
             screenshot = self._apply_grid(screenshot)
 

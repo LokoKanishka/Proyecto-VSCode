@@ -1,0 +1,15 @@
+[Unit]
+Description=Lucy Core Service
+After=network.target
+
+[Service]
+Type=simple
+User=lucy-ubuntu
+WorkingDirectory=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode
+ExecStart=/home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/.venv/bin/python src/main.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
