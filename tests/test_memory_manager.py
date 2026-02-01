@@ -98,3 +98,11 @@ def test_semantic_search_fallback_when_vector_empty(tmp_path, monkeypatch):
     results = manager.semantic_search("nada", k=2)
     assert called, "No se cayó al retrieve_relevant pese a vector store vacío"
     assert results and results[0]["content"] == "fallback data"
+
+
+def test_file_snapshot_logging(tmp_path):
+    db_file = tmp_path / "memory.db"
+    manager = MemoryManager(db_path=str(db_file))
+    content = b"hola lucy"
+    file_id = manager.log_file_snapshot("notes/test.txt", content, metadata={"source": "test"})
+    assert file_id is not None

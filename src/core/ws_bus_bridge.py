@@ -35,6 +35,8 @@ class WSBusBridge:
         self._metrics = {"sent": 0, "received": 0, "dropped": 0}
         self._latency_ms = deque(maxlen=200)
         self._backlog_max = 0
+        self._backlog_warn = int(os.getenv("LUCY_WS_BRIDGE_BACKLOG_WARN", "120"))
+        self._last_backlog_warn = 0.0
         self._seen = set()
         self._seen_fifo = deque(maxlen=2000)
         for topic in self.topics:
@@ -132,6 +134,20 @@ class WSBusBridge:
             await self._outbound_queue.put(json.dumps({"action": "publish", "message": payload}))
             if self._outbound_queue.qsize() > self._backlog_max:
                 self._backlog_max = self._outbound_queue.qsize()
+            if self._backlog_max >= self._backlog_warn:
+                now = time.time()
+                if now - self._last_backlog_warn > 10.0:
+                    self._last_backlog_warn = now
+                    logger.warning("WSBridge backlog alto: %s", self._backlog_max)
+                    await self.bus.publish(
+                        LucyMessage(
+                            sender="ws_bridge",
+                            receiver="broadcast",
+                            type=MessageType.EVENT,
+                            content="bridge_backpressure",
+                            data={"backlog": self._backlog_max, "url": self.url},
+                        )
+                    )
         except Exception as exc:
             logger.debug("WSBusBridge outbound error: %s", exc)
 

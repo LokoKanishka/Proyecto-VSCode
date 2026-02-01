@@ -45,9 +45,11 @@ Este archivo resume el estado actual y lo que falta implementar según el plan A
 - Snapshots automáticos al escribir archivos (VSCodeWorker): `src/workers/vscode_worker.py`.
 - Bridge WS: latencia promedio y backlog máximo en métricas: `src/core/ws_bus_bridge.py`.
 - Snapshots automáticos desde CodeWorker (write_file): `src/workers/code_worker.py`.
+- Bridge WS: alerta `bridge_backpressure` al superar umbral: `src/core/ws_bus_bridge.py`.
+- Tests: snapshot de archivos en memoria cubierto por `tests/test_memory_manager.py`.
 
 ### Falta (prioriza en cada sesión)
-1) **Hardening distribuido**: validar bridge WS en entorno real y alertas por backlog.
+1) **Hardening distribuido**: validar bridge WS en entorno real con nodos múltiples.
 2) **Memoria avanzada**: backups cifrados obligatorios en prod y conexión con CI.
 
 ### Ritual diario sugerido
