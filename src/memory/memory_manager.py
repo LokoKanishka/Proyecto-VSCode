@@ -51,15 +51,31 @@ class MemoryManager:
         self,
         db_path: str = "lucy_memory.db",
         vector_index_path: Optional[str] = None,
-        model_name: str = "all-MiniLM-L6-v2",
+        model_name: str = "nomic-embed-text",  # CHANGED: Technical embeddings specialized
         vector_store: Optional[VectorStoreProtocol] = None,
+        use_ollama: bool = True,  # NEW: Prefer Ollama embeddings
     ):
         self.db_path = db_path
         self.vector_index_path = vector_index_path
+        
+        # Initialize encoder - UPGRADED to technical embeddings
         if os.getenv("LUCY_NO_EMB", "0") in {"1", "true", "yes"}:
             self.encoder = _DummyEncoder()
+            logger.info("🔇 Embeddings disabled (LUCY_NO_EMB=1)")
+        elif use_ollama:
+            # Use Ollama embeddings (nomic-embed-text for technical code understanding)
+            try:
+                from src.memory.ollama_embeddings import OllamaEmbeddings
+                self.encoder = OllamaEmbeddings(model=model_name)
+                logger.info(f"🧠 Technical embeddings active: {model_name} via Ollama")
+            except Exception as e:
+                logger.warning(f"⚠️ Ollama embeddings failed ({e}), falling back to SentenceTransformer")
+                self.encoder = SentenceTransformer("all-MiniLM-L6-v2")
         else:
+            # Fallback to SentenceTransformers (generic embeddings)
             self.encoder = SentenceTransformer(model_name)
+            logger.info(f"📚 Generic embeddings: {model_name}")
+        
         self.vector_store = vector_store
         self.faiss_index = None
         self.faiss_dim = None
