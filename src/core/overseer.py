@@ -9,6 +9,7 @@ import os
 from typing import Dict, Any, List, Optional
 from loguru import logger
 from src.core.persistence import Hippocampus
+from src.core.risk_evaluator import get_risk_evaluator, RiskLevel
 
 
 class KnowledgeRetriever:
@@ -104,13 +105,11 @@ class Overseer:
         self.hippocampus = Hippocampus()
         logger.info(f"👁️ Lucy Despierta. {self.hippocampus.recall()}")
         
-        # Safety configuration
-        self.safe_actions_whitelist = [
-            "capture_screen",
-            "search_memory",
-            "analyze_vision",
-            "generate_report"
-        ]
+        # Safety configuration - DYNAMIC RISK TOPOLOGY
+        # ELIMINADO: self.safe_actions_whitelist (jaula estática)
+        # REEMPLAZADO: Evaluación dinámica con RiskEvaluator
+        self.risk_evaluator = get_risk_evaluator()
+        self.max_auto_risk = RiskLevel.LOW  # Solo ejecuta auto si LOW o SAFE
         self.min_action_interval = float(os.getenv("OVERSEER_MIN_INTERVAL", "5.0"))
         
         logger.info("🧠 Overseer initialized | State: DORMANT")
@@ -267,32 +266,37 @@ class Overseer:
         """
         Safety critic: Evaluate if plan is safe to execute.
         
+        Uses DYNAMIC RISK TOPOLOGY instead of static whitelist.
+        
         Args:
             plan: Proposed action sequence
             
         Returns:
-            True if plan passes safety checks
+            True if plan passes dynamic safety checks
         """
         if not plan:
             return False
         
-        # Check each step against whitelist
+        # Evaluate each step with RiskEvaluator
         for step in plan:
-            step_lower = step.lower()
+            risk, reason = self.risk_evaluator.evaluate_action(
+                step, 
+                context=self.world_model
+            )
             
-            # Blacklist dangerous patterns
-            dangerous_patterns = [
-                "rm -rf",
-                "sudo",
-                "delete all",
-                "format",
-                "shutdown",
-                "reboot"
-            ]
-            
-            if any(pattern in step_lower for pattern in dangerous_patterns):
-                logger.warning(f"🚫 Dangerous pattern detected in plan: {step}")
+            # Check if risk exceeds autonomous execution threshold
+            if risk.value > self.max_auto_risk.value:
+                # Si requiere simulación, escribir en monólogo
+                if self.risk_evaluator.should_simulate_first(risk):
+                    logger.info(f"🧠 Simulation required for: {step}")
+                    self._simulate_in_monologue(step, risk, reason)
+                    return False  # No ejecutar hasta validar simulación
+                
+                logger.warning(f"🚫 Action blocked - Risk {risk.name}: {reason}")
                 return False
+            
+            # Log acciones permitidas
+            logger.info(f"✅ Action approved - Risk {risk.name}: {step}")
         
         return True
     
@@ -442,6 +446,90 @@ Sé honesta y autocrítica. Esta es tu primera introspección real."""
         self.hippocampus.add_lesson(lesson)
         logger.info(f"📝 Lección aprendida: {lesson}")
     
+    def _simulate_in_monologue(self, action: str, risk: RiskLevel, reason: str):
+        """
+        Escribe simulación predictiva en monólogo interno.
+        
+        Motor de Simulación: Predice consecuencias ANTES de ejecutar acción.
+        Permite "depuración cognitiva" reduciendo P_error futuro.
+        
+        Args:
+            action: Acción propuesta
+            risk: Nivel de riesgo evaluado
+            reason: Justificación del riesgo
+        """
+        from datetime import datetime
+        
+        # Calcular probabilidad de éxito
+        p_success = self.risk_evaluator.calculate_p_success(action, self.world_model)
+        p_failure = 1.0 - p_success
+        
+        # Obtener estrategia de rollback
+        rollback_strategy = self.risk_evaluator.get_rollback_strategy(action, risk)
+        
+        # Generar template de simulación
+        timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        asiento_num = self.cycle_count + 100  # Offset para distinguir simulaciones
+        
+        simulation = f"""
+## [SIMULACIÓN] Asiento {asiento_num} - Acción Propuesta
+
+**Fecha:** {timestamp}  
+**Trigger:** Overseer autonomous cycle {self.cycle_count}
+
+### Hipótesis
+> {action}
+
+### Evaluación de Riesgo
+- **Nivel:** {risk.name}
+- **Razón:** {reason}
+- **Reversible:** {'Sí' if rollback_strategy else 'No'}
+
+### Predicción de Consecuencias
+
+**Probabilidad de éxito:** {p_success:.1%}  
+**Probabilidad de fallo:** {p_failure:.1%}
+
+**Mejor caso (P={p_success:.0%}):**
+- Acción ejecutada exitosamente
+- Estado del sistema coherente
+- S_lucy incrementa
+
+**Peor caso (P={p_failure:.0%}):**
+- Acción falla o produce side-effects no deseados
+- Requiere intervención manual
+- Incremento de entropía
+
+### Plan de Rollback
+```
+{rollback_strategy if rollback_strategy else "# No reversible - backup manual requerido"}
+```
+
+### Decisión
+- [ ] RETENER (riesgo {risk.name} excede threshold {self.max_auto_risk.name})
+- [ ] Esperar validación externa o reducción de riesgo
+- [ ] Generar test preventivo antes de ejecutar
+
+**Estado:** SIMULACIÓN RETENIDA - No ejecutada
+
+---
+
+"""
+        
+        # Escribir en monólogo interno
+        monologue_path = "src/core/inner_monologue.md"
+        try:
+            with open(monologue_path, "a", encoding="utf-8") as f:
+                f.write(simulation)
+            logger.info(f"🧠 Simulación escrita en {monologue_path} - Asiento {asiento_num}")
+        except Exception as e:
+            logger.error(f"❌ Error escribiendo simulación: {e}")
+        
+        # Guardar en Hippocampus para memoria persistente
+        thought = f"SIMULACIÓN: {action} | Riesgo: {risk.name} | P_éxito: {p_success:.0%}"
+        self.hippocampus.save_thought(thought, goal="risk_evaluation")
+
+    
     async def stop_autonomous(self) -> str:
         """
         Emergency stop for autonomous mode.
@@ -466,7 +554,8 @@ Sé honesta y autocrítica. Esta es tu primera introspección real."""
             "autonomous_enabled": self.autonomous_enabled,
             "cycle_count": self.cycle_count,
             "world_model": self.world_model,
-            "safe_actions": self.safe_actions_whitelist
+            "max_auto_risk": self.max_auto_risk.name,  # DYNAMIC instead of whitelist
+            "risk_evaluator_active": True
         }
 
 
