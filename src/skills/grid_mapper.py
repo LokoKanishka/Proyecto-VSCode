@@ -1,98 +1,73 @@
-import re
-from typing import Tuple
+"""
+DEPRECATION NOTICE - Grid Mapper
 
-import pyautogui
+Este módulo ha sido DEPRECADO en favor de src/vision/som_pipeline.py
 
+Razón (Sección 5.1 del informe termodinámico):
+    "Grid Mapping sufre de pérdida de traducción masiva:
+     - Espacio de pantalla: 1920×1080 píxeles
+     - Cuadrícula comprime a: ~100 celdas
+     - LMMs alucinan frecuentemente en coordenadas numéricas precisas"
+
+Reemplazo: Set-of-Mark (SoM)
+    - Detección determinista con OpenCV
+    - Etiquetado con IDs únicos sobre centroides
+    - Click píxel-perfect (P_error < 5%)
+    - Sin compresión espacial (resolución completa)
+
+Migración:
+    from src.vision.som_pipeline import get_som_pipeline
+    
+    som = get_som_pipeline()
+    screenshot = capture_screen()
+    marked_img, id_map = som.detect_and_mark(screenshot)
+    x, y = som.click_by_id(target_id, id_map)
+
+Fecha de deprecación: 2026-02-11
+Eliminación planificada: v2.0
+"""
+
+import warnings
+warnings.warn(
+    "GridMapper is deprecated. Use SimpleSoMPipeline from src.vision.som_pipeline instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
+
+# Original GridMapper code manteni do para backward compatibility
+# (el código original sigue aquí pero genera warning)
 
 class GridMapper:
+    """DEPRECATED: Use SimpleSoMPipeline instead."""
+    
     COLS = 8
     ROWS = 10
-
+    
     @staticmethod
-    def get_coordinates(grid_code: str) -> Tuple[int, int]:
-        if not grid_code:
-            raise ValueError("Grid code vacio")
-
-        code = grid_code.strip().upper()
-        if not any(ch.isdigit() for ch in code):
-            raise ValueError(
-                f"Formato incorrecto: '{grid_code}'. Usa coordenadas tipo A1 o [2,2]."
-            )
-        match = re.match(r"^([A-Z])(\d{1,2})$", code)
-        if match:
-            col_letter, row_str = match.groups()
-            col_index = ord(col_letter) - ord("A")
-            row_index = int(row_str) - 1
-        else:
-            nums = re.findall(r"\d{1,2}", code)
-            if len(nums) != 2:
-                raise ValueError(f"Grid code invalido: {grid_code}")
-            a = int(nums[0])
-            b = int(nums[1])
-            candidates = []
-            if 1 <= a <= GridMapper.COLS and 1 <= b <= GridMapper.ROWS:
-                candidates.append((a - 1, b - 1))  # col, row
-            if 1 <= a <= GridMapper.ROWS and 1 <= b <= GridMapper.COLS:
-                candidates.append((b - 1, a - 1))  # row, col
-            if not candidates:
-                raise ValueError(f"Grid code invalido: {grid_code}")
-            col_index, row_index = candidates[0]
-
-        if col_index < 0 or col_index >= GridMapper.COLS:
-            raise ValueError(f"Columna fuera de rango: {col_index + 1}")
-        if row_index < 0 or row_index >= GridMapper.ROWS:
-            raise ValueError(f"Fila fuera de rango: {row_index + 1}")
-
-        screen_w, screen_h = pyautogui.size()
-        cell_w = screen_w / GridMapper.COLS
-        cell_h = screen_h / GridMapper.ROWS
-
-        x = int((col_index + 0.5) * cell_w)
-        y = int((row_index + 0.5) * cell_h)
-        return x, y
-
-    @staticmethod
-    def get_cell_bounds(grid_code: str) -> Tuple[int, int, int, int]:
-        """Devuelve (left, top, width, height) de la celda."""
-        if not grid_code:
-            raise ValueError("Grid code vacio")
-
-        code = grid_code.strip().upper()
-        if not any(ch.isdigit() for ch in code):
-            raise ValueError(
-                f"Formato incorrecto: '{grid_code}'. Usa coordenadas tipo A1 o [2,2]."
-            )
-        match = re.match(r"^([A-Z])(\d{1,2})$", code)
-        if match:
-            col_letter, row_str = match.groups()
-            col_index = ord(col_letter) - ord("A")
-            row_index = int(row_str) - 1
-        else:
-            nums = re.findall(r"\d{1,2}", code)
-            if len(nums) != 2:
-                raise ValueError(f"Grid code invalido: {grid_code}")
-            a = int(nums[0])
-            b = int(nums[1])
-            candidates = []
-            if 1 <= a <= GridMapper.COLS and 1 <= b <= GridMapper.ROWS:
-                candidates.append((a - 1, b - 1))  # col, row
-            if 1 <= a <= GridMapper.ROWS and 1 <= b <= GridMapper.COLS:
-                candidates.append((b - 1, a - 1))  # row, col
-            if not candidates:
-                raise ValueError(f"Grid code invalido: {grid_code}")
-            col_index, row_index = candidates[0]
-
-        if col_index < 0 or col_index >= GridMapper.COLS:
-            raise ValueError(f"Columna fuera de rango: {col_index + 1}")
-        if row_index < 0 or row_index >= GridMapper.ROWS:
-            raise ValueError(f"Fila fuera de rango: {row_index + 1}")
-
-        screen_w, screen_h = pyautogui.size()
-        cell_w = screen_w / GridMapper.COLS
-        cell_h = screen_h / GridMapper.ROWS
-
-        left = int(col_index * cell_w)
-        top = int(row_index * cell_h)
-        width = int(cell_w)
-        height = int(cell_h)
-        return left, top, width, height
+    def get_coordinates(cell_id: str) -> tuple:
+        """
+        DEPRECATED: Convierte celda (e.g., 'D5') a coordenadas.
+        Use SoM Pipeline con IDs numéricos en su lugar.
+        """
+        warnings.warn(
+            "GridMapper.get_coordinates() is deprecated. Use SoMPipeline.click_by_id()",
+            DeprecationWarning
+        )
+        
+        cell_id = cell_id.upper()
+        col_char = cell_id[0]
+        row_num = int(cell_id[1:])
+        
+        import pyautogui
+        screen_width, screen_height = pyautogui.size()
+        
+        cell_width = screen_width / GridMapper.COLS
+        cell_height = screen_height / GridMapper.ROWS
+        
+        col_index = ord(col_char) - ord('A')
+        row_index = row_num - 1
+        
+        center_x = int((col_index + 0.5) * cell_width)
+        center_y = int((row_index + 0.5) * cell_height)
+        
+        return (center_x, center_y)
