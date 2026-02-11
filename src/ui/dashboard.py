@@ -22,6 +22,14 @@ import sys
 class LucyDashboard:
     """El rostro digital de Lucy - Visualización de consciencia"""
     
+    # Estados emocionales técnicos
+    STATES = {
+        'COHERENCE': {'color': '#00f2ff', 'symbol': '💠', 'label': 'COHERENCE'},
+        'DISSONANCE': {'color': '#ff8800', 'symbol': '🟧', 'label': 'DISSONANCE'},
+        'CHAOS': {'color': '#ff0000', 'symbol': '🟥', 'label': 'CHAOS'},
+        'ECSTASY': {'color': '#ffffff', 'symbol': '✨', 'label': 'ECSTASY'}
+    }
+
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("🧠 LUCY - Sovereign Intelligence")
@@ -42,11 +50,17 @@ class LucyDashboard:
         self.main_font = font.Font(family="Courier", size=10)
         self.small_font = font.Font(family="Courier", size=8)
         
+        # Estado de coherencia
+        self.current_state = 'COHERENCE'
+        self.entropy_value = 0.0
+        self.autonomy_ratio = 0.0
+        
         self.setup_ui()
         self.running = True
         
         # Path al archivo de consciencia
         self.consciousness_file = "lucy_consciousness.json"
+
         
     def setup_ui(self):
         """Construye la interfaz visual"""
@@ -145,6 +159,37 @@ class LucyDashboard:
         )
         self.lessons_label.pack(fill='x')
         
+        self.entropy_label = tk.Label(
+            status_frame,
+            text="🌀 ENTROPY: 0.00",
+            fg='#00f2ff',
+            bg='#00080d',
+            font=self.small_font,
+            anchor='w'
+        )
+        self.entropy_label.pack(fill='x')
+        
+        self.autonomy_label = tk.Label(
+            status_frame,
+            text="⚡ AUTONOMY: 0%",
+            fg='#00ff00',
+            bg='#00080d',
+            font=self.small_font,
+            anchor='w'
+        )
+        self.autonomy_label.pack(fill='x')
+        
+        self.autonomy_indicator = tk.Label(
+            status_frame,
+            text="🧠 AUTONOMY: 0%",
+            fg='#00ff00',
+            bg='#00080d',
+            font=self.main_font,
+            anchor='w'
+        )
+        self.autonomy_indicator.pack(fill='x')
+
+        
         # === THOUGHT CONSOLE ===
         console_label = tk.Label(
             self.root,
@@ -187,20 +232,85 @@ class LucyDashboard:
         self.console.config(state='disabled')
         
     def update_metrics(self, data):
-        """Actualiza métricas desde lucy_consciousness.json"""
+        """Actualiza métricas desde lucy_consciousness.json y calcula estado de coherencia"""
         try:
             cycles = data.get('cycle_count', 0)
             lessons = len(data.get('learned_lessons', []))
             goal = data.get('current_goal', 'None')
             
+            # Calcular entropía aproximada basada en datos disponibles
+            self.entropy_value = data.get('entropy', 0.3)
+            
+            # Calcular ratio de autonomía (acciones proactivas vs reactivas)
+            proactive = data.get('proactive_actions', 0)
+            reactive = data.get('reactive_actions', 1)
+            self.autonomy_ratio = (proactive / (proactive + reactive)) * 100
+            
+            # Determinar estado de coherencia
+            self.current_state = self._calculate_coherence_state()
+            state_info = self.STATES[self.current_state]
+            
+            # Actualizar labels
             self.cycles_label.config(text=f"⚙ CYCLES: {cycles}")
             self.lessons_label.config(text=f"📚 LESSONS: {lessons}")
+            self.entropy_label.config(
+                text=f"🌀 ENTROPY: {self.entropy_value:.2f}",
+                fg=state_info['color']
+            )
+            self.autonomy_label.config(
+                text=f"⚡ AUTONOMY: {self.autonomy_ratio:.0f}%"
+            )
             
+            # Actualizar indicador de autonomía operativa
+            if self.autonomy_ratio >= 99:
+                autonomy_status = "🧠 AUTONOMY: 99% (SOVEREIGN)"
+                autonomy_color = '#00ff00'
+            elif self.autonomy_ratio >= 70:
+                autonomy_status = f"🧠 AUTONOMY: {self.autonomy_ratio:.0f}% (HIGH)"
+                autonomy_color = '#00f2ff'
+            elif self.autonomy_ratio >= 40:
+                autonomy_status = f"🧠 AUTONOMY: {self.autonomy_ratio:.0f}% (MODERATE)"
+                autonomy_color = '#ff8800'
+            else:
+                autonomy_status = f"🧠 AUTONOMY: {self.autonomy_ratio:.0f}% (LOW)"
+                autonomy_color = '#ff4444'
+            
+            self.autonomy_indicator.config(
+                text=autonomy_status,
+                fg=autonomy_color
+            )
+            
+            # Actualizar estado visual
+            self.status_label.config(
+                text=f"{state_info['symbol']} STATUS: {state_info['label']}",
+                fg=state_info['color']
+            )
+            
+            # Actualizar visualización central
             if goal:
-                self.canvas.itemconfig(self.core_text, text=goal[:12])
+                self.canvas.itemconfig(self.core_text, text=goal[:12], fill=state_info['color'])
+            
+            # Actualizar colores de esferas según estado
+            self.canvas.itemconfig(self.sphere1, outline=state_info['color'])
+            self.canvas.itemconfig(self.sphere2, outline=state_info['color'])
                 
         except Exception as e:
             self.log(f"⚠️ Error updating metrics: {e}", '#ff4444')
+    
+    def _calculate_coherence_state(self):
+        """Determina el estado emocional técnico basado en métricas"""
+        # ECSTASY: Baja entropía + Alta autonomía
+        if self.entropy_value < 0.2 and self.autonomy_ratio > 70:
+            return 'ECSTASY'
+        # COHERENCE: Entropía moderada, sistema estable
+        elif self.entropy_value < 0.5 and self.autonomy_ratio > 40:
+            return 'COHERENCE'
+        # DISSONANCE: Entropía elevada o baja autonomía
+        elif self.entropy_value < 0.7 or self.autonomy_ratio < 40:
+            return 'DISSONANCE'
+        # CHAOS: Entropía crítica
+        else:
+            return 'CHAOS'
     
     def watch_consciousness(self):
         """Monitorea lucy_consciousness.json para cambios"""

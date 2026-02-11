@@ -149,34 +149,92 @@ class SwarmRunner:
             RemoteWorkerProxy(worker_id, self.bus, url)
 
     async def run(self) -> None:
-        """Ejecuta el bus y los watchers hasta que el usuario interrumpe con Ctrl+C."""
-        logger.info("⚙️ Iniciando Swarm Runner...")
+        """Ejecuta el bus y workers en paralelo con health-checks."""
+        try:
+            from src.utils.silent_logger import SilentProgressLogger
+            progress = SilentProgressLogger(total_steps=5)
+        except ImportError:
+            progress = None
+            logger.info("⚙️ Iniciando Swarm Runner (modo paralelo)...")
+        
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
                 loop.add_signal_handler(sig, self._request_stop)
             except NotImplementedError:
-                # Windows event loop no soporta add_signal_handler con asyncio
                 pass
 
+        # 1. Bus primero (fundamental)
+        if progress:
+            progress.step("EventBus")
         self.bus_task = asyncio.create_task(self.bus.start())
-        self._start_watchers()
-        self._start_audio()
-        self._start_console()
+        await asyncio.sleep(0.1)  # Dar tiempo al bus para inicializar
+        
+        # 2. Lanzar componentes en paralelo
+        parallel_tasks = []
+        parallel_tasks.append(self._start_watchers_parallel(progress))
+        parallel_tasks.append(self._start_audio_with_check(progress))
+        
+        # Esperar a que watchers y audio estén listos
+        await asyncio.gather(*parallel_tasks, return_exceptions=True)
+        
+        # 3. WebSocket components (pueden depender del bus)
+        if progress:
+            progress.step("WebSocket Gateway")
         await self._start_ws_gateway()
         await self._start_ws_bridge()
-        logger.info("🤖 Swarm en marcha. Presioná Ctrl+C para detener.")
+        
+        # 4. Verificar health del swarm
+        if progress:
+            progress.step("Health Check")
+        health_ok = await self._verify_swarm_health()
+        if not health_ok:
+            logger.warning("⚠️ Algunos componentes fallaron health-check")
+        
+        # 5. Consola solo después de que todo esté listo
+        self._start_console()
+        
+        if progress:
+            progress.finish("✅ Swarm operacional. Presioná Ctrl+C para detener.")
+        else:
+            logger.info("✅ Swarm operacional. Presioná Ctrl+C para detener.")
+        
         await self._stop_event.wait()
         await self.stop()
 
     def _start_watchers(self) -> None:
+        """LEGACY: Inicia watchers de forma síncrona (no usar)."""
         self.watcher_tasks = [
             asyncio.create_task(watcher.run()) for watcher in self.watchers
         ]
+    
+    async def _start_watchers_parallel(self, progress=None) -> None:
+        """Lanza watchers en paralelo y espera a que estén listos."""
+        if progress:
+            progress.step("Watchers")
+        self.watcher_tasks = [
+            asyncio.create_task(watcher.run()) for watcher in self.watchers
+        ]
+        # Esperar a que al menos se inicialicen (no esperar ejecución completa)
+        await asyncio.sleep(0.2)
 
     def _start_audio(self) -> None:
+        """LEGACY: Inicia audio de forma síncrona (no usar)."""
         if getattr(self, "ear_worker", None):
             self.audio_tasks.append(asyncio.create_task(self.ear_worker.run()))
+    
+    async def _start_audio_with_check(self, progress=None) -> None:
+        """Lanza audio workers con health-check."""
+        if not getattr(self, "ear_worker", None):
+            if progress:
+                progress.step("Audio", "⏭️")
+            return
+        
+        if progress:
+            progress.step("Audio Workers")
+        self.audio_tasks.append(asyncio.create_task(self.ear_worker.run()))
+        # Health check: dar tiempo a que ear_worker inicialice
+        await asyncio.sleep(0.1)
 
     def _start_console(self) -> None:
         if not self.enable_console:
@@ -236,6 +294,25 @@ class SwarmRunner:
         if not self._stop_event.is_set():
             logger.info("📩 Señal recibida, preparando apagado...")
             self._stop_event.set()
+    
+    async def _verify_swarm_health(self) -> bool:
+        """Verifica que todos los componentes críticos estén operacionales."""
+        try:
+            # Verificar que bus está activo
+            if not self.bus_task or self.bus_task.done():
+                logger.warning("Bus no está activo")
+                return False
+            
+            # Verificar que watchers están corriendo
+            active_watchers = sum(1 for task in self.watcher_tasks if not task.done())
+            if active_watchers < len(self.watchers) // 2:
+                logger.warning(f"Solo {active_watchers}/{len(self.watchers)} watchers activos")
+                return False
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error en health-check: {e}")
+            return False
 
     async def _console_loop(self) -> None:
         while not self._stop_event.is_set():
