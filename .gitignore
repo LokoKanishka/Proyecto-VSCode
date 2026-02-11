@@ -62,3 +62,9 @@ final_test_v3.log
 
 checkpoints/
 models/
+
+# Secrets and local config
+.env
+.env.*
+config/*.local*
+config/*.local.*

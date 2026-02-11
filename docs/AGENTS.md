@@ -41,12 +41,59 @@ graph LR
 4. **Voice Activity Detection (VAD)**: `webrtcvad` for automatic speech detection
 5. **Wake Word**: OpenWakeWord (configurable, default models or custom training)
 
-### Agent System
+### Agent System & Cognitive Architecture
 
-- **Desktop Agent** ([desktop_bridge.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_agents/desktop_bridge.py)): Executes system commands, opens applications
-- **Web Agent** ([web_agent/](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_agents/web_agent/)): Performs web searches via SearXNG
-- **YouTube Agent** ([youtube_agent.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_web_agent/youtube_agent.py)): Finds YouTube videos using yt-dlp
-- **Voice Actions** ([voice_actions.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_agents/voice_actions.py)): Rule-based intent matching for quick responses
+#### Nivel 0: Orquestación Consciente (Frontal Lobe)
+
+- **Overseer** ([overseer.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/src/core/overseer.py)): Sistema de orquestación cognitiva autónoma
+  - Implementa el ciclo **Perceive → Deliberate → Critique → Execute → Reflect**
+  - Puede operar en modo autónomo (sin input del usuario)
+  - Delega la planificación a `PlannerActor` vía Tree of Thoughts
+  - Integra guardrails de seguridad para prevenir acciones peligrosas
+  - **Estados**: `DORMANT`, `OBSERVING`, `THINKING`, `ACTING`, `REFLECTING`
+  - **Comandos**: `/overseer start`, `/overseer stop`, `/overseer status`, `/overseer intent <goal>`
+
+#### Nivel 1: Coordinación y Planificación
+
+- **LucyManager** ([manager.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/src/core/manager.py)): Entry point para usuarios humanos
+  - Procesa comandos del usuario y delega a actores especializados
+  - Puede activar el Overseer para tareas autónomas
+  - Implementa seguridad via `SecurityGuard`
+  
+- **PlannerActor** ([planner.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/src/core/planner.py)): Motor de Tree of Thoughts
+  - Genera múltiples caminos de acción posibles
+  - Evalúa y puntúa cada pensamiento candidato
+  - Selecciona el plan óptimo mediante búsqueda ponderada
+  - Usado tanto por Manager (reactivo) como Overseer (autónomo)
+
+#### Nivel 2: Sentidos y Acciones
+
+- **VisionActor** ([vision/worker.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/src/senses/vision/worker.py)): Percepción visual
+  - YOLOv8 para detección de UI elements
+  - SAM2 para segmentación precisa
+  - Tesseract OCR para búsqueda de texto
+
+- **VoiceActor** ([lucy_voice/worker.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_voice/worker.py)): Pipeline de voz
+  - Whisper STT para reconocimiento de voz
+  - Piper TTS para síntesis de voz
+  - Silero VAD para detección de actividad vocal
+
+- **ActionActor** ([action/worker.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/src/senses/action/worker.py)): Ejecución de acciones
+  - Control de mouse y teclado via xdotool
+  - Integra `GUIAutomation` y `BusinessTools`
+  - Ejecuta planes generados por PlannerActor
+
+- **MemoryActor** ([memory.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/src/core/memory.py)): Memoria vectorial
+  - LanceDB para almacenamiento de embeddings
+  - Búsqueda semántica de conocimiento
+  - Watchers de directorios para ingestión automática
+
+#### Nivel 3: Herramientas Especializadas
+
+- **Desktop Agent** ([desktop_bridge.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_agents/desktop_bridge.py)): Ejecución de comandos del sistema
+- **Web Agent** ([web_agent/](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_agents/web_agent/)): Búsquedas web via SearXNG
+- **YouTube Agent** ([youtube_agent.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_web_agent/youtube_agent.py)): Búsqueda de videos
+- **Voice Actions** ([voice_actions.py](file:///home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode/lucy_agents/voice_actions.py)): Matching de intents basado en reglas
 
 ---
 

@@ -95,6 +95,36 @@ class LucyManager:
             except Exception as e:
                 return f"Voice Error: {e}"
 
+        if "/overseer" in input_data:
+            # Usage: /overseer start [iterations] | /overseer stop | /overseer status
+            try:
+                overseer = get_or_create_overseer()
+                cmd = input_data.replace("/overseer", "").strip().split()
+                
+                if not cmd or cmd[0] == "status":
+                    status = await overseer.status.remote()
+                    return f"🧠 Overseer Status:\n{status}"
+                
+                elif cmd[0] == "start":
+                    iterations = int(cmd[1]) if len(cmd) > 1 else 10
+                    # Run asynchronously
+                    overseer.autonomous_cycle.remote(max_iterations=iterations)
+                    return f"🧠 Overseer initiated: {iterations} cycles"
+                
+                elif cmd[0] == "stop":
+                    result = await overseer.stop_autonomous.remote()
+                    return result
+                
+                elif cmd[0] == "intent":
+                    intent = " ".join(cmd[1:])
+                    result = await overseer.set_intent.remote(intent)
+                    return result
+                
+                else:
+                    return "Usage: /overseer [start|stop|status|intent]"
+            except Exception as e:
+                return f"Overseer Error: {e}"
+
         # Route to Planner
         try:
             planner = get_or_create_planner()
@@ -174,3 +204,12 @@ def get_or_create_memory():
         from src.core.memory import MemoryActor
         # Request more memory/cpu if needed, but default is fine for now
         return MemoryActor.options(name="MemoryActor", lifetime="detached").remote()
+
+# Helper to start the overseer if not exists
+def get_or_create_overseer():
+    try:
+        actor = ray.get_actor("Overseer")
+        return actor
+    except ValueError:
+        from src.core.overseer import Overseer
+        return Overseer.options(name="Overseer", lifetime="detached").remote()
