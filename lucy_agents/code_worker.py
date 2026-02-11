@@ -213,7 +213,7 @@ class CodeWorker(BaseWorker):
         return any(token in lowered for token in blocklist)
 
     def _generate_code_with_llm(self, prompt: str) -> Tuple[str, dict]:
-        model = os.getenv("LUCY_CODE_MODEL", "qwen2.5:14b")
+        model = os.getenv("LUCY_CODE_MODEL", "qwen2.5:32b")
         host = os.getenv("LUCY_OLLAMA_HOST", "http://localhost:11434")
         use_vllm = os.getenv("LUCY_CODE_USE_VLLM", "0") in {"1", "true", "yes"}
         vllm_url = os.getenv("LUCY_VLLM_URL", "http://localhost:8000")

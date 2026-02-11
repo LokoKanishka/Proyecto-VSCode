@@ -10,7 +10,7 @@ from src.skills.youtube_skill import YoutubeSkill
 from src.skills.system_control import SystemControlSkill
 
 class LucyOrchestrator:
-    def __init__(self, model="dolphin-llama3"):
+    def __init__(self, model="qwen2.5:32b"):
         logger.info("🎨 Inicializando Orquestador Monolítico de Lucy...")
         
         # 1. Motores de Percepción y Cognición

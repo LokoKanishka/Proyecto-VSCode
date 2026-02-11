@@ -61,13 +61,13 @@ class SwarmManager:
             or os.getenv("LUCY_MAIN_MODEL")
             or os.getenv("LUCY_OLLAMA_MODEL")
             or self._config.get("ollama_model")
-            or "llama3.1:8b"
+            or "qwen2.5:32b"
         )
         self.vision_model = (
             vision_model
             or os.getenv("LUCY_VISION_MODEL")
             or self._config.get("ollama_vision_model")
-            or "llava:latest"
+            or "llama3.2-vision:latest"
         )
         swarm_cfg = self._config.get("swarm", {}) if isinstance(self._config.get("swarm"), dict) else {}
         self.persistent = self._parse_bool(
@@ -89,6 +89,9 @@ class SwarmManager:
         lora_targets_raw = os.getenv("LUCY_LORA_TARGETS", "chat_worker,code_worker")
         self._lora_targets = {item.strip() for item in lora_targets_raw.split(",") if item.strip()}
         self._last_lora_prune = 0.0
+
+        os.environ["LUCY_LLM_NUM_CTX"] = str(self._config.get("ollama_num_ctx", 16384))
+        os.environ["LUCY_VISION_PENALTY"] = str(self._config.get("ollama_repetition_penalty", 1.15))
 
         logger.info(
             "🧠 SwarmManager listo (host={}, main={}, vision={}, persistente={})",
@@ -215,7 +218,7 @@ class SwarmManager:
 
     def _resolve_model_for_worker(self, worker: str) -> Optional[str]:
         if worker in self._lora_targets and self.lora.active():
-            model = self.lora.list().get(self.lora.active())
+            model = self.lora.list_loras().get(self.lora.active())
             if model:
                 return model
         if worker in self.worker_profiles:

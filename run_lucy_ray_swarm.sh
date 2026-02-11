@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 HOST="${LUCY_OLLAMA_HOST:-http://localhost:11434}"
-MAIN_MODEL="${LUCY_MAIN_MODEL:-qwen2.5:14b}"
+MAIN_MODEL="${LUCY_MAIN_MODEL:-qwen2.5:32b}"
 VISION_MODEL="${LUCY_VISION_MODEL:-llama3.2-vision}"
 
 export LUCY_MAIN_MODEL="$MAIN_MODEL"

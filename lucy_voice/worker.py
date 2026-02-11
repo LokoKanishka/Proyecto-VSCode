@@ -71,7 +71,7 @@ class VoiceActor:
         
         # Piper TTS initialization (Real Audio)
         try:
-             from src.senses.audio.tts.piper_tts import PiperTTSService
+             from lucy_voice.tts.piper_tts import PiperTTSService
              model_path = "models/piper/es_ES-sharvard-medium.onnx"
              self.tts = PiperTTSService(model_path=model_path, device="cuda")
              logger.info(f"✅ Piper TTS Initialized ({model_path})")

@@ -31,9 +31,6 @@ class LucyManager:
 
     async def process_input(self, input_data: str) -> str:
         """
-        Main entry point for processing user input.
-        Routes to Planner for complex tasks or handles simple vision commands.
-        """
         """
         logger.info(f"📥 Processing input: {input_data}")
         
@@ -147,7 +144,7 @@ def get_or_create_voice():
         actor = ray.get_actor("VoiceActor")
         return actor
     except ValueError:
-        from src.senses.audio.worker import VoiceActor
+        from lucy_voice.worker import VoiceActor
         return VoiceActor.options(name="VoiceActor", lifetime="detached").remote()
 
 # Helper to start the planner actor if not exists

@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
         "--model-id",
         default=None,
         help=(
-            "ID del modelo en Ollama (por ejemplo gpt-oss:20b). "
+            "ID del modelo en Ollama (por ejemplo qwen2.5:32b). "
             f"Por defecto: {DEFAULT_OLLAMA_MODEL_ID}."
         ),
     )

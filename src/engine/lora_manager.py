@@ -39,7 +39,7 @@ class LoraManager:
     def active(self) -> Optional[str]:
         return self._active
 
-    def list(self) -> Dict[str, str]:
+    def list_loras(self) -> Dict[str, str]:
         return dict(self._loras)
 
     def touch(self, name: str) -> None:

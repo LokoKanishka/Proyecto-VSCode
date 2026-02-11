@@ -55,7 +55,7 @@ class OllamaPlanner:
     ):
         config = _load_config(config_path)
         self.host = host or os.getenv("LUCY_OLLAMA_HOST") or config.get("ollama_host") or "http://localhost:11434"
-        self.model = model or os.getenv("LUCY_PLANNER_MODEL") or config.get("ollama_model") or "qwen2.5:14b"
+        self.model = model or os.getenv("LUCY_PLANNER_MODEL") or config.get("ollama_model") or "qwen2.5:32b"
         self.use_vllm = os.getenv("LUCY_USE_VLLM_PLANNER", "0").lower() in {"1", "true", "yes"}
         self.vllm_url = os.getenv("LUCY_VLLM_URL", "http://localhost:8000")
         self.vllm_model = os.getenv("LUCY_VLLM_MODEL", "qwen2.5-32b")

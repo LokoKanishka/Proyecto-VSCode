@@ -1,14 +1,14 @@
 {
   "models": [
     {
-      "title": "Ollama – gpt-oss:20b (local)",
+      "title": "Ollama – qwen2.5:32b (local)",
       "provider": "ollama",
-      "model": "gpt-oss:20b",
+      "model": "qwen2.5:32b",
       "apiBase": "http://localhost:11434"
     },
     {
-      "title": "Qwen 3 32B",
-      "model": "Qwen3-32B",
+      "title": "Qwen 2.5 32B",
+      "model": "qwen2.5:32b",
       "provider": "ollama"
     },
     {
@@ -19,7 +19,7 @@
   ],
   "tabAutocompleteModel": {
     "provider": "ollama",
-    "model": "gpt-oss:20b",
+    "model": "qwen2.5:32b",
     "apiBase": "http://localhost:11434"
   }
 }

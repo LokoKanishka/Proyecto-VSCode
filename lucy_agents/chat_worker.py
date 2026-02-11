@@ -24,7 +24,7 @@ class ChatWorker(BaseWorker):
     """
     def __init__(self, worker_id, bus):
         super().__init__(worker_id, bus)
-        self.model = "qwen2.5:14b"
+        self.model = "qwen2.5:32b"
         self.blocklist = {"violencia", "suicidio", "autolesion", "nazi"}
         self.use_vllm = os.getenv("LUCY_USE_VLLM", "0").lower() in {"1", "true", "yes"}
         self.vllm_client = VLLMClient() if HAS_VLLM else None

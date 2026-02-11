@@ -3,7 +3,7 @@
 > **HITOS:** Swarm Persistente + Jailbreak Visual + Auto-Focus.
 
 ## 1. Capacidades Desbloqueadas (Current State)
-* **Swarm 5090:** `qwen2.5:14b` (Cerebro) y `llama3.2-vision` (Ojos) conviven en VRAM (`keep_alive=-1`). Latencia de switch: ~0s.
+* **Swarm 5090:** `qwen2.5:32b` (Cerebro) y `llama3.2-vision` (Ojos) conviven en VRAM (`keep_alive=-1`). Latencia de switch: ~0s.
 * **Hawk-Eye Vision:**
     * **Grid Mapping:** Calibrado con `pyautogui.size()` y offset de 105px (Firefox UI).
     * **Auto-Focus:** Clic preventivo en `(sw//2, 10)` antes de capturar para evitar "efecto espejo" con la terminal.

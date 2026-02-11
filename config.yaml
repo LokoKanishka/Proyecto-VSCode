@@ -9,12 +9,14 @@ whisper_task: "transcribe"
 whisper_force_language: true
 
 # Ollama LLM
-ollama_model: "gpt-oss:20b"
+ollama_model: "qwen2.5:32b"
 # Modelo fusionado opcional (LoRA multilingüe)
 ollama_model_fused: "gpt-oss-20b-multireasoner"
 ollama_host: "http://localhost:11434"
 # Modelo de visión (opcional, para Swarm Manager)
-# ollama_vision_model: "llama3.2-vision"
+ollama_vision_model: "llama3.2-vision:latest"
+ollama_num_ctx: 16384
+ollama_repetition_penalty: 1.15
 
 # TTS
 tts_voice: "es_ES/m-ailabs_low#karen_savage"
@@ -39,7 +41,7 @@ wake_word:
   cooldown_seconds: 2.0  # Time after detection before listening for next wake word
   # Model paths: empty list uses default OpenWakeWord models (hey_jarvis, alexa)
   # To use custom model: add path like ["models/hola_lucy.onnx"]
-  model_paths: []  # Use defaults or specify custom models
+  model_paths: ["models/hola_lucy.onnx", "models/hola_lucy_fixed.onnx"]  # Use defaults or specify custom models
   
 # Búsqueda web
 web_search:

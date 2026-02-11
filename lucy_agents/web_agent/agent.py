@@ -15,7 +15,7 @@ except Exception:
 from .web_search import SearchResult, FetchedPage, build_queries, normalize_query, web_answer
 
 # Nombre del modelo tal como lo ve el servidor de Ollama
-DEFAULT_OLLAMA_MODEL_ID = os.getenv("LUCY_WEB_AGENT_OLLAMA_MODEL", "gpt-oss:20b")
+DEFAULT_OLLAMA_MODEL_ID = os.getenv("LUCY_WEB_AGENT_OLLAMA_MODEL", "qwen2.5:32b")
 
 DEFAULT_WEB_SEARCH_CONFIG = {
     "provider": "searxng",

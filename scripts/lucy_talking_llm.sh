@@ -10,4 +10,4 @@ source .venv-talking-llm/bin/activate
 
 # Ejecutar el asistente con el modelo especificado
 # Puedes cambiar el modelo aquí si prefieres otro
-python app.py --model gpt-oss:20b
+python app.py --model qwen2.5:32b

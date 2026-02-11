@@ -25,7 +25,7 @@ def test_full_system() -> None:
 
     # 2) Inicializacion del motor (sin hablar)
     try:
-        engine = OllamaEngine(model=os.getenv("LUCY_OLLAMA_MODEL", "llama3.1:8b"))
+        engine = OllamaEngine(model=os.getenv("LUCY_OLLAMA_MODEL", "qwen2.5:32b"))
         print("OK: Motor inicializado")
     except Exception as exc:
         print(f"ERROR: Fallo al iniciar motor: {exc}")

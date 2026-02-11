@@ -20,7 +20,8 @@ class LucyConfig:
     whisper_force_language: bool = True
     
     # Ollama
-    ollama_model: str = "gpt-oss:20b"
+    ollama_model: str = "qwen2.5:32b"
+    ollama_model_fused: str = "qwen2.5-32b-multireasoner"
     ollama_host: str = "http://localhost:11434"
     
     # TTS

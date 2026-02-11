@@ -21,7 +21,7 @@ class PlannerActor:
         # Initialize OpenAI Client (targets local vLLM or Ollama)
         base_url = os.getenv("LUCY_LLM_BASE_URL", "http://localhost:11434/v1")
         api_key = os.getenv("LUCY_LLM_API_KEY", "ollama")
-        self.model_name = os.getenv("LUCY_LLM_MODEL", "llama3.1:8b")
+        self.model_name = os.getenv("LUCY_LLM_MODEL", "qwen2.5:32b")
         
         self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         logger.info(f"🧠 Planner connected to LLM at {base_url} (Model: {self.model_name})")

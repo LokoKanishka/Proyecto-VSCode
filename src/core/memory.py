@@ -50,7 +50,8 @@ class MemoryActor:
         """
         logger.info(f"💾 Memorizing: {text[:50]}...")
         vector = self.encoder.encode(text).tolist()
-        data = [{"vector": vector, "text": text, "source": source, "timestamp": 0.0}] # TODO: real timestamp
+        import time
+        data = [{"vector": vector, "text": text, "source": source, "timestamp": time.time()}]
         
         tbl = self.db.open_table(self.table_name)
         tbl.add(data)

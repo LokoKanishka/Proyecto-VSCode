@@ -19,6 +19,8 @@ from src.engine.voice_bridge import LucyVoiceBridge
 from src.engine.semantic_router import SemanticRouter
 from src.engine.swarm_manager import SwarmManager
 from src.engine.thought_engine import Planner, ThoughtEngine, ThoughtNode
+from src.skills.base_skill import BaseSkill
+from src.skills.desktop_skill_wrapper import DesktopSkillWrapper
 
 SYSTEM_PROMPT = """
 YOU ARE LUCY, an autonomous AI operator running locally on an RTX 5090.
@@ -341,7 +343,11 @@ class OllamaEngine:
             "model": self.model,
             "messages": messages,
             "stream": stream,
-            "options": {"temperature": 0.3}
+            "options": {
+                "temperature": 0.3,
+                "num_ctx": int(os.environ.get("LUCY_LLM_NUM_CTX", "16384")),
+                "repetition_penalty": float(os.environ.get("LUCY_VISION_PENALTY", "1.15"))
+            }
         }
         if tools:
             payload["tools"] = tools
@@ -581,7 +587,10 @@ class OllamaEngine:
                 "prompt": vision_prompt,
                 "images": [img_str],
                 "stream": True,
-                "options": {"temperature": 0.1} 
+                "options": {
+                    "temperature": 0.1,
+                    "repetition_penalty": float(os.getenv("LUCY_VISION_PENALTY", "1.15"))
+                } 
             }
             
             if status_callback: status_callback("🧠 Analizando imagen...")

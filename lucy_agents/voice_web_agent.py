@@ -50,7 +50,7 @@ try:
 except Exception as exc:
     print(f"[Lucy Voz Web] Aviso: no pude importar lucy_agents.web_agent ({exc})")
     run_web_research = None
-    WEB_DEFAULT_MODEL = "gpt-oss:20b"
+    WEB_DEFAULT_MODEL = "qwen2.5:32b"
 
 
 SAMPLE_RATE = 16000
