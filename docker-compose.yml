@@ -25,17 +25,10 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix
     command: python -m src.main
 
-  ray-head:
-    image: rayproject/ray:latest-gpu
-    container_name: ray-head
-    network_mode: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    command: ray start --head --dashboard-host=0.0.0.0 --port=6379 --num-gpus=1 --block
-    volumes:
-      - /dev/shm:/dev/shm
+  # ray-head: HIBERNADO - Ver docker-compose.ray.yml
+  # Para uso bajo demanda: docker-compose -f docker-compose.yml -f docker-compose.ray.yml up
+  # Justificación (DOCKER_AUDIT.md):
+  #   - Ray solo usado en run_final_judgment.py (ocasional)
+  #   - swarm_runner.py usa asyncio.gather (no Ray para <8 workers)
+  #   - Libera 8-12GB VRAM cuando no se usa
+  #   - Reduce overhead (GCS, Dashboard, Object Store)

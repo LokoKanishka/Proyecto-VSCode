@@ -1,0 +1,23 @@
+version: "3.8"
+
+# Docker Compose para Ray (Uso Bajo Demanda)
+# Activar solo cuando se requiera cluster distribuido:
+#   docker-compose -f docker-compose.yml -f docker-compose.ray.yml up
+
+services:
+  ray-head:
+    image: rayproject/ray:latest-gpu
+    container_name: ray-head
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - RAY_REDIS_ADDRESS=localhost:6379
+    command: ray start --head --dashboard-host=0.0.0.0 --port=6379 --num-gpus=1 --block
+    volumes:
+      - /dev/shm:/dev/shm
