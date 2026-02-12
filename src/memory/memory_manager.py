@@ -790,9 +790,9 @@ class MemoryManager:
         model: Optional[str] = None,
         host: Optional[str] = None,
     ) -> Optional[str]:
-        config_model = os.getenv("LUCY_OLLAMA_MODEL") or os.getenv("LUCY_MAIN_MODEL")
+        config_model = os.getenv("LUCY_LLM_MODEL") or os.getenv("LUCY_OLLAMA_MODEL") or os.getenv("LUCY_MAIN_MODEL")
         config_host = os.getenv("LUCY_OLLAMA_HOST")
-        model = model or config_model or "qwen2.5:14b"
+        model = model or config_model or "qwen2.5:32b"
         host = host or config_host or "http://localhost:11434"
         payload = {
             "model": model,

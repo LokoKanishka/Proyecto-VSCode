@@ -52,7 +52,7 @@ curl -s -X POST "$HOST/api/chat" \
   -d "{\"model\":\"$VISION_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"stream\":false,\"keep_alive\":-1}" \
   >/dev/null || true
 
-PYTHON_BIN=".venv/bin/python3"
+PYTHON_BIN=".venv_web/bin/python3"
 if [[ ! -x "$PYTHON_BIN" ]]; then
   PYTHON_BIN="python3"
 fi

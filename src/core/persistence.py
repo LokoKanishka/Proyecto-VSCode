@@ -37,7 +37,8 @@ class Hippocampus:
         self.memory = self._load_memory()
         
         # Log awakening
-        if self.memory["cycle_count"] == 0:
+        cycles = self.memory.get("cycle_count", 0)
+        if cycles == 0:
             logger.info("🧠 Hippocampus: Primera vez que despierto. Memoria limpia iniciada.")
         else:
             logger.info(f"🧠 Hippocampus: Memoria cargada desde sesión anterior. {self.recall()}")

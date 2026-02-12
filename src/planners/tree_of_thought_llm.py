@@ -31,7 +31,7 @@ class TreeOfThoughtLLMPlanner:
     def __init__(
         self,
         host: str = "http://localhost:11434",
-        model: str = "qwen2.5:14b",
+        model: str = "qwen2.5:32b",
         max_depth: int = 2,
         beam_width: int = 3,
         proposals: int = 3,

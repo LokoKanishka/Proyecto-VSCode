@@ -15,7 +15,7 @@ ollama_model_fused: "gpt-oss-20b-multireasoner"
 ollama_host: "http://localhost:11434"
 # Modelo de visión (opcional, para Swarm Manager)
 ollama_vision_model: "llama3.2-vision:latest"
-ollama_num_ctx: 16384
+ollama_num_ctx: 8192
 ollama_repetition_penalty: 1.15
 
 # TTS
@@ -78,7 +78,7 @@ voice_modular:
 # For LoRA fine-tuning:
 #   1. Train LoRA adapter with your dataset
 #   2. Save as new model: ollama create my-custom-model -f Modelfile
-#   3. Set ollama_model: "my-custom-model"
+#   3. Set ollama_model: "qwen2.5:32b"
 # See docs/LUCY-LLM-GPT-OSS-LORA.md for details
 
 # Swarm / VRAM management
