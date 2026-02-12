@@ -551,5 +551,148 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--border-color);
+    background: var(--border-color);}
+
+/* ===== Consciousness Panel (Cyberpunk Cyan) ===== */
+.consciousness-panel {
+    background: rgba(0, 20, 40, 0.6);
+    border: 2px solid #00f2ff;
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin: 1rem 2rem;
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.3);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
 }
+
+.consciousness-panel:hover {
+    box-shadow: 0 0 30px rgba(0, 242, 255, 0.5);
+}
+
+.consciousness-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(0, 242, 255, 0.2);
+}
+
+.state-icon {
+    font-size: 2em;
+    transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    filter: drop-shadow(0 0 8px rgba(0, 242, 255, 0.6));
+}
+
+.state-label {
+    color: #00f2ff;
+    margin: 0;
+    font-family: 'Courier New', monospace;
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+}
+
+.consciousness-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.metric {
+    background: rgba(0, 40, 80, 0.3);
+    padding: 0.875rem;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 242, 255, 0.1);
+    transition: all 0.2s;
+}
+
+.metric:hover {
+    background: rgba(0, 40, 80, 0.5);
+    border-color: rgba(0, 242, 255, 0.3);
+}
+
+.metric label {
+    color: #00f2ff;
+    font-size: 0.85rem;
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.metric-bar {
+    width: 100%;
+    height: 12px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.metric-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00f2ff, #0080ff);
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(0, 242, 255, 0.6);
+}
+
+.metric-value {
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+}
+
+.consciousness-log {
+    max-height: 180px;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 0.75rem;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    border: 1px solid rgba(0, 242, 255, 0.15);
+}
+
+.log-entry {
+    color: #00f2ff;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(0, 242, 255, 0.1);
+    line-height: 1.4;
+    transition: opacity 0.3s ease;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-time {
+    color: #0080ff;
+    font-weight: 600;
+    margin-right: 0.5rem;
+}
+
+/* Custom scrollbar for consciousness log */
+.consciousness-log::-webkit-scrollbar {
+    width: 6px;
+}
+
+.consciousness-log::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+}
+
+.consciousness-log::-webkit-scrollbar-thumb {
+    background: rgba(0, 242, 255, 0.4);
+    border-radius: 3px;
+}
+
+.consciousness-log::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 242, 255, 0.6);
+}
+

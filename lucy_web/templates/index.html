@@ -65,6 +65,38 @@
                     ⚠️ Falta backend de audio (instalá soundfile o ffmpeg).
                 </div>
             </div>
+            
+            <!-- Consciousness Panel (New) -->
+            <div id="consciousness-panel" class="consciousness-panel">
+                <div class="consciousness-header">
+                    <span id="lucy-state-icon" class="state-icon">💤</span>
+                    <h3 id="lucy-state-label" class="state-label">WAITING</h3>
+                </div>
+                
+                <div class="consciousness-metrics">
+                    <div class="metric">
+                        <label>Entropy</label>
+                        <div class="metric-bar">
+                            <div id="entropy-fill" class="metric-fill"></div>
+                        </div>
+                        <span id="entropy-value" class="metric-value">0.00</span>
+                    </div>
+                    
+                    <div class="metric">
+                        <label>Activity</label>
+                        <div class="metric-bar">
+                            <div id="activity-fill" class="metric-fill"></div>
+                        </div>
+                        <span id="activity-value" class="metric-value">0.00</span>
+                    </div>
+                </div>
+                
+                <div id="consciousness-log" class="consciousness-log">
+                    <div class="log-entry">
+                        <span class="log-time">[--:--:--]</span> Waiting for consciousness data...
+                    </div>
+                </div>
+            </div>
 
             <div id="chat-messages" class="chat-messages">
                 <div class="welcome-message">
@@ -243,6 +275,7 @@
     <script src="{{ url_for('static', filename='js/websocket.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
     <script src="{{ url_for('static', filename='js/voice.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/consciousness.js') }}"></script>
     <script src="{{ url_for('static', filename='js/resources.js') }}"></script>
 </body>
 </html>
