@@ -5,9 +5,13 @@ __pycache__/
 *.pyd
 
 # Virtual envs
+venv/
 .venv/
 .venv-*/
 .venv-codex/
+.venv_web/
+.venv_lucy_face/
+.venv_win/
 
 # Local artifacts
 lucy_memory_db/
