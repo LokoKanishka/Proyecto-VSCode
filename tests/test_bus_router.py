@@ -1,7 +1,7 @@
 import asyncio
 
 from src.core.bus import EventBus
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 from src.core.base_worker import BaseWorker
 
 

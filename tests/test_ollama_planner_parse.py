@@ -1,5 +1,5 @@
 from src.planners.ollama_planner import _parse_steps
-from src.core.types import WorkerType
+from src.core.lucy_types import WorkerType
 
 
 def test_parse_steps_basic():

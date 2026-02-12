@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 
 from src.core.base_worker import BaseWorker
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 from lucy_voice.config import LucyConfig
 from lucy_voice.pipeline.audio import AudioHandler, AudioCaptureGate
 from lucy_voice.tts.mimic_tts import Mimic3TTS

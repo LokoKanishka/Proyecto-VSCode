@@ -6,7 +6,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.core.bus import EventBus
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 from src.memory.memory_manager import MemoryManager
 from src.core.manager import Manager
 from src.workers.chat_worker import ChatWorker

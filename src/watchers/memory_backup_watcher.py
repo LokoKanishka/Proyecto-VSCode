@@ -3,7 +3,7 @@ import logging
 import os
 
 from src.core.bus import EventBus
-from src.core.types import LucyMessage, MessageType, WorkerType
+from src.core.lucy_types import LucyMessage, MessageType, WorkerType
 
 logger = logging.getLogger(__name__)
 

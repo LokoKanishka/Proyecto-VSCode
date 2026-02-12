@@ -2,7 +2,7 @@ import asyncio
 import pytest
 
 from src.core.bus import EventBus
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 from src.core.ws_gateway import WebSocketGateway
 from src.core.ws_bus_bridge import WSBusBridge
 

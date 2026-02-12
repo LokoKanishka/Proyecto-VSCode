@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from src.core.bus import EventBus
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 
 
 @pytest.mark.asyncio

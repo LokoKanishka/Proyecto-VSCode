@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Optional
 
 import requests
 
-from src.core.types import WorkerType
+from src.core.lucy_types import WorkerType
 from src.planners.tree_of_thought import PlanStep
 
 logger = logging.getLogger(__name__)

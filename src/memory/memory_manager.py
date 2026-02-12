@@ -21,7 +21,7 @@ try:
 except ImportError:
     HAS_FAISS = False
 
-from src.core.types import MemoryEntry
+from src.core.lucy_types import MemoryEntry
 
 logger = logging.getLogger(__name__)
 

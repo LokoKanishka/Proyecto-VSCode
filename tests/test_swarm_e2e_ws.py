@@ -5,7 +5,7 @@ import pytest
 import websockets
 
 from src.core.bus import EventBus
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 from src.core.ws_gateway import WebSocketGateway
 from src.workers.chat_worker import ChatWorker
 

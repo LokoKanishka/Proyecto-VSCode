@@ -16,7 +16,7 @@ except ImportError:
     HAS_VISION_LIBS = False
 
 from src.core.base_worker import BaseWorker
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 from src.vision.vision_pipeline import VisionPipeline
 
 logger = logging.getLogger(__name__)

@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional
 
-from src.core.types import WorkerType
+from src.core.lucy_types import WorkerType
 
 logger = logging.getLogger(__name__)
 

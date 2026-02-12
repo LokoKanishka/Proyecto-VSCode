@@ -5,7 +5,7 @@ import pytest
 from src.core.base_worker import BaseWorker
 from src.core.bus import EventBus
 from src.core.manager import Manager
-from src.core.types import LucyMessage, MessageType, WorkerType
+from src.core.lucy_types import LucyMessage, MessageType, WorkerType
 from src.memory.memory_manager import MemoryManager
 from src.planners.tree_of_thought import PlanStep
 

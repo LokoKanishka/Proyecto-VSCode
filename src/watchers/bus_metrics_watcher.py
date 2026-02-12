@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 from src.core.bus import EventBus
-from src.core.types import MessageType
+from src.core.lucy_types import MessageType
 
 logger = logging.getLogger(__name__)
 

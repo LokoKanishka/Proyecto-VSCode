@@ -10,7 +10,7 @@ import asyncio
 import requests
 
 from src.core.base_worker import BaseWorker
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +268,7 @@ class CodeWorker(BaseWorker):
                 fh.write(body)
             if os.getenv("LUCY_SNAPSHOT_ON_WRITE", "0").lower() in {"1", "true", "yes"}:
                 try:
-                    from src.core.types import LucyMessage, MessageType, WorkerType
+                    from src.core.lucy_types import LucyMessage, MessageType, WorkerType
                     loop = asyncio.get_running_loop()
                     loop.create_task(
                         self.bus.publish(

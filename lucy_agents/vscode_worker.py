@@ -12,7 +12,7 @@ except Exception:  # pragma: no cover - optional dependency
     HAS_WEBSOCKETS = False
 
 from src.core.base_worker import BaseWorker
-from src.core.types import LucyMessage, MessageType, WorkerType
+from src.core.lucy_types import LucyMessage, MessageType, WorkerType
 
 logger = logging.getLogger(__name__)
 

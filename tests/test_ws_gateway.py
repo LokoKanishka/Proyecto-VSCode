@@ -4,7 +4,7 @@ import websockets
 
 from src.core.bus import EventBus
 from src.core.ws_gateway import WebSocketGateway
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 
 
 async def _run_gateway_test():

@@ -2,7 +2,7 @@ from src.core.manager import Manager
 from src.core.bus import EventBus
 from src.memory.memory_manager import MemoryManager
 from src.planners.tree_of_thought import PlanStep
-from src.core.types import WorkerType
+from src.core.lucy_types import WorkerType
 
 
 def test_manager_injects_distill_when_url_present(tmp_path):

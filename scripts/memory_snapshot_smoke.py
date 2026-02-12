@@ -4,7 +4,7 @@ import tempfile
 import shutil
 from pathlib import Path
 
-from src.core.types import MemoryEntry
+from src.core.lucy_types import MemoryEntry
 from src.memory.memory_manager import MemoryManager
 
 

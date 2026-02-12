@@ -4,7 +4,7 @@ import os
 from typing import Optional
 
 from src.core.base_worker import BaseWorker
-from src.core.types import LucyMessage, MessageType, WorkerType
+from src.core.lucy_types import LucyMessage, MessageType, WorkerType
 from src.skills.grid_mapper import GridMapper
 from src.vision.desktop_controller import DesktopController
 try:

@@ -14,7 +14,7 @@ except Exception:
     HAS_VLLM = False
 
 from src.core.base_worker import BaseWorker
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 
 logger = logging.getLogger(__name__)
 

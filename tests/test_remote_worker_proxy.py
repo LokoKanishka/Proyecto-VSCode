@@ -6,7 +6,7 @@ import websockets
 
 from src.core.bus import EventBus
 from src.core.remote_worker import RemoteWorkerProxy
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 
 
 async def _echo_server(websocket):

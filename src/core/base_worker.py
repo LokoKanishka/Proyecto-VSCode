@@ -1,7 +1,7 @@
 import asyncio
 from abc import ABC, abstractmethod
 from src.core.bus import EventBus
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 
 class BaseWorker(ABC):
     """

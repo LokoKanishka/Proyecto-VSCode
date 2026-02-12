@@ -6,7 +6,7 @@ from typing import Optional
 import websockets
 
 from src.core.bus import EventBus
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 
 logger = logging.getLogger(__name__)
 

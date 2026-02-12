@@ -7,7 +7,7 @@ from collections import defaultdict, deque
 import time
 from typing import Awaitable, Callable, Dict, List, Optional
 
-from src.core.types import LucyMessage, MessageType
+from src.core.lucy_types import LucyMessage, MessageType
 
 logger = logging.getLogger(__name__)
 
