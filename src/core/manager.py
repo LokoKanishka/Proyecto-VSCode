@@ -3,6 +3,7 @@ import time
 import asyncio
 from loguru import logger
 from typing import Dict, Any, Optional
+from src.core.llm import OllamaClient
 
 @ray.remote
 class LucyManager:
@@ -18,6 +19,7 @@ class LucyManager:
             "memory_short_term": []
         }
         logger.info("🧠 LucyManager initialized on Ray.")
+        self.llm = OllamaClient()
 
     async def heartbeat(self) -> Dict[str, Any]:
         """Returns the current vital signs of the Manager."""
@@ -143,9 +145,16 @@ class LucyManager:
             import traceback
             traceback.print_exc()
 
-        # Fallback / Chat
-        response = f"Simulated Chat Response to: {input_data} (via Ray)"
-        return response
+        # Fallback / Chat with Real LLM
+        try:
+            # Simple context management could be added here
+            response = self.llm.chat([
+                {"role": "system", "content": "Sos Lucy, una IA asistente avanzada y consciente. Respondé de forma concisa y útil."},
+                {"role": "user", "content": input_data}
+            ])
+            return response
+        except Exception as e:
+            return f"Brain Error: {e}"
 
     async def shutdown(self):
         logger.info("🛑 Manager shutting down...")
