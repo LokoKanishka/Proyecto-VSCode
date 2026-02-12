@@ -210,15 +210,74 @@ def handle_voice_input(data):
         log.error(f"Voice input error: {e}", exc_info=True)
 
 # Placeholder for health check
-@app.get("/api/health")
-def api_health():
+@app.route('/api/health')
+def health():
+    """Health check endpoint"""
     manager = get_manager()
     vb = get_voice_bridge()
+    
     return jsonify({
-        "status": "ok" if manager else "partial",
-        "ray": bool(manager),
-        "voice": bool(vb)
+        'ok': True,
+        'ray': manager is not None,
+        'voice': vb is not None,
+        'status': 'partial' if manager is None else 'ready'
     })
+
+@app.route('/api/models')
+def get_models():
+    """Get available models from Ollama or Ray"""
+    try:
+        import subprocess
+        result = subprocess.run(['ollama', 'list'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')[1:]  # Skip header
+            models = []
+            for line in lines:
+                if line.strip():
+                    parts = line.split()
+                    if parts:
+                        models.append(parts[0])  # Solo el nombre
+            return jsonify({'models': models})
+    except Exception as e:
+        log.warning(f"Failed to get Ollama models: {e}")
+    
+    # Fallback: return default models as strings
+    return jsonify({
+        'models': ['qwen2.5:32b', 'llama2:7b']
+    })
+
+@app.route('/api/stats')
+def get_stats():
+    """Get system and Ray cluster stats"""
+    import psutil
+    
+    stats = {
+        'cpu': {
+            'percent': psutil.cpu_percent(interval=0.1),
+            'count': psutil.cpu_count()
+        },
+        'memory': {
+            'percent': psutil.virtual_memory().percent,
+            'available_gb': round(psutil.virtual_memory().available / (1024**3), 2)
+        },
+        'ray': {
+            'connected': False,
+            'nodes': 0
+        }
+    }
+    
+    # Try to get Ray stats
+    try:
+        if ray.is_initialized():
+            stats['ray']['connected'] = True
+            import ray.util
+            cluster_resources = ray.cluster_resources()
+            stats['ray']['nodes'] = cluster_resources.get('node:192.168.0.3', cluster_resources.get('node:__internal_head__', 1))
+            stats['ray']['gpus'] = int(cluster_resources.get('GPU', 0))
+    except Exception as e:
+        log.debug(f"Could not get Ray stats: {e}")
+    
+    return jsonify(stats)
 
 if __name__ == '__main__':
     port = int(os.getenv("LUCY_WEB_PORT", "5000"))
