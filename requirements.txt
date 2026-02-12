@@ -38,3 +38,4 @@ ultralytics
 faiss-cpu
 ray>=2.5.0
 prometheus-client>=0.18.0
+torch>=2.0.0
