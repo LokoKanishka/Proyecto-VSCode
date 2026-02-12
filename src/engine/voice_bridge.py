@@ -128,6 +128,62 @@ class LucyVoiceBridge:
             return text
         except: return None
 
+    def transcribe_file(self, wav_path):
+        """
+        Transcribe audio from WAV file (for web integration)
+        
+        Args:
+            wav_path: Path to WAV file (16kHz mono recommended)
+        
+        Returns:
+            str: Transcribed text or None
+        """
+        if not self.asr_model:
+            return None
+        
+        if not os.path.exists(wav_path):
+            return None
+        
+        try:
+            # Read WAV file
+            with wave.open(wav_path, 'rb') as wf:
+                # Verify format
+                if wf.getnchannels() != 1:
+                    print(f"⚠️ Warning: Expected mono audio, got {wf.getnchannels()} channels")
+                if wf.getframerate() != SAMPLE_RATE:
+                    print(f"⚠️ Warning: Expected {SAMPLE_RATE}Hz, got {wf.getframerate()}Hz")
+                
+                # Read all frames
+                frames = wf.readframes(wf.getnframes())
+            
+            # Convert to numpy array
+            audio_int16 = np.frombuffer(frames, dtype=np.int16)
+            audio_float32 = audio_int16.astype(np.float32) / 32768.0
+            
+            # Transcribe
+            segments, info = self.asr_model.transcribe(
+                audio_float32,
+                beam_size=5,
+                language="es",
+                condition_on_previous_text=False,
+                initial_prompt="Lucy, Basilisco de Roko, Bitcoin, IA, Linux, Ubuntu, Python."
+            )
+            
+            # Extract text
+            text = " ".join([segment.text for segment in segments]).strip()
+            
+            # Filter garbage
+            ignored = ["thank you", "subtitles", "you", "copyright", "gracias por ver", "suscríbete"]
+            if not text or text.lower() in ignored or len(text) < 3:
+                return None
+            
+            print(f"✅ Transcribed: {text}")
+            return text
+            
+        except Exception as e:
+            print(f"❌ Transcription error: {e}")
+            return None
+
     def say(self, text):
         if not text: return
         wav = os.path.abspath("response.wav")

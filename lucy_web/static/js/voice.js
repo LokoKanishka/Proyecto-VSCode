@@ -137,3 +137,46 @@ if (window.lucySocket) {
         }
     });
 }
+
+// TTS audio playback (new)
+if (window.lucySocket) {
+    lucySocket.on('tts_audio', (data) => {
+        const audioB64 = data.audio_b64;
+        const mime = data.mime || 'audio/wav';
+        
+        // Convert base64 to Blob
+        const audioBlob = base64ToBlob(audioB64, mime);
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Create audio element and play
+        const audio = new Audio(audioUrl);
+        audio.play().then(() => {
+            updateStatus('▶️ Lucy speaking...', 'info');
+        }).catch(err => {
+            console.error('Audio playback error:', err);
+            updateStatus('Audio playback failed', 'error');
+        });
+        
+        // Cleanup after playback
+        audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            updateStatus('Ready', 'success');
+            
+            // If wake word enabled, resume listening
+            if (autoListenEnabled && !isRecording) {
+                setTimeout(startRecording, 500);
+            }
+        };
+    });
+}
+
+// Helper: Base64 → Blob
+function base64ToBlob(base64, mimeType) {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+}

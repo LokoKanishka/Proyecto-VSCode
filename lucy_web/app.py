@@ -148,18 +148,42 @@ def handle_voice_input(data):
         else:
             wav_path = tmp_path
         
-        # TODO: Transcribe with voice_bridge
-        # (Requiere adaptar voice_bridge para leer de archivo)
-        # Por ahora, placeholder:
-        text = "[Transcription placeholder - integrate voice_bridge.asr_model]"
+        # Transcribe with voice_bridge
+        text = vb.transcribe_file(wav_path)
+        
+        if not text:
+            emit('status', {'message': 'No speech detected or transcription failed', 'type': 'warning'})
+            os.unlink(tmp_path)
+            if wav_path != tmp_path:
+                os.unlink(wav_path)
+            return
         
         emit('transcription', {'text': text})
-        emit('status', {'message': f'Transcribed: {text}', 'type': 'info'})
+        emit('status', {'message': f'You said: "{text}"', 'type': 'info'})
+        log.info(f"Transcribed: {text}")
         
-        # TODO: Process with Lucy core
-        response = f"Entendí: {text}"
+        # Process with Lucy core (Ray)
+        manager = get_manager()
+        
+        if manager:
+            try:
+                log.info("Sending to Lucy core...")
+                future = manager.process_input.remote(text)
+                response = ray.get(future, timeout=30)  # 30s timeout
+                log.info(f"Lucy response: {response}")
+            except Exception as e:
+                log.error(f"Lucy processing error: {e}")
+                response = f"Error al procesar tu mensaje: {str(e)}"
+        else:
+            # Fallback if Ray not available
+            log.warning("Ray not available, using fallback response")
+            response = f"Entendí tu mensaje: '{text}'. (Lucy core no disponible en este momento)"
+        
+        # Send text response to chat
+        emit('message', {'type': 'assistant', 'content': response})
         
         # Generate TTS
+        log.info("Generating TTS...")
         vb.say(response)
         
         # Read generated WAV
