@@ -140,8 +140,32 @@ class LucyManager:
                 execution_log = await action.execute_plan.remote(plan)
                 
                 return f"🧠 Plan Generated & Executed:\n{execution_log}"
+            
+            elif decision == "RAG":
+                # Autonomous Retrieval Augmented Generation
+                logger.info("🤖 Autonomous RAG triggered.")
+                mem = get_or_create_memory()
+                context_results = await mem.search.remote(input_data)
+                
+                # Augment the LLM prompt with retrieved context
+                rag_prompt = f"""
+                Has sido consultada sobre tu estructura o funcionamiento. 
+                Utilizá la siguiente información de contexto recuperada de tus archivos locales para responder de forma precisa.
+                
+                CONTEXTO:
+                {context_results}
+                
+                PREGUNTA DEL USUARIO:
+                {input_data}
+                """
+                response = self.llm.chat([
+                    {"role": "system", "content": "Sos Lucy, una IA con acceso a su propia documentación técnica. Respondé basándote en el contexto proveído."},
+                    {"role": "user", "content": rag_prompt}
+                ])
+                return response
+
         except Exception as e:
-            logger.error(f"Planner/Action Error: {e}")
+            logger.error(f"Planner/Action/RAG Error: {e}")
             import traceback
             traceback.print_exc()
 

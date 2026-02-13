@@ -94,14 +94,24 @@ class PlannerActor:
 
     async def evaluate_interaction(self, user_input: str) -> str:
         """
-        Quick evaluation if we need to plan or just chat.
+        Quick evaluation if we need to plan, RAG or just chat.
         """
-        # Simple heuristic for now, can be upgraded to LLM call
-        keywords = ["abrir", "open", "ejecutar", "run", "click", "type", "search", "buscar", 
-                   "calcular", "calculate", "presupuesto", "quote", "payment", "pago", "status", "envio", "shipping"]
+        user_input_lower = user_input.lower()
         
-        if any(keyword in user_input.lower() for keyword in keywords):
+        # Planning Keywords
+        plan_keywords = ["abrir", "open", "ejecutar", "run", "click", "type", "search", "buscar", 
+                        "calcular", "calculate", "presupuesto", "quote", "payment", "pago", "status", "envio", "shipping"]
+        
+        # RAG / System Keywords
+        rag_keywords = ["arquitectura", "architecture", "código", "code", "quién sos", "quién eres", "who are you", 
+                        "archivos", "files", "estructura", "structure", "proyecto", "project", "funcionamiento", "how do you work"]
+        
+        if any(keyword in user_input_lower for keyword in plan_keywords):
             return "PLAN"
+            
+        if any(keyword in user_input_lower for keyword in rag_keywords):
+            return "RAG"
+            
         return "CHAT"
 
     # --- Internal LLM Methods ---

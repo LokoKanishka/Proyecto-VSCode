@@ -58,4 +58,5 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
 fi
 
 echo "🤖 Iniciando Lucy (recursos optimizados)..."
+export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
 exec "$PYTHON_BIN" src/main.py
