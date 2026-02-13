@@ -33,6 +33,7 @@ chromadb
 *.pth
 *.onnx
 data/
+models/
 
 # --- Archivos Multimedia e Imágenes ---
 *.png
