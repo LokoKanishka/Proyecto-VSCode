@@ -5,7 +5,7 @@ import signal
 from typing import List, Optional
 
 from src.core.bus import EventBus
-from src.core.types import LucyMessage, MessageType, WorkerType
+from src.core.lucy_types import LucyMessage, MessageType, WorkerType
 from src.memory.memory_manager import MemoryManager
 from src.memory.vector_store import EmbeddedMemory
 from src.resources.resource_manager import ResourceManager

@@ -69,8 +69,8 @@ class LucyBootstrap:
             # Swarm con asyncio puro (más eficiente para <8 workers)
             os.environ['LUCY_SWARM_MODE'] = 'asyncio'
         
-        # Ejecutar swarm runner
-        self._run_python_module("src.engine.swarm_runner")
+        # Ejecutar swarm runner (Utilizando main para estabilidad en Ray/SingleNode)
+        self._run_python_module("src.main")
     
     def boot_ui(self):
         """
@@ -79,8 +79,8 @@ class LucyBootstrap:
         """
         print("💠 Lucy UI Mode - Starting Dashboard")
         
-        # Ejecutar dashboard directamente
-        dashboard_path = self.base_path / "src" / "ui" / "dashboard.py"
+        # Ejecutar dashboard directamente (Versión Aleph)
+        dashboard_path = self.base_path / "src" / "ui" / "lucy_aleph.py"
         subprocess.run([sys.executable, str(dashboard_path)], cwd=self.base_path)
     
     def boot_introspection(self):
