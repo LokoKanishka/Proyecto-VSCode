@@ -1,20 +1,22 @@
-# --- Sistema y Control de Versiones ---
+# --- Sistema y Git ---
 .git
 .github
 .vscode
 .idea
 .DS_Store
 
-# --- Dependencias y Entornos ---
+# --- Dependencias y Entornos (La base) ---
 node_modules
 venv
+.venv
 env
 .env
 __pycache__
 *.pyc
 .pytest_cache
+.mypy_cache
 
-# --- Bloqueos y Logs (Ruido) ---
+# --- Bloqueos y Logs ---
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
@@ -22,7 +24,20 @@ poetry.lock
 *.log
 *.lock
 
-# --- Bases de Datos y Modelos (Pesados) ---
+# --- JUPYTER & PLOTLY (El ruido detectado) ---
+.ipynb_checkpoints
+*.ipynb
+# Si queremos notebooks, comentar la linea de arriba, pero NUNCA esto:
+share/jupyter
+*.webpack
+*webpack*
+*chunk*
+*bundle*
+assets/
+static/
+lib/
+
+# --- Bases de Datos y Modelos ---
 lancedb
 chromadb
 *.db
@@ -46,10 +61,12 @@ models/
 *.mp3
 *.wav
 
-# --- Compilados y Builds ---
+# --- Compilados Frontend y Builds ---
 dist
 build
+out
 coverage
 *.map
 *.min.js
 *.min.css
+*.js.map
