@@ -1,0 +1,54 @@
+# --- Sistema y Control de Versiones ---
+.git
+.github
+.vscode
+.idea
+.DS_Store
+
+# --- Dependencias y Entornos ---
+node_modules
+venv
+env
+.env
+__pycache__
+*.pyc
+.pytest_cache
+
+# --- Bloqueos y Logs (Ruido) ---
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+poetry.lock
+*.log
+*.lock
+
+# --- Bases de Datos y Modelos (Pesados) ---
+lancedb
+chromadb
+*.db
+*.sqlite
+*.gguf
+*.bin
+*.pt
+*.pth
+*.onnx
+data/
+
+# --- Archivos Multimedia e Imágenes ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.mp4
+*.mp3
+*.wav
+
+# --- Compilados y Builds ---
+dist
+build
+coverage
+*.map
+*.min.js
+*.min.css
