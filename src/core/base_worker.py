@@ -1,53 +1,47 @@
 import asyncio
-from abc import ABC, abstractmethod
+from typing import Optional
+from src.core.lucy_types import LucyMessage, MessageType, WorkerType
 from src.core.bus import EventBus
-from src.core.lucy_types import LucyMessage, MessageType
+from loguru import logger
 
-class BaseWorker(ABC):
-    """
-    Clase base para workers del enjambre.
-    Maneja la conexión al bus y el ciclo de vida.
-    """
+class BaseWorker:
+    """Clase base para todos los Workers de Lucy."""
     def __init__(self, worker_id: str, bus: EventBus):
         self.worker_id = worker_id
         self.bus = bus
+        self.running = False
+        self._task: Optional[asyncio.Task] = None
+
+    async def start(self):
+        self.running = True
+        logger.info(f"✅ Worker {self.worker_id} Iniciado.")
         self.bus.subscribe(self.worker_id, self.handle_message)
 
-    @abstractmethod
+    async def stop(self):
+        self.running = False
+        logger.info(f"🛑 Worker {self.worker_id} Detenido.")
+
     async def handle_message(self, message: LucyMessage):
-        """Lógica específica del worker."""
+        """Método a sobreescribir por subclases."""
         pass
 
     async def send_response(self, original_msg: LucyMessage, content: str, data: dict = None):
-        """Responder al remitente (Manager)."""
         response = LucyMessage(
             sender=self.worker_id,
             receiver=original_msg.sender,
             type=MessageType.RESPONSE,
             content=content,
             data=data or {},
-            in_reply_to=original_msg.id,
+            in_reply_to=original_msg.id
         )
         await self.bus.publish(response)
 
     async def send_error(self, original_msg: LucyMessage, error_msg: str):
-        """Reportar error."""
-        response = LucyMessage(
+        error = LucyMessage(
             sender=self.worker_id,
             receiver=original_msg.sender,
             type=MessageType.ERROR,
             content=error_msg,
-            in_reply_to=original_msg.id,
+            in_reply_to=original_msg.id
         )
-        await self.bus.publish(response)
-
-    async def send_event(self, receiver: str, content: str, data: dict | None = None):
-        """Publicar eventos secundarios (ej. salida final)."""
-        event = LucyMessage(
-            sender=self.worker_id,
-            receiver=receiver,
-            type=MessageType.EVENT,
-            content=content,
-            data=data or {}
-        )
-        await self.bus.publish(event)
+        await self.bus.publish(error)

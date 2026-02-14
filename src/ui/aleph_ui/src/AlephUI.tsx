@@ -2,39 +2,74 @@
  * AlephUI Component - Interfaz Cyberpunk-Gótica para LUCY ALEPH.
  * Requisitos: tailwindcss, lucide-react, framer-motion.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cpu, Terminal, ShieldAlert } from 'lucide-react';
+import { Cpu, Terminal, ShieldAlert, Activity } from 'lucide-react';
+import { io, Socket } from 'socket.io-client';
 
 const AlephUI: React.FC = () => {
     const [status, setStatus] = useState<any>(null);
     const [logs, setLogs] = useState<string[]>([]);
     const [command, setCommand] = useState("");
+    const [connected, setConnected] = useState(false);
 
-    // Simulación de WebSocket para monitorización de hardware
+    // Socket ref
+    const socketRef = useRef<Socket | null>(null);
+
     useEffect(() => {
-        const interval = setInterval(() => {
-            // En producción, estos datos provienen de AlephNucleus.get_hardware_telemetry
-            setStatus({
-                vram_used: 12400 + Math.random() * 500,
-                vram_total: 32768,
-                gpu_load: 45 + Math.random() * 10,
-                temp: 62,
-                power: 320
-            });
+        // Conexión al API Gateway (Puerto 5052)
+        const socket = io('http://localhost:5052', {
+            transports: ['websocket', 'polling']
+        });
+        socketRef.current = socket;
 
-            // Simular logs
-            if (Math.random() > 0.8) {
-                const newLog = `[${new Date().toLocaleTimeString()}] THOUGHT_ACTOR: Analyzing context vector...`;
-                setLogs(prev => [newLog, ...prev].slice(0, 50));
+        socket.on('connect', () => {
+            setConnected(true);
+            setLogs(prev => [`[SYSTEM] Uplink established with Neural Core.`, ...prev]);
+        });
+
+        socket.on('disconnect', () => {
+            setConnected(false);
+            setLogs(prev => [`[SYSTEM] Uplink lost. Reconnecting...`, ...prev]);
+        });
+
+        // Escuchar eventos del enjambre
+        socket.on('lucy_event', (event: any) => {
+            if (event.content === "TELEMETRY_UPDATE") {
+                // Actualizar estado de hardware
+                if (event.data && event.data.gpu) {
+                    setStatus({
+                        vram_used: event.data.gpu.vram_used,
+                        vram_total: event.data.gpu.vram_total,
+                        gpu_load: event.data.gpu.utilization,
+                        temp: event.data.gpu.temp,
+                        sovereignty: event.data.sovereignty
+                    });
+                }
+            } else {
+                // Logs genéricos o pensamientos
+                const timestamp = new Date(event.timestamp * 1000).toLocaleTimeString();
+                const sender = event.sender.toUpperCase();
+                const content = event.content;
+                setLogs(prev => [`[${timestamp}] ${sender}: ${content}`, ...prev].slice(0, 50));
             }
-        }, 1500);
-        return () => clearInterval(interval);
+        });
+
+        return () => {
+            socket.disconnect();
+        };
     }, []);
 
     const handleCommand = (e: React.FormEvent) => {
         e.preventDefault();
         if (!command.trim()) return;
+
+        // Enviar comando al backend
+        socketRef.current?.emit('lucy_command', {
+            content: command,
+            receiver: "manager" // Default receiver
+        });
+
         setLogs(prev => [`[${new Date().toLocaleTimeString()}] USER_CMD: ${command}`, ...prev]);
         setCommand("");
     }
@@ -52,12 +87,14 @@ const AlephUI: React.FC = () => {
                     <h1 className="text-4xl font-black tracking-[0.2em] uppercase italic text-transparent bg-clip-text bg-gradient-to-r from-[#00fafe] to-[#b366ff]">
                         Lucy Aleph UI
                     </h1>
-                    <p className="text-[10px] uppercase opacity-50 mt-1">Sovereign Intelligence Command Interface v2.0</p>
+                    <p className="text-[10px] uppercase opacity-50 mt-1">Sovereign Intelligence Command Interface v2.1</p>
                 </div>
                 <div className="flex gap-6 text-right">
-                    <div className="flex flex-col">
-                        <span className="text-[10px] opacity-50 italic">S_LUCY INDEX</span>
-                        <span className="text-lg font-bold text-green-400">1.0</span>
+                    <div className="flex flex-col items-end">
+                        <span className="text-[10px] opacity-50 italic">UPLINK STATUS</span>
+                        <span className={`text-lg font-bold flex items-center gap-2 ${connected ? "text-green-400" : "text-red-500"}`}>
+                            {connected ? "ONLINE" : "OFFLINE"} <Activity size={16} className={connected ? "animate-pulse" : ""} />
+                        </span>
                     </div>
                     <div className="flex flex-col">
                         <span className="text-[10px] opacity-50 italic">NUCLEUS STATE</span>
@@ -76,26 +113,26 @@ const AlephUI: React.FC = () => {
 
                         <TelemetryMetric
                             label="VRAM Usage"
-                            value={status ? (status.vram_used / status.vram_total) * 100 : 0}
-                            detail={`${status?.vram_used.toFixed(0)} / 32GB`}
+                            value={status ? (status.vram_used / (status.vram_total || 1)) * 100 : 0}
+                            detail={status ? `${status.vram_used}MB / ${status.vram_total}MB` : "N/A"}
                             color="bg-[#00fafe]"
                         />
 
                         <TelemetryMetric
                             label="GPU Compute"
                             value={status?.gpu_load || 0}
-                            detail={`${status?.gpu_load.toFixed(1)}%`}
+                            detail={`${status?.gpu_load || 0}%`}
                             color="bg-[#b366ff]"
                         />
 
                         <div className="mt-6 pt-6 border-t border-white/5 grid grid-cols-2 gap-4 text-[10px]">
                             <div className="flex flex-col">
                                 <span className="opacity-40 italic">CORE TEMP</span>
-                                <span className="text-sm">{status?.temp}°C</span>
+                                <span className="text-sm">{status?.temp || 0}°C</span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="opacity-40 italic">POWER DRAW</span>
-                                <span className="text-sm">{status?.power}W</span>
+                                <span className="opacity-40 italic">SOVEREIGNTY</span>
+                                <span className="text-sm">{(status?.sovereignty || "").substring(0, 20)}...</span>
                             </div>
                         </div>
                     </div>
@@ -144,6 +181,7 @@ const AlephUI: React.FC = () => {
                                     onChange={(e) => setCommand(e.target.value)}
                                     className="w-full bg-black/80 border border-[#00fafe]/30 rounded-none p-4 text-sm focus:outline-none focus:border-[#00fafe] transition-colors placeholder:text-[#00fafe]/20 italic"
                                     placeholder="Escriba comando para el enjambre Aleph..."
+                                    disabled={!connected}
                                 />
                             </form>
                             <div className="absolute right-4 top-1/2 -translate-y-1/2 flex gap-2">

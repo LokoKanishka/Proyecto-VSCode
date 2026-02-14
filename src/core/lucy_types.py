@@ -11,20 +11,22 @@ class MessageType(str, Enum):
     ERROR = "error"
 
 class WorkerType(str, Enum):
+    # Core
     MANAGER = "manager"
+    # Senses
+    EAR = "ear"        # Antes ear_worker
+    MOUTH = "mouth"    # Antes mouth_worker
+    VISION = "vision"  # Antes vision_worker
+    HANDS = "hands"    # Antes hands_worker
+    # Workers Cognitivos
+    THOUGHT = "thought"
+    MEMORY = "memory"
     SEARCH = "search_worker"
-    CHAT = "chat_worker"
     CODE = "code_worker"
-    VISION = "vision_worker"
-    EAR = "ear_worker"
-    MOUTH = "mouth_worker"
-    HANDS = "hands_worker"
-    BROWSER = "browser_worker"
-    MEMORY = "memory_worker"
     SHELL = "shell_worker"
-    VSCODE = "vscode_worker"
-    GIT = "git_worker"
-    PACKAGE = "package_worker"
+    # Legacy mappings (para compatibilidad temporal)
+    LEGACY_EAR = "ear_worker"
+    LEGACY_MOUTH = "mouth_worker"
 
 class LucyMessage(BaseModel):
     """
@@ -40,13 +42,3 @@ class LucyMessage(BaseModel):
     data: Dict[str, Any] = Field(default_factory=dict)  # Payload estructurado (args, resultados)
     metadata: Dict[str, Any] = Field(default_factory=dict)  # Traceability, tokens, latency
     in_reply_to: Optional[str] = None
-
-class MemoryEntry(BaseModel):
-    """Modelo para persistencia en SQLite/FAISS."""
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: float = Field(default_factory=time.time)
-    role: str # user, assistant, system
-    content: str
-    session_id: str
-    embedding: Optional[List[float]] = None # Vector para búsqueda semántica
-    audio_path: Optional[str] = None

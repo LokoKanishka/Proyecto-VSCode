@@ -1,0 +1,63 @@
+Metadata-Version: 2.4
+Name: lucy-aleph
+Version: 0.2.0
+Summary: LUCY: Sistema Cognitivo Soberano y Distribuido
+Author-email: LokoKanishka <diego@example.com>
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: ddgs
+Requires-Dist: httpx
+Requires-Dist: ollama
+Requires-Dist: PyYAML
+Requires-Dist: tenacity
+Requires-Dist: trafilatura
+Requires-Dist: webrtcvad>=2.0.10
+Requires-Dist: soundfile
+Requires-Dist: sounddevice
+Requires-Dist: faster-whisper
+Requires-Dist: loguru
+Requires-Dist: lancedb
+Requires-Dist: sentence-transformers
+Requires-Dist: watchdog
+Requires-Dist: numpy
+Requires-Dist: pyautogui
+Requires-Dist: mss
+Requires-Dist: pydantic
+Requires-Dist: websockets
+Requires-Dist: beautifulsoup4
+Requires-Dist: diskcache
+Requires-Dist: pytesseract
+Requires-Dist: opencv-python
+Requires-Dist: ultralytics
+Requires-Dist: faiss-cpu
+Requires-Dist: ray[default]>=2.5.0
+Requires-Dist: prometheus-client>=0.18.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: psutil
+Requires-Dist: pynvml
+Requires-Dist: overrides
+Requires-Dist: requests
+Requires-Dist: playwright==1.44.0
+Provides-Extra: web
+Requires-Dist: flask; extra == "web"
+Requires-Dist: flask-socketio; extra == "web"
+Requires-Dist: python-socketio; extra == "web"
+Requires-Dist: fastapi; extra == "web"
+Requires-Dist: uvicorn; extra == "web"
+Provides-Extra: ui
+Requires-Dist: customtkinter; extra == "ui"
+Requires-Dist: pillow; extra == "ui"
+Provides-Extra: dev
+Requires-Dist: black; extra == "dev"
+Requires-Dist: isort; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
+Provides-Extra: windows
+Requires-Dist: pyttsx3; extra == "windows"
+Requires-Dist: pyaudio; extra == "windows"
+Requires-Dist: colorama; extra == "windows"
+Requires-Dist: SpeechRecognition; extra == "windows"
+
+# Proyecto VSCode - Lucy Agent\n\nEste es el proyecto principal de Lucy (Agente Independiente).

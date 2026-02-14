@@ -1,3 +1,75 @@
+[project]
+name = "lucy-aleph"
+version = "0.2.0"
+description = "LUCY: Sistema Cognitivo Soberano y Distribuido"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "LokoKanishka", email = "diego@example.com"}
+]
+dependencies = [
+    "ddgs",
+    "httpx",
+    "ollama",
+    "PyYAML",
+    "tenacity",
+    "trafilatura",
+    "webrtcvad>=2.0.10",
+    "soundfile",
+    "sounddevice",
+    "faster-whisper",
+    "loguru",
+    "lancedb",
+    "sentence-transformers",
+    "watchdog",
+    "numpy",
+    "pyautogui",
+    "mss",
+    "pydantic",
+    "websockets",
+    "beautifulsoup4",
+    "diskcache",
+    "pytesseract",
+    "opencv-python",
+    "ultralytics",
+    "faiss-cpu",
+    "ray[default]>=2.5.0",
+    "prometheus-client>=0.18.0",
+    "torch>=2.0.0",
+    "psutil",
+    "pynvml",
+    "overrides",
+    "requests",
+    "playwright==1.44.0"
+]
+
+[project.optional-dependencies]
+web = [
+    "flask",
+    "flask-socketio",
+    "python-socketio",
+    "fastapi",
+    "uvicorn"
+]
+ui = [
+    "customtkinter",
+    "pillow"
+]
+dev = [
+    "black",
+    "isort",
+    "flake8",
+    "pytest",
+    "pytest-asyncio"
+]
+windows = [
+    "pyttsx3",
+    "pyaudio",
+    "colorama",
+    "SpeechRecognition"
+]
+
 [tool.black]
 line-length = 100
 target-version = ['py312']
@@ -6,11 +78,7 @@ extend-exclude = '''
 /(
     \.git
   | \.venv
-  | \.venv-lucy-voz
-  | \.venv-lucy-ui
-  | \.venv-web
   | legacy
-  | archive
   | external
   | build
   | dist
