@@ -48,16 +48,34 @@ class EventBus:
         return summary
 
     async def start(self):
-        """Inicia el loop de procesamiento."""
+        """Inicia el loop de procesamiento en segundo plano."""
+        if self._running:
+            return
         self._running = True
         await self._load_durable_queue()
         logger.info("🚀 EventBus iniciado.")
-        while True:
-            msg = await self._queue.get()
-            self._queue.task_done()
-            if msg is None:
-                break
-            await self._dispatch(msg)
+        # Correr el loop en una tarea para no bloquear al resto del sistema
+        self._loop_task = asyncio.create_task(self._process_queue())
+
+    async def _process_queue(self):
+        """Bucle interno de despacho de mensajes."""
+        try:
+            while self._running:
+                msg = await self._queue.get()
+                if msg is None:
+                    self._queue.task_done()
+                    break
+                
+                try:
+                    await self._dispatch(msg)
+                except Exception as e:
+                    logger.error(f"Error despachando mensaje: {e}")
+                finally:
+                    self._queue.task_done()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._running = False
 
     async def stop(self):
         self._running = False
