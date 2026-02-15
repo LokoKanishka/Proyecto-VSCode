@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lucy True - Chat Assistant</title>
+    <title>Lucy Studio - IA Assistant</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
@@ -12,7 +12,8 @@
         <!-- Left Sidebar -->
         <aside class="sidebar-left">
             <div class="sidebar-header">
-                <h2>💜 Lucy True</h2>
+                <h2>💜 Lucy Studio</h2>
+                <div class="ui-version">UI Rev 2026.02.15</div>
             </div>
             <nav class="sidebar-nav">
                 <button class="nav-button active">
@@ -43,7 +44,7 @@
         <!-- Main Chat Area -->
         <main class="chat-area">
             <div class="chat-header">
-                <h1>Chat with a Large Language Model</h1>
+                <h1>Lucy Studio Dashboard</h1>
                 <div class="status-indicator">
                     <span class="status-dot"></span>
                     <span id="status-text">Ready</span>
@@ -208,66 +209,32 @@
 
             <div id="toast-container" class="toast-container"></div>
 
-            <div class="settings-section watcher-events-section">
-                <h4>Eventos del sistema</h4>
-                <div id="watcher-events" class="watcher-events">
-                    <div id="watcher-events-list" class="watcher-events-list">
-                        Cargando eventos...
+            <!-- Advanced Diagnosis Section (Collapsible) -->
+            <div class="settings-section advanced-diagnostics">
+                <details>
+                    <summary>Diagnóstico avanzado (opcional)</summary>
+                    <div class="advanced-grid">
+                        <div class="diagnostic-panel">
+                            <h4>Events Status</h4>
+                            <div id="watcher-events-list" class="watcher-events-list">Cargando...</div>
+                        </div>
+                        <div class="diagnostic-panel">
+                            <h4>Bus Metrics</h4>
+                            <div id="bus-metrics-summary">Sin datos.</div>
+                            <div class="sparkline-wrapper">
+                                <canvas id="bus-sparkline" width="240" height="40"></canvas>
+                            </div>
+                        </div>
+                        <div class="diagnostic-panel">
+                            <h4>Bridge Status</h4>
+                            <div id="bridge-metrics-summary">Inactivo.</div>
+                        </div>
+                        <div class="diagnostic-panel">
+                            <h4>System Health</h4>
+                            <div id="worker-status-list">Cargando...</div>
+                        </div>
                     </div>
-                </div>
-            </div>
-
-            <div class="settings-section bus-metrics-section">
-                <h4>Bus Metrics</h4>
-                <div class="metrics-summary" id="bus-metrics-summary">
-                    <div>Esperando métricas del bus...</div>
-                </div>
-                <div class="metrics-list" id="bus-metrics-recent"></div>
-                <div class="sparkline-wrapper">
-                    <canvas id="bus-sparkline" width="240" height="60"></canvas>
-                </div>
-            </div>
-
-            <div class="settings-section bridge-metrics-section">
-                <h4>Bridge Metrics</h4>
-                <div class="metrics-summary" id="bridge-metrics-summary">
-                    <div>Esperando métricas del bridge...</div>
-                </div>
-                <div class="metrics-list" id="bridge-metrics-recent"></div>
-            </div>
-
-            <div class="settings-section stage-latency-section">
-                <h4>Latencia por etapa</h4>
-                <div class="metrics-summary" id="stage-latency-summary">
-                    <div>Esperando latencias...</div>
-                </div>
-                <div class="metrics-list" id="stage-latency-recent"></div>
-            </div>
-
-            <div class="settings-section worker-status-section">
-                <h4>Estado de workers</h4>
-                <div class="metrics-list" id="worker-status-list">
-                    Cargando estado de workers...
-                </div>
-            </div>
-
-            <div class="settings-section memory-events-section">
-                <h4>Eventos de memoria</h4>
-                <div class="memory-events" id="memory-events-list">
-                    Cargando eventos de memoria recuperada...
-                </div>
-            </div>
-
-            <div class="settings-section memory-section">
-                <h4>Resumen automático</h4>
-                <div class="memory-summary" id="memory-summary">Cargando resumen...</div>
-                <div class="memory-summary-timestamp" id="memory-summary-timestamp"></div>
-                <button id="refresh-memory-btn" class="refresh-button">Actualizar resumen</button>
-            </div>
-            <div class="settings-section plan-section">
-                <h4>Último plan ejecutado</h4>
-                <div class="plan-summary" id="plan-summary">Cargando plan...</div>
-                <div id="plan-steps" class="plan-steps"></div>
+                </details>
             </div>
         </aside>
     </div>

@@ -69,22 +69,23 @@ def index():
 def handle_connect(auth=None):
     log.info(f"Client connected (auth: {auth})")
     manager = get_manager()
+    # Connection Status
     if manager:
-        status = "Connected to Ray Cluster"
+        status_msg = "Lucy Studio: Motor Ray online"
         status_type = "success"
     else:
-        status = "Ray Cluster NOT FOUND (Backend offline)"
+        status_msg = "Lucy Studio: Modo Stand-alone activo"
         status_type = "warning"
     
-    emit('status', {'message': status, 'type': status_type})
+    emit('status', {'message': status_msg, 'type': status_type})
     
     # Send current consciousness state immediately
     consciousness = get_current_consciousness()
     emit('consciousness_update', consciousness)
     
-    # Check voice bridge availability (without full block if possible)
+    # Check voice bridge availability
     vb = voice_bridge if voice_bridge is not None else None
-    audio_status = "Voice active" if vb else "Voice standby/unavailable"
+    audio_status = "Audio: Activo" if vb else "Audio: Standby"
     emit('status', {'message': audio_status, 'type': 'info'})
 
 @socketio.on('chat_message')
@@ -108,6 +109,7 @@ def handle_chat_message(data):
     # Fallback to direct Ollama if Ray is missing or failed
     log.info("Using Ollama fallback...")
     try:
+        # Avoid ThreadPoolExecutor for chat to keep it simple and stable
         llm = OllamaClient()
         response = llm.chat([
             {"role": "system", "content": "Sos Lucy, una IA asistente. El backend de Ray no está disponible, así que respondés en modo stand-alone."},
@@ -115,13 +117,13 @@ def handle_chat_message(data):
         ])
         
         if "Error connecting" in response:
-            emit('message', {'type': 'assistant', 'content': "⚠️ No puedo procesar tu mensaje. El motor de Ray no está activo y Ollama parece estar apagado. Por favor, ejecutá `ollama serve` o iniciá el backend."})
+            emit('message', {'type': 'assistant', 'content': "⚠️ Error de conexión con el cerebro (Ollama offline)."})
         else:
             emit('message', {'type': 'assistant', 'content': response})
             
     except Exception as e:
         log.error(f"Ollama fallback error: {e}")
-        emit('message', {'type': 'assistant', 'content': f"Error crítico: No hay backend disponible (Ray/Ollama)."})
+        emit('message', {'type': 'assistant', 'content': f"Error crítico: Fallo total de respuesta (Ray/Ollama)."})
 
 @socketio.on('request_consciousness')
 def handle_consciousness_request():

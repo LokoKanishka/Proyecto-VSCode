@@ -51,10 +51,9 @@ function copyStatusHistory() {
     const text = statusHistory
         .map(
             (entry) =>
-                `${new Date(entry.time).toLocaleTimeString()} - ${entry.message} ${
-                    entry.metrics
-                        ? `(ASR ${entry.metrics.asr_ms ?? '—'} ms, LLM ${entry.metrics.llm_ms ?? '—'} ms)`
-                        : ''
+                `${new Date(entry.time).toLocaleTimeString()} - ${entry.message} ${entry.metrics
+                    ? `(ASR ${entry.metrics.asr_ms ?? '—'} ms, LLM ${entry.metrics.llm_ms ?? '—'} ms)`
+                    : ''
                 }`
         )
         .join('\n');
@@ -129,22 +128,19 @@ socket.on('status', (data) => {
 function updateStatus(message, type = 'info') {
     const statusText = document.getElementById('status-text');
     const statusDot = document.querySelector('.status-dot');
-    
+    if (!statusText || !statusDot) return;
+
     statusText.textContent = message;
-    
-    // Remove all status classes
-    statusDot.classList.remove('status-success', 'status-error', 'status-warning');
-    
-    // Add appropriate class
-    if (type === 'success') {
-        statusDot.style.background = '#10b981';
-    } else if (type === 'error') {
-        statusDot.style.background = '#ef4444';
-    } else if (type === 'warning') {
-        statusDot.style.background = '#f59e0b';
-    } else {
-        statusDot.style.background = '#3b82f6';
-    }
+
+    // Status color mapping
+    const types = {
+        'success': '#10b981', // Emerald
+        'warning': '#f59e0b', // Amber
+        'error': '#ef4444',   // Rose
+        'info': '#3b82f6'     // Blue
+    };
+
+    statusDot.style.background = types[type] || types['info'];
 }
 
 // Export for use in other modules

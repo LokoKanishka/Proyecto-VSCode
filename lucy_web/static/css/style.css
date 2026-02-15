@@ -51,6 +51,14 @@ body {
     background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    margin-bottom: 0.25rem;
+}
+
+.ui-version {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-family: 'Courier New', monospace;
+    opacity: 0.7;
 }
 
 .sidebar-nav {
@@ -147,8 +155,15 @@ body {
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
 }
 
 .chat-messages {
@@ -195,6 +210,7 @@ body {
         opacity: 0;
         transform: translateY(10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -291,8 +307,15 @@ body {
 }
 
 @keyframes recordPulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.05); }
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
 }
 
 .send-button {
@@ -470,7 +493,7 @@ body {
 
 .metrics-list-item {
     padding: 0.55rem 0;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
     font-size: 0.85rem;
     color: var(--text-secondary);
 }
@@ -481,14 +504,14 @@ body {
 
 .worker-status-item {
     padding: 0.45rem 0;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
     font-size: 0.85rem;
     color: var(--text-secondary);
 }
 
 .memory-events-item {
     padding: 0.5rem 0;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
     font-size: 0.85rem;
     color: var(--text-secondary);
 }
@@ -515,7 +538,7 @@ body {
     padding: 10px 14px;
     border-radius: 8px;
     font-size: 0.85rem;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
 }
 
 .sparkline-wrapper {
@@ -551,7 +574,8 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--border-color);}
+    background: var(--border-color);
+}
 
 /* ===== Consciousness Panel (Cyberpunk Cyan) ===== */
 .consciousness-panel {
@@ -696,3 +720,39 @@ body {
     background: rgba(0, 242, 255, 0.6);
 }
 
+/* ===== Advanced Diagnostics (Collapsible) ===== */
+.advanced-diagnostics details {
+    cursor: pointer;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    padding: 0.5rem;
+}
+
+.advanced-diagnostics summary {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent-blue);
+    outline: none;
+    padding: 0.5rem 0;
+}
+
+.advanced-grid {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 0.5rem;
+}
+
+.diagnostic-panel {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem;
+}
+
+.diagnostic-panel h4 {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
