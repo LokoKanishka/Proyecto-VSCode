@@ -66,8 +66,8 @@ def index():
     return render_template('index.html')
 
 @socketio.on('connect')
-def handle_connect():
-    log.info("Client connected")
+def handle_connect(auth=None):
+    log.info(f"Client connected (auth: {auth})")
     manager = get_manager()
     if manager:
         status = "Connected to Ray Cluster"
@@ -82,9 +82,9 @@ def handle_connect():
     consciousness = get_current_consciousness()
     emit('consciousness_update', consciousness)
     
-    # Check voice bridge availability
-    vb = get_voice_bridge()
-    audio_status = "Voice available" if vb else "Voice unavailable"
+    # Check voice bridge availability (without full block if possible)
+    vb = voice_bridge if voice_bridge is not None else None
+    audio_status = "Voice active" if vb else "Voice standby/unavailable"
     emit('status', {'message': audio_status, 'type': 'info'})
 
 @socketio.on('chat_message')
