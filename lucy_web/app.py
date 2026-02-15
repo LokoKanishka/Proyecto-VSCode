@@ -29,6 +29,7 @@ log = logging.getLogger("LucyWeb")
 
 # Import consciousness monitor
 from lucy_web.consciousness_monitor import start_consciousness_monitor, get_current_consciousness
+from src.core.llm import OllamaClient
 
 # Import voice bridge (lazy load para evitar errores si faltan deps)
 voice_bridge = None
@@ -68,8 +69,14 @@ def index():
 def handle_connect():
     log.info("Client connected")
     manager = get_manager()
-    status = "Connected to Ray Cluster" if manager else "Ray Cluster NOT FOUND"
-    emit('status', {'message': status, 'type': 'success'})
+    if manager:
+        status = "Connected to Ray Cluster"
+        status_type = "success"
+    else:
+        status = "Ray Cluster NOT FOUND (Backend offline)"
+        status_type = "warning"
+    
+    emit('status', {'message': status, 'type': status_type})
     
     # Send current consciousness state immediately
     consciousness = get_current_consciousness()
@@ -88,19 +95,33 @@ def handle_chat_message(data):
     emit('message', {'type': 'user', 'content': user_message})
     
     manager = get_manager()
-    if not manager:
-        emit('error', {'message': 'Lucy Backend (Ray) is not running!'})
-        return
-
+    if manager:
+        try:
+            # Async call to Manager
+            future = manager.process_input.remote(user_message)
+            response = ray.get(future) # Blocking wait for response
+            emit('message', {'type': 'assistant', 'content': response})
+            return
+        except Exception as e:
+            log.error(f"Ray processing error: {e}")
+    
+    # Fallback to direct Ollama if Ray is missing or failed
+    log.info("Using Ollama fallback...")
     try:
-        # Async call to Manager
-        future = manager.process_input.remote(user_message)
-        response = ray.get(future) # Blocking wait for response
+        llm = OllamaClient()
+        response = llm.chat([
+            {"role": "system", "content": "Sos Lucy, una IA asistente. El backend de Ray no está disponible, así que respondés en modo stand-alone."},
+            {"role": "user", "content": user_message}
+        ])
         
-        emit('message', {'type': 'assistant', 'content': response})
+        if "Error connecting" in response:
+            emit('message', {'type': 'assistant', 'content': "⚠️ No puedo procesar tu mensaje. El motor de Ray no está activo y Ollama parece estar apagado. Por favor, ejecutá `ollama serve` o iniciá el backend."})
+        else:
+            emit('message', {'type': 'assistant', 'content': response})
+            
     except Exception as e:
-        log.error(f"Error processing message: {e}")
-        emit('message', {'type': 'assistant', 'content': f"Error: {str(e)}"})
+        log.error(f"Ollama fallback error: {e}")
+        emit('message', {'type': 'assistant', 'content': f"Error crítico: No hay backend disponible (Ray/Ollama)."})
 
 @socketio.on('request_consciousness')
 def handle_consciousness_request():
