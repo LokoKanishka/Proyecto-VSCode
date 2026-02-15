@@ -4,15 +4,18 @@ set -euo pipefail
 # Directorio del proyecto
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-VENV_DIR="$PROJECT_DIR/.venv-lucy-voz"
+VENV_DIR="$PROJECT_DIR/.venv"
 
 # Ir al proyecto
 cd "$PROJECT_DIR"
 
 # Verificar entorno
 if [ ! -d "$VENV_DIR" ]; then
-    echo "❌ Entorno virtual no encontrado."
-    echo "   Ejecutá: python3 -m venv .venv-lucy-voz && source .venv-lucy-voz/bin/activate && pip install -r lucy_voice/requirements.txt"
+    echo "❌ Entorno virtual no encontrado en $VENV_DIR"
+    echo "   Ejecutá:"
+    echo "   python3 -m venv .venv"
+    echo "   source .venv/bin/activate"
+    echo "   pip install -e '.[web]'"
     exit 1
 fi
 
@@ -52,4 +55,4 @@ echo "========================================="
 
 # Ejecutar servidor Flask (modo dev seguro por variable)
 export LUCY_WEB_ALLOW_UNSAFE="${LUCY_WEB_ALLOW_UNSAFE:-1}"
-.venv-lucy-voz/bin/python lucy_web/app.py
+"$VENV_DIR/bin/python" lucy_web/app.py
