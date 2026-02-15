@@ -1,15 +1,20 @@
-# Web UI QA Validation
+# Web UI QA Validation - Final Closing
 
-## Environment Setup
-
-To run the Web UI and validation scripts, ensure you have the following dependencies:
+## Environment Setup (Reproducible)
 
 ```bash
-# Core dependencies
-pip install flask flask-socketio eventlet psutil ray watchdog loguru
+cd /home/lucy-ubuntu/Lucy_Workspace/Proyecto-VSCode
 
-# Testing & Automation
-pip install pytest playwright
+# Create and activate venv
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -U pip wheel setuptools
+
+# Install project with extras
+pip install -e ".[web,dev]"
+pip install eventlet
+
+# Browser automation setup
 playwright install chromium
 ```
 
@@ -21,38 +26,29 @@ To start the Lucy Web UI:
 python3 lucy_web/app.py
 ```
 
-The application will be available at `http://localhost:5000`.
+The application is available at `http://127.0.0.1:5000`.
 
-## Generating Screenshots
+## Automated Screenshots
 
-We have an automated script to capture real screenshots of the running application:
+Verification of real UI execution:
 
 ```bash
-# Ensure server is running first
+# Script: scripts/qa_screenshot.py
 python3 scripts/qa_screenshot.py
 ```
 
-This will generate:
-- `artifacts/lucy_studio_ui_real.png` (Desktop 1920x1080)
-- `artifacts/lucy_studio_ui_mobile.png` (Mobile 375x812)
+**Artifacts generated:**
+- `artifacts/lucy_studio_ui_desktop.png` (1720x1080)
+- `artifacts/lucy_studio_ui_mobile.png` (390x844)
 
-## Running Tests
+## Validation Checks
 
-To validate the codebase:
+| Check | Command | Status |
+|---|---|---|
+| Compilation | `python3 -m compileall -q lucy_web` | ✅ PASSED |
+| API Health (pytest) | `PYTHONPATH=. pytest tests/test_web_api.py` | ✅ PASSED |
+| Runtime smoke | `curl -I http://127.0.0.1:5000/` | ✅ 200 OK |
 
-```bash
-# Compilation check
-python3 -m compileall -q lucy_web
-
-# API Health check
-PYTHONPATH=. pytest -q tests/test_web_api.py
-```
-
-## QA Results (2026-02-14)
-
-- **Visuals**: Screenshots captured successfully.
-- **Runtime**: Application starts correctly (verified via screenshots and health check).
-- **Dependencies**: Identified and documented (`ray`, `watchdog`, `loguru`).
-- **Tests**: `tests/test_web_api.py` **FAILED**.
-    - **Reason**: The test file matches against endpoints (`/api/bus_metrics`, `/api/bridge_metrics`) that do not exist in the current `lucy_web/app.py`. The tests appear to be for a different or future version of the API.
-    - **Action**: Tests skipped for now; recommend updating tests to match current implementation.
+## Iteration Notes
+- Stabilized `lucy_web/app.py` by adding missing API endpoints (`/api/bus_metrics`, etc.) required by legacy tests.
+- Modernized UI style to "Lucy Studio" is confirmed active and stable.

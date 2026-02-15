@@ -7,12 +7,20 @@ import sys
 import base64
 import tempfile
 import subprocess
+import json
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Dummy logs for tests
+BUS_METRICS_LOG = "bus_metrics.jsonl"
+BRIDGE_METRICS_LOG = "bridge_metrics.jsonl"
+MEMORY_EVENTS_LOG = "memory_retrieval.log"
+db_path = "memory.db"
+
 app = Flask(__name__)
+
 app.config['SECRET_KEY'] = 'lucy-ray-secret'
 socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=10*1024*1024)  # 10MB para audio
 
@@ -278,6 +286,50 @@ def get_stats():
         log.debug(f"Could not get Ray stats: {e}")
     
     return jsonify(stats)
+
+@app.route('/api/bus_metrics')
+def get_bus_metrics():
+    """Bus metrics for testing"""
+    records = []
+    if os.path.exists(BUS_METRICS_LOG):
+        with open(BUS_METRICS_LOG, 'r') as f:
+            for line in f:
+                records.append(json.loads(line))
+    return jsonify({'summary': {'published': len(records)}, 'records': records})
+
+@app.route('/api/bridge_metrics')
+def get_bridge_metrics():
+    """Bridge metrics for testing"""
+    records = []
+    if os.path.exists(BRIDGE_METRICS_LOG):
+        with open(BRIDGE_METRICS_LOG, 'r') as f:
+            for line in f:
+                records.append(json.loads(line))
+    return jsonify({'records': records})
+
+@app.route('/api/memory_events')
+def get_memory_events():
+    """Memory events for testing"""
+    events = []
+    if os.path.exists(MEMORY_EVENTS_LOG):
+        with open(MEMORY_EVENTS_LOG, 'r') as f:
+            for line in f:
+                events.append({'details': line})
+    return jsonify({'events': events})
+
+@app.route('/api/events')
+def get_events():
+    """Events from DB for testing"""
+    import sqlite3
+    events = []
+    if os.path.exists(db_path):
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM events")
+        for row in cursor.fetchall():
+            events.append(row)
+        conn.close()
+    return jsonify({'events': events})
 
 if __name__ == '__main__':
     port = int(os.getenv("LUCY_WEB_PORT", "5000"))

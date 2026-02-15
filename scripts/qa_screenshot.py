@@ -22,13 +22,13 @@ async def run():
 
         # Desktop Screenshot
         print("Taking desktop screenshot...")
-        await page.set_viewport_size({"width": 1920, "height": 1080})
+        await page.set_viewport_size({"width": 1720, "height": 1080})
         os.makedirs("artifacts", exist_ok=True)
-        await page.screenshot(path="artifacts/lucy_studio_ui_real.png", full_page=True)
+        await page.screenshot(path="artifacts/lucy_studio_ui_desktop.png", full_page=True)
         
         # Mobile Screenshot
         print("Taking mobile screenshot...")
-        await page.set_viewport_size({"width": 375, "height": 812})
+        await page.set_viewport_size({"width": 390, "height": 844})
         await page.screenshot(path="artifacts/lucy_studio_ui_mobile.png", full_page=True)
 
         await browser.close()
