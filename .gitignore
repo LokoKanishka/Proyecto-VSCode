@@ -72,3 +72,4 @@ models/
 .env.*
 config/*.local*
 config/*.local.*
+lucy_consciousness.json
