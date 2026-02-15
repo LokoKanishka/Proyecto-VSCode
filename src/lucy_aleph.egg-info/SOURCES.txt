@@ -115,6 +115,7 @@ src/ui/dashboard.py
 src/ui/force_ui.py
 src/ui/lucy_aleph.py
 src/ui/aleph_ui/node_modules/flatted/python/flatted.py
+src/utils/__init__.py
 src/utils/logger.py
 src/utils/settings_manager.py
 src/utils/silent_logger.py
@@ -135,7 +136,10 @@ src/watchers/resource_watcher.py
 src/watchers/timer_watcher.py
 src/watchers/window_watcher.py
 src/workers/__init__.py
+src/workers/api.py
+src/workers/nucleus.py
 src/workers/system.py
+src/workers/thought.py
 tests/test_browser_distill.py
 tests/test_browser_dom_summary.py
 tests/test_bus_router.py
