@@ -14,8 +14,7 @@ from src.core.lucy_types import MessageType, LucyMessage, WorkerType
 # Configuración
 API_BASE = os.getenv("LUCY_API_BASE", "http://localhost:11434/v1")
 API_KEY = os.getenv("LUCY_API_KEY", "ollama")
-# TODO: Configurable model
-MODEL_NAME = "qwen2.5:32b" 
+MODEL_NAME = os.getenv("LUCY_MODEL_NAME", "qwen2.5:32b") 
 
 class ThoughtWorker(BaseWorker):
     def __init__(self, bus):

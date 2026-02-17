@@ -56,10 +56,21 @@ Lucy no es un simple chatbot; es un **organismo modular en ejecución**. Esta ar
 ---
 
 ## 🏁 Cómo Iniciar
-Para despertar a Lucy, utiliza el script de orquestación optimizado:
 
+1. **Instalar Dependencias**:
 ```bash
-./run_lucy.sh
+# Activar entorno virtual si es necesario
+pip install -r requirements.txt
+```
+
+2. **Despertar a Lucy**:
+Utiliza el script de orquestación soberano:
+```bash
+./lucy.py
+```
+O para modo auditoría (diagnóstico):
+```bash
+./lucy.py audit
 ```
 
 ---

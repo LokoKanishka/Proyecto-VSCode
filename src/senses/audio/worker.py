@@ -49,14 +49,30 @@ class AudioService:
 
     def _load_model(self):
         # Optimizado para RTX 5090 (usar cuda si está disponible, sino cpu/int8)
-        # TODO: Detectar si hay GPU disponible via pynvml
         device = "cuda" 
         compute_type = "float16"
+        
+        # Intento de detección de GPU más robusta
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                device = "cpu"
+                compute_type = "int8"
+                logger.warning("GPU no detectada por PyTorch, usando CPU/int8")
+        except ImportError:
+            # Si no hay torch, intentamos blind faith en cuda si hay driver, o fallback
+            try:
+                subprocess.run(['nvidia-smi'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                device = "cpu"
+                compute_type = "int8"
+                logger.warning("nvidia-smi no encontrado, usando CPU/int8")
+
         try:
             self.model = WhisperModel("small", device=device, compute_type=compute_type)
             logger.info(f"Modelo Whisper cargado en {device} ({compute_type}).")
         except Exception as e:
-            logger.warning(f"Fallo al cargar en GPU ({e}), usando CPU/int8.")
+            logger.warning(f"Fallo al cargar en {device} ({e}), cayendo a CPU/int8.")
             self.model = WhisperModel("small", device="cpu", compute_type="int8")
 
     async def handle_speak_command(self, message: LucyMessage):

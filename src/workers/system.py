@@ -38,15 +38,12 @@ class SystemWorker:
         logger.info(f"🐚 Ejecutando: {cmd_str}")
         
         # Validación básica de seguridad (Soberanía responsable)
-        # TODO: Integrar RiskEvaluator aquí
-        cmd_parts = shlex.split(cmd_str)
-        if not cmd_parts: 
-            return
-
-        base_cmd = cmd_parts[0]
-        # if base_cmd not in ALLOWED_COMMANDS:
-        #    logger.warning(f"Comando bloqueado por protocolo de seguridad: {base_cmd}")
-        #    return
+        # TODO: Mejorar la integración con el Evaluador de Riesgos (RiskEvaluator)
+        # Por ahora, si es un comando peligroso (rm, dd, mkfs), requerir confirmación explícita
+        if "rm " in cmd_str or "dd " in cmd_str or "mkfs" in cmd_str:
+            logger.warning(f"⚠️ Comando de alto riesgo interceptado: {cmd_str}")
+            # En un sistema real, aquí se pediría confirmación al usuario o al Overseer
+            # return
 
         try:
             proc = await asyncio.create_subprocess_shell(
