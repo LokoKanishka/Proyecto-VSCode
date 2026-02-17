@@ -10,29 +10,36 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      # Corregido: Usamos v4 que es estable (v5 no existe o es inestable)
+      # 1. Corregimos la versión del checkout (v5 no existe -> v4)
       - uses: actions/checkout@v4
       
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: 3.12
-          cache: 'pip' # Acelera las futuras ejecuciones recordando lo aprendido
+          cache: 'pip' # Acelera futuras ejecuciones guardando memoria
 
-      - name: Install dependencies
+      # 2. Instalamos los "órganos" del sistema Linux necesarios para Audio/Video
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2 libasound2-dev libgl1-mesa-glx xorg-dev libx11-dev xvfb
+
+      # 3. Instalamos las dependencias de Python
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          # Intentamos instalar las dependencias generales. 
-          # Si hay librerías exclusivas de Windows en requirements.txt, esto podría requerir 
-          # separar requirements_linux.txt, pero probemos primero la vía directa.
           pip install -r requirements.txt
-          pip install -r requirements-web.txt --no-deps  # --no-deps para evitar conflictos circulares si los hubiera
+          pip install -r requirements-web.txt
 
+      # 4. Otorgamos voz a los scripts (permiso de ejecución)
       - name: Grant execution permissions
-        # Esta es la caricia necesaria: damos permiso de ejecución a los scripts
         run: chmod +x scripts/*.sh
 
+      # 5. Ejecutamos los tests en un entorno gráfico virtual (xvfb)
+      # Esto engaña a PyAutoGUI/Tkinter para que crean que hay pantalla.
       - name: Run smoke suite
         env:
           SKYSCANNER_SMOKE: 0
-        run: ./scripts/run_all_smokes.sh
+          LUCY_HEADLESS_CI: 1
+        run: xvfb-run --auto-servernum ./scripts/run_all_smokes.sh
