@@ -28,6 +28,13 @@ class WorkerType(str, Enum):
     LEGACY_EAR = "ear_worker"
     LEGACY_MOUTH = "mouth_worker"
 
+    # Tool Workers
+    BROWSER = "browser_worker"
+    VSCODE = "vscode_worker"
+    GIT = "git_worker"
+    PACKAGE = "package_worker"
+    CHAT = "chat_worker"
+
 class LucyMessage(BaseModel):
     """
     Estructura estándar de mensaje para el Bus de Enjambre.

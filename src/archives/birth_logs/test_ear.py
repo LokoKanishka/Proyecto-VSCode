@@ -37,7 +37,7 @@ try:
         wf.writeframes(recording.tobytes())
         
     print(f"\n💾 --- ÉXITO ---")
-    print(f"El archivo se guardó en: C:\Users\Public\prueba_audio.wav")
+    print(r"El archivo se guardó en: C:\Users\Public\prueba_audio.wav")
     print(f"👉 Ve a Windows, abre esa carpeta y ESCÚCHALO.")
 
 except Exception as e:
