@@ -11,3 +11,7 @@ psutil
 pyautogui
 requests
 pynput
+lancedb
+pandas
+watchdog
+sentence-transformers

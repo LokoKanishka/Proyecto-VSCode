@@ -20,10 +20,11 @@ jobs:
           cache: 'pip' # Acelera futuras ejecuciones guardando memoria
 
       # 2. Instalamos los "órganos" del sistema Linux necesarios para Audio/Video
+      # ESTRICTO: Versión corregida por Master Prompt
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libportaudio2 libasound2-dev libgl1-mesa-glx xorg-dev libx11-dev xvfb
+          sudo apt-get install -y libportaudio2 libasound2-dev libgl1-mesa-glx xvfb
 
       # 3. Instalamos las dependencias de Python
       - name: Install Python dependencies
@@ -37,7 +38,6 @@ jobs:
         run: chmod +x scripts/*.sh
 
       # 5. Ejecutamos los tests en un entorno gráfico virtual (xvfb)
-      # Esto engaña a PyAutoGUI/Tkinter para que crean que hay pantalla.
       - name: Run smoke suite
         env:
           SKYSCANNER_SMOKE: 0

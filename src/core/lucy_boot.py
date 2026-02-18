@@ -12,8 +12,12 @@ from src.core.manager import get_or_create_manager, get_or_create_memory, get_or
 
 async def ignite_swarm():
     print("   └── 🟢 [SWARM] Inicializando Enjambre en modo REAL...")
-    if not ray.is_initialized():
-        ray.init(address='auto', namespace="lucy", ignore_reinit_error=True)
+    try:
+        if not ray.is_initialized():
+            ray.init(address='auto', namespace="lucy", ignore_reinit_error=True)
+    except Exception as e:
+        print(f"❌ ERROR: No se encontró un cluster Ray activo. Ejecuta 'ray start --head' primero o usa el script start_lucy_v2.sh. Detalles: {e}")
+        sys.exit(1)
     
     # Deploy Core Actors
     manager = get_or_create_manager()
