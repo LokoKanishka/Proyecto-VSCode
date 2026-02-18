@@ -14,9 +14,11 @@ async def ignite_swarm():
     print("   └── 🟢 [SWARM] Inicializando Enjambre en modo REAL...")
     try:
         if not ray.is_initialized():
-            ray.init(address='auto', namespace="lucy", ignore_reinit_error=True)
+            print("   └── 🔗 [SWARM] Iniciando instancia local de Ray...")
+            # Modo simple y robusto: dejamos que Ray gestione el cluster local
+            ray.init(ignore_reinit_error=True)
     except Exception as e:
-        print(f"❌ ERROR: No se encontró un cluster Ray activo. Ejecuta 'ray start --head' primero o usa el script start_lucy_v2.sh. Detalles: {e}")
+        print(f"❌ ERROR: Falló la inicialización de Ray.\nDetalles: {e}")
         sys.exit(1)
     
     # Deploy Core Actors
